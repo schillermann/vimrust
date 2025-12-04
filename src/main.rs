@@ -1,4 +1,7 @@
-use std::io::{self, stdout, Write};
+use std::{
+    io::{self, stdout, Write},
+    time::Duration,
+};
 
 use crossterm::{
     event::{self, Event, KeyCode},
@@ -18,16 +21,20 @@ fn run() -> io::Result<()> {
     out.flush()?;
 
     loop {
-        match event::read()? {
-            Event::Key(key_event) => {
-                if let KeyCode::Char('q') = key_event.code {
-                    break;
+        if event::poll(Duration::from_millis(50))? {
+            match event::read()? {
+                Event::Key(key_event) => {
+                    if let KeyCode::Char('q') = key_event.code {
+                        break;
+                    }
+                    writeln!(out, "You pressed: {:?}", key_event.code)?;
+                    out.flush()?;
                 }
-                writeln!(out, "You pressed: {:?}", key_event.code)?;
-                out.flush()?;
+                Event::Resize(_, _) => {}
+                _ => {}
             }
-            Event::Resize(_, _) => {}
-            _ => {}
+        } else {
+            // periodic tasks / redraw can go here
         }
     }
 
