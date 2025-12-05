@@ -21,7 +21,7 @@ fn main() -> io::Result<()> {
 
 fn editor_draw_rows(buffer: &mut Vec<u8>, rows: u16) -> io::Result<()> {
     for row in 0..rows {
-        queue!(buffer, MoveTo(0, row))?;
+        queue!(buffer, MoveTo(0, row), Clear(ClearType::CurrentLine))?;
         write!(buffer, "~")?;
     }
     Ok(())
@@ -32,7 +32,7 @@ fn terminal_refresh(out: &mut io::Stdout) -> io::Result<()> {
     let mut buffer = BUFFER.lock().unwrap();
     buffer.clear();
 
-    queue!(&mut *buffer, Hide, Clear(ClearType::All), MoveTo(0, 0))?;
+    queue!(&mut *buffer, Hide, MoveTo(0, 0))?;
     editor_draw_rows(&mut buffer, rows)?;
     queue!(&mut *buffer, MoveTo(0, 0), Show)?;
 
