@@ -9,7 +9,7 @@ use crossterm::{
     execute,
     terminal::{
         Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode,
+        enable_raw_mode, size,
     },
 };
 
@@ -20,17 +20,26 @@ fn main() -> io::Result<()> {
     result
 }
 
+fn editor_draw_rows(out: &mut io::Stdout) -> io::Result<()> {
+    let (_, rows) = size()?;
+    for row in 0..rows {
+        execute!(out, MoveTo(0, row))?;
+        write!(out, "~")?;
+    }
+    Ok(())
+}
+
 fn terminal_refresh(out: &mut io::Stdout) -> io::Result<()> {
-    execute!(out, Clear(ClearType::All), MoveTo(0, 0))
+    execute!(out, Clear(ClearType::All), MoveTo(0, 0))?;
+    editor_draw_rows(out)?;
+    execute!(out, MoveTo(0, 0))?;
+    Ok(())
 }
 
 fn run() -> io::Result<()> {
     let mut out = stdout();
     execute!(out, EnterAlternateScreen)?;
     let result: io::Result<()> = {
-        writeln!(out, "Press keys (q to quit)...")?;
-        out.flush()?;
-
         loop {
             terminal_refresh(&mut out)?;
             if event::poll(Duration::from_millis(50))? {
@@ -39,8 +48,6 @@ fn run() -> io::Result<()> {
                         if let KeyCode::Char('q') = key_event.code {
                             break;
                         }
-                        writeln!(out, "You pressed: {:?}", key_event.code)?;
-                        out.flush()?;
                     }
                     Event::Resize(_, _) => {}
                     _ => {}
