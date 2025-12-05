@@ -1,17 +1,16 @@
-use std::{
-    io::{self, Write, stdout},
-    time::Duration,
-};
+use std::{io::{self, stdout, Write}, sync::Mutex, time::Duration};
 
 use crossterm::{
     cursor::MoveTo,
     event::{self, Event, KeyCode},
-    execute,
+    execute, queue,
     terminal::{
         Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
         enable_raw_mode, size,
     },
 };
+
+static BUFFER: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 
 fn main() -> io::Result<()> {
     enable_raw_mode()?;
@@ -20,20 +19,25 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn editor_draw_rows(out: &mut io::Stdout) -> io::Result<()> {
-    let (_, rows) = size()?;
+fn editor_draw_rows(buffer: &mut Vec<u8>, rows: u16) -> io::Result<()> {
     for row in 0..rows {
-        execute!(out, MoveTo(0, row))?;
-        write!(out, "~")?;
+        queue!(buffer, MoveTo(0, row))?;
+        write!(buffer, "~")?;
     }
     Ok(())
 }
 
 fn terminal_refresh(out: &mut io::Stdout) -> io::Result<()> {
-    execute!(out, Clear(ClearType::All), MoveTo(0, 0))?;
-    editor_draw_rows(out)?;
-    execute!(out, MoveTo(0, 0))?;
-    Ok(())
+    let (_, rows) = size()?;
+    let mut buffer = BUFFER.lock().unwrap();
+    buffer.clear();
+
+    queue!(&mut *buffer, Clear(ClearType::All), MoveTo(0, 0))?;
+    editor_draw_rows(&mut buffer, rows)?;
+    queue!(&mut *buffer, MoveTo(0, 0))?;
+
+    out.write_all(&buffer)?;
+    out.flush()
 }
 
 fn run() -> io::Result<()> {
