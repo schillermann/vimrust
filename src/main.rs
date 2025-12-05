@@ -4,6 +4,7 @@ use std::{
 };
 
 use crossterm::{
+    cursor::MoveTo,
     event::{self, Event, KeyCode},
     execute,
     terminal::{
@@ -20,7 +21,7 @@ fn main() -> io::Result<()> {
 }
 
 fn terminalRefresh(out: &mut io::Stdout) -> io::Result<()> {
-    execute!(out, Clear(ClearType::All))
+    execute!(out, Clear(ClearType::All), MoveTo(0, 0))
 }
 
 fn run() -> io::Result<()> {
