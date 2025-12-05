@@ -6,7 +6,10 @@ use std::{
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, Clear, ClearType, EnterAlternateScreen,
+        LeaveAlternateScreen,
+    },
 };
 
 fn main() -> io::Result<()> {
@@ -22,6 +25,7 @@ fn terminalRefresh(out: &mut io::Stdout) -> io::Result<()> {
 
 fn run() -> io::Result<()> {
     let mut out = stdout();
+    execute!(out, EnterAlternateScreen)?;
     writeln!(out, "Press keys (q to quit)...")?;
     out.flush()?;
 
@@ -44,5 +48,6 @@ fn run() -> io::Result<()> {
         }
     }
 
+    execute!(out, LeaveAlternateScreen)?;
     Ok(())
 }
