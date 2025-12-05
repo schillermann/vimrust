@@ -5,7 +5,8 @@ use std::{
 
 use crossterm::{
     event::{self, Event, KeyCode},
-    terminal::{disable_raw_mode, enable_raw_mode},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
 };
 
 fn main() -> io::Result<()> {
@@ -15,12 +16,17 @@ fn main() -> io::Result<()> {
     result
 }
 
+fn terminalRefresh(out: &mut io::Stdout) -> io::Result<()> {
+    execute!(out, Clear(ClearType::All))
+}
+
 fn run() -> io::Result<()> {
     let mut out = stdout();
     writeln!(out, "Press keys (q to quit)...")?;
     out.flush()?;
 
     loop {
+        terminalRefresh(&mut out)?;
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key_event) => {
