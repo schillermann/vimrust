@@ -1,7 +1,7 @@
 use std::{io::{self, stdout, Write}, sync::Mutex, time::Duration};
 
 use crossterm::{
-    cursor::MoveTo,
+    cursor::{Hide, MoveTo, Show},
     event::{self, Event, KeyCode},
     execute, queue,
     terminal::{
@@ -32,9 +32,9 @@ fn terminal_refresh(out: &mut io::Stdout) -> io::Result<()> {
     let mut buffer = BUFFER.lock().unwrap();
     buffer.clear();
 
-    queue!(&mut *buffer, Clear(ClearType::All), MoveTo(0, 0))?;
+    queue!(&mut *buffer, Hide, Clear(ClearType::All), MoveTo(0, 0))?;
     editor_draw_rows(&mut buffer, rows)?;
-    queue!(&mut *buffer, MoveTo(0, 0))?;
+    queue!(&mut *buffer, MoveTo(0, 0), Show)?;
 
     out.write_all(&buffer)?;
     out.flush()
