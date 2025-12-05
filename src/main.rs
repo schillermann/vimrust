@@ -15,6 +15,7 @@ use crossterm::{
 };
 
 static BUFFER: Mutex<Vec<u8>> = Mutex::new(Vec::new());
+static CURSOR_POSITION: Mutex<(u16, u16)> = Mutex::new((0, 0));
 static VERSION: &str = "0.1.0";
 
 fn main() -> io::Result<()> {
@@ -53,13 +54,50 @@ fn terminal_refresh(out: &mut io::Stdout) -> io::Result<()> {
     let (number_of_columns, number_of_rows) = size()?;
     let mut buffer = BUFFER.lock().unwrap();
     buffer.clear();
+    let (cursor_index_x, cursor_index_y) = *CURSOR_POSITION.lock().unwrap();
 
     queue!(&mut *buffer, Hide, MoveTo(0, 0))?;
     editor_draw_rows(&mut buffer, number_of_columns, number_of_rows)?;
-    queue!(&mut *buffer, MoveTo(0, 0), Show)?;
+    queue!(&mut *buffer, MoveTo(cursor_index_x, cursor_index_y), Show)?;
 
     out.write_all(&buffer)?;
     out.flush()
+}
+
+fn editor_move_cursor(key_code: KeyCode) -> io::Result<()> {
+    let (number_of_columns, number_of_rows) = size()?;
+    let mut cursor_position = CURSOR_POSITION.lock().unwrap();
+    let (mut cursor_index_x, mut cursor_index_y) = *cursor_position;
+
+    let max_x = number_of_columns.saturating_sub(1);
+    let max_y = number_of_rows.saturating_sub(1);
+
+    match key_code {
+        KeyCode::Char('h') => {
+            if cursor_index_x > 0 {
+                cursor_index_x -= 1;
+            }
+        }
+        KeyCode::Char('l') => {
+            if cursor_index_x < max_x {
+                cursor_index_x += 1;
+            }
+        }
+        KeyCode::Char('k') => {
+            if cursor_index_y > 0 {
+                cursor_index_y -= 1;
+            }
+        }
+        KeyCode::Char('j') => {
+            if cursor_index_y < max_y {
+                cursor_index_y += 1;
+            }
+        }
+        _ => {}
+    }
+
+    *cursor_position = (cursor_index_x, cursor_index_y);
+    Ok(())
 }
 
 fn run() -> io::Result<()> {
@@ -73,6 +111,8 @@ fn run() -> io::Result<()> {
                     Event::Key(key_event) => {
                         if let KeyCode::Char('q') = key_event.code {
                             break;
+                        } else {
+                            editor_move_cursor(key_event.code)?;
                         }
                     }
                     Event::Resize(_, _) => {}
