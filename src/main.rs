@@ -93,6 +93,12 @@ fn editor_move_cursor(key_code: KeyCode, terminal_size: (u16, u16)) -> io::Resul
                 cursor_index_y += 1;
             }
         }
+        KeyCode::PageUp => {
+            cursor_index_y = 0;
+        }
+        KeyCode::PageDown => {
+            cursor_index_y = cursor_index_y_max;
+        }
         _ => {}
     }
 
