@@ -83,6 +83,12 @@ fn editor_move_cursor(key_code: KeyCode, terminal_size: (u16, u16)) -> io::Resul
                 cursor_index_x += 1;
             }
         }
+        KeyCode::Home => {
+            cursor_index_x = 0;
+        }
+        KeyCode::End => {
+            cursor_index_x = cursor_index_x_max;
+        }
         KeyCode::Char('k') => {
             if cursor_index_y > 0 {
                 cursor_index_y -= 1;
