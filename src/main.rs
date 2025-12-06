@@ -50,8 +50,8 @@ fn editor_draw_rows(
     Ok(())
 }
 
-fn terminal_refresh(out: &mut io::Stdout) -> io::Result<()> {
-    let (number_of_columns, number_of_rows) = size()?;
+fn terminal_refresh(out: &mut io::Stdout, terminal_size: (u16, u16)) -> io::Result<()> {
+    let (number_of_columns, number_of_rows) = terminal_size;
     let mut buffer = BUFFER.lock().unwrap();
     buffer.clear();
     let (cursor_index_x, cursor_index_y) = *CURSOR_POSITION.lock().unwrap();
@@ -64,8 +64,8 @@ fn terminal_refresh(out: &mut io::Stdout) -> io::Result<()> {
     out.flush()
 }
 
-fn editor_move_cursor(key_code: KeyCode) -> io::Result<()> {
-    let (number_of_columns, number_of_rows) = size()?;
+fn editor_move_cursor(key_code: KeyCode, terminal_size: (u16, u16)) -> io::Result<()> {
+    let (number_of_columns, number_of_rows) = terminal_size;
     let mut cursor_position = CURSOR_POSITION.lock().unwrap();
     let (mut cursor_index_x, mut cursor_index_y) = *cursor_position;
 
@@ -104,18 +104,21 @@ fn run() -> io::Result<()> {
     let mut out = stdout();
     execute!(out, EnterAlternateScreen)?;
     let result: io::Result<()> = {
+        let mut terminal_size = size()?;
         loop {
-            terminal_refresh(&mut out)?;
+            terminal_refresh(&mut out, terminal_size)?;
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
                     Event::Key(key_event) => {
                         if let KeyCode::Char('q') = key_event.code {
                             break;
                         } else {
-                            editor_move_cursor(key_event.code)?;
+                            editor_move_cursor(key_event.code, terminal_size)?;
                         }
                     }
-                    Event::Resize(_, _) => {}
+                    Event::Resize(columns, rows) => {
+                        terminal_size = (columns, rows);
+                    }
                     _ => {}
                 }
             } else {
