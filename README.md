@@ -9,6 +9,16 @@ Start program.
 cargo run
 ```
 
+# Keys
+
+|Key |Description |
+|----|------------|
+|`Q` |Quit        |
+|`H` |Cursor Left |
+|`J` |Cursor Down |
+|`K` |Cursor Up   |
+|`L` |Cursor Right|
+
 # Decisions
 
 ## Editor Async VS Sync
