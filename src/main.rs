@@ -16,6 +16,7 @@ use crossterm::{
 
 static BUFFER: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 static CURSOR_POSITION: Mutex<(u16, u16)> = Mutex::new((0, 0));
+static FILE_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static VERSION: &str = "0.1.0";
 
 fn main() -> io::Result<()> {
@@ -30,21 +31,37 @@ fn editor_draw_rows(
     number_of_columns: u16,
     number_of_rows: u16,
 ) -> io::Result<()> {
-    let welcome_row_number = number_of_rows / 3;
-    for row_number in 0..number_of_rows {
-        queue!(buffer, MoveTo(0, row_number), Clear(ClearType::CurrentLine))?;
-        write!(buffer, "~")?;
-        if row_number == welcome_row_number {
-            let mut welcome = format!("VimRust -- version {}", VERSION);
-            let available_number_of_columns = number_of_columns - 1; // leave space for the leading tilde
-            if welcome.len() > available_number_of_columns as usize {
-                welcome.truncate(available_number_of_columns as usize);
+    let file_lines = FILE_LINES.lock().unwrap();
+    let available_number_of_columns = number_of_columns.saturating_sub(1);
+    if file_lines.is_empty() {
+        let welcome_row_number = number_of_rows / 3;
+        for row_number in 0..number_of_rows {
+            queue!(buffer, MoveTo(0, row_number), Clear(ClearType::CurrentLine))?;
+            write!(buffer, "~")?;
+            if row_number == welcome_row_number {
+                let mut welcome = format!("VimRust -- version {}", VERSION);
+                if welcome.len() > available_number_of_columns as usize {
+                    welcome.truncate(available_number_of_columns as usize);
+                }
+                let padding = 1
+                    + (available_number_of_columns as usize / 2).saturating_sub(welcome.len() / 2);
+                let padding = padding.min(available_number_of_columns as usize);
+                queue!(buffer, MoveTo(padding as u16, row_number))?;
+                write!(buffer, "{}", welcome)?;
             }
-            let padding =
-                1 + (available_number_of_columns as usize / 2).saturating_sub(welcome.len() / 2);
-            let padding = padding.min(available_number_of_columns as usize);
-            queue!(buffer, MoveTo(padding as u16, row_number))?;
-            write!(buffer, "{}", welcome)?;
+        }
+    } else {
+        for row_number in 0..number_of_rows {
+            queue!(buffer, MoveTo(0, row_number), Clear(ClearType::CurrentLine))?;
+            if let Some(content) = file_lines.get(row_number as usize) {
+                let mut line = content.clone();
+                if line.len() > available_number_of_columns as usize {
+                    line.truncate(available_number_of_columns as usize);
+                }
+                write!(buffer, "{}", line)?;
+            } else {
+                write!(buffer, "~")?;
+            }
         }
     }
     Ok(())
@@ -112,10 +129,18 @@ fn editor_move_cursor(key_code: KeyCode, terminal_size: (u16, u16)) -> io::Resul
     Ok(())
 }
 
+fn editor_open() -> io::Result<()> {
+    let mut file_lines = FILE_LINES.lock().unwrap();
+    file_lines.clear();
+    file_lines.push("Hello, world!".to_string());
+    Ok(())
+}
+
 fn run() -> io::Result<()> {
     let mut out = stdout();
     execute!(out, EnterAlternateScreen)?;
     let result: io::Result<()> = {
+        editor_open()?;
         let mut terminal_size = size()?;
         loop {
             terminal_refresh(&mut out, terminal_size)?;
