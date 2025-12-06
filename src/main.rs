@@ -69,8 +69,8 @@ fn editor_move_cursor(key_code: KeyCode, terminal_size: (u16, u16)) -> io::Resul
     let mut cursor_position = CURSOR_POSITION.lock().unwrap();
     let (mut cursor_index_x, mut cursor_index_y) = *cursor_position;
 
-    let max_x = number_of_columns.saturating_sub(1);
-    let max_y = number_of_rows.saturating_sub(1);
+    let cursor_index_x_max = number_of_columns.saturating_sub(1);
+    let cursor_index_y_max = number_of_rows.saturating_sub(1);
 
     match key_code {
         KeyCode::Char('h') => {
@@ -79,7 +79,7 @@ fn editor_move_cursor(key_code: KeyCode, terminal_size: (u16, u16)) -> io::Resul
             }
         }
         KeyCode::Char('l') => {
-            if cursor_index_x < max_x {
+            if cursor_index_x < cursor_index_x_max {
                 cursor_index_x += 1;
             }
         }
@@ -89,7 +89,7 @@ fn editor_move_cursor(key_code: KeyCode, terminal_size: (u16, u16)) -> io::Resul
             }
         }
         KeyCode::Char('j') => {
-            if cursor_index_y < max_y {
+            if cursor_index_y < cursor_index_y_max {
                 cursor_index_y += 1;
             }
         }
