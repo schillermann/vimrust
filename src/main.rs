@@ -37,6 +37,7 @@ static FILE_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static EDITOR_ROWS_OFFSET: Mutex<u16> = Mutex::new(0);
 static EDITOR_COLUMNS_OFFSET: Mutex<u16> = Mutex::new(0);
 static VERSION: &str = "0.1.0";
+const DEFAULT_TAB_STOP: u16 = 4;
 
 fn main() -> io::Result<()> {
     let file_path = env::args().nth(1);
@@ -73,12 +74,13 @@ fn editor_draw_rows(
             }
         } else {
             if let Some(file_line) = file_lines.get(file_line_number.saturating_sub(1)) {
-                let file_line_excerpt: String = file_line
+                let displayable_line = displayable_line(file_line, DEFAULT_TAB_STOP);
+                let visible_slice: String = displayable_line
                     .chars()
                     .skip(columns_offset as usize)
                     .take(number_of_columns as usize)
                     .collect();
-                queue!(buffer, Print(file_line_excerpt))?;
+                queue!(buffer, Print(visible_slice))?;
             }
         }
 
@@ -88,6 +90,44 @@ fn editor_draw_rows(
     }
 
     Ok(())
+}
+
+fn displayable_line(line: &str, tab_stop: u16) -> String {
+    let mut expanded = String::new();
+    let mut column: u16 = 0;
+    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
+
+    for ch in line.chars() {
+        match ch {
+            '\t' => {
+                let offset = column % tab_size;
+                let spaces = tab_size.saturating_sub(offset);
+                let mut count = 0;
+                while count < spaces {
+                    expanded.push(' ');
+                    count += 1;
+                }
+                column = column.saturating_add(spaces);
+            }
+            '\x00'..='\x1f' => {
+                expanded.push('^');
+                let caret = (ch as u8 + 0x40) as char;
+                expanded.push(caret);
+                column = column.saturating_add(2);
+            }
+            '\x7f' => {
+                expanded.push('^');
+                expanded.push('?');
+                column = column.saturating_add(2);
+            }
+            _ => {
+                expanded.push(ch);
+                column = column.saturating_add(1);
+            }
+        }
+    }
+
+    expanded
 }
 
 fn terminal_refresh(
@@ -174,10 +214,37 @@ fn file_line_length(file_lines: &Vec<String>, cursor_y: u16) -> u16 {
         return 0;
     }
 
-    match file_lines.get(line_index) {
-        Some(line) => line.chars().count().min(u16::MAX as usize) as u16,
-        None => 0,
+    if let Some(line) = file_lines.get(line_index) {
+        return visual_line_length(line, DEFAULT_TAB_STOP);
     }
+
+    0
+}
+
+fn visual_line_length(line: &str, tab_stop: u16) -> u16 {
+    let mut column: u16 = 0;
+    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
+
+    for ch in line.chars() {
+        match ch {
+            '\t' => {
+                let offset = column % tab_size;
+                let spaces = tab_size.saturating_sub(offset);
+                column = column.saturating_add(spaces);
+            }
+            '\x00'..='\x1f' => {
+                column = column.saturating_add(2);
+            }
+            '\x7f' => {
+                column = column.saturating_add(2);
+            }
+            _ => {
+                column = column.saturating_add(1);
+            }
+        }
+    }
+
+    column
 }
 
 fn editor_move_cursor(
