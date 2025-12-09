@@ -162,34 +162,25 @@ fn editor_move_cursor(
     file_lines: &Vec<String>,
 ) -> io::Result<()> {
     let file_lines_len = file_lines.len().min(u16::MAX as usize) as u16;
-    let file_line_len = file_line_length(file_lines, *cursor_y);
 
     match key_code {
         KeyCode::Char('h') => {
-            if *cursor_x > 0 {
-                *cursor_x = cursor_x.saturating_sub(1);
-            }
+            *cursor_x = cursor_x.saturating_sub(1);
         }
         KeyCode::Char('l') => {
-            if *cursor_x < file_line_len {
-                *cursor_x = cursor_x.saturating_add(1);
-            }
+            *cursor_x = cursor_x.saturating_add(1);
         }
         KeyCode::Home => {
             *cursor_x = 0;
         }
         KeyCode::End => {
-            *cursor_x = file_line_len;
+            *cursor_x = file_line_length(file_lines, *cursor_y);
         }
         KeyCode::Char('k') => {
-            if *cursor_y > 0 {
-                *cursor_y = cursor_y.saturating_sub(1);
-            }
+            *cursor_y = cursor_y.saturating_sub(1);
         }
         KeyCode::Char('j') => {
-            if *cursor_y < file_lines_len {
-                *cursor_y = cursor_y.saturating_add(1);
-            }
+            *cursor_y = cursor_y.saturating_add(1);
         }
         KeyCode::PageUp => {
             *cursor_y = 0;
@@ -198,6 +189,15 @@ fn editor_move_cursor(
             *cursor_y = file_lines_len;
         }
         _ => {}
+    }
+
+    if *cursor_y > file_lines_len {
+        *cursor_y = file_lines_len;
+    }
+
+    let line_length = file_line_length(file_lines, *cursor_y);
+    if *cursor_x > line_length {
+        *cursor_x = line_length;
     }
 
     Ok(())
