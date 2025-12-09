@@ -16,6 +16,20 @@ use crossterm::{
     },
 };
 
+enum EditorMode {
+    Normal,
+    Edit,
+}
+
+impl EditorMode {
+    fn label(&self) -> &'static str {
+        match self {
+            EditorMode::Normal => "NORMAL",
+            EditorMode::Edit => "EDIT",
+        }
+    }
+}
+
 static BUFFER: Mutex<Vec<u8>> = Mutex::new(Vec::new());
 static CURSOR_X: Mutex<u16> = Mutex::new(0);
 static CURSOR_Y: Mutex<u16> = Mutex::new(0);
@@ -82,8 +96,10 @@ fn terminal_refresh(
     cursor_x: u16,
     cursor_y: u16,
     file_lines: &Vec<String>,
+    mode: &EditorMode,
 ) -> io::Result<()> {
     let (number_of_columns, number_of_rows) = terminal_size;
+    let usable_rows = number_of_rows.saturating_sub(1);
     let mut columns_offset = EDITOR_COLUMNS_OFFSET.lock().unwrap();
     let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
     let mut buffer = BUFFER.lock().unwrap();
@@ -93,7 +109,7 @@ fn terminal_refresh(
         cursor_x,
         cursor_y,
         number_of_columns,
-        number_of_rows,
+        usable_rows,
         &mut columns_offset,
         &mut rows_offset,
     );
@@ -102,10 +118,16 @@ fn terminal_refresh(
     editor_draw_rows(
         &mut buffer,
         number_of_columns,
-        number_of_rows,
+        usable_rows,
         *columns_offset,
         *rows_offset,
         file_lines,
+    )?;
+    queue!(
+        &mut *buffer,
+        MoveTo(0, number_of_rows.saturating_sub(1)),
+        Clear(ClearType::CurrentLine),
+        Print(format!("-- {} --", mode.label()))
     )?;
     queue!(
         &mut *buffer,
@@ -129,6 +151,9 @@ fn editor_scroll(
     columns_offset: &mut u16,
     rows_offset: &mut u16,
 ) {
+    if number_of_rows == 0 {
+        return;
+    }
     if cursor_y < *rows_offset {
         *rows_offset = cursor_y;
     }
@@ -226,23 +251,32 @@ fn run(file_path: Option<String>) -> io::Result<()> {
         let mut terminal_size = size()?;
         let mut cursor_x = CURSOR_X.lock().unwrap();
         let mut cursor_y = CURSOR_Y.lock().unwrap();
+        let mut mode = EditorMode::Normal;
 
         loop {
-            terminal_refresh(&mut out, terminal_size, *cursor_x, *cursor_y, &*file_lines)?;
+            terminal_refresh(
+                &mut out,
+                terminal_size,
+                *cursor_x,
+                *cursor_y,
+                &*file_lines,
+                &mode,
+            )?;
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
-                    Event::Key(key_event) => {
-                        if let KeyCode::Char('q') = key_event.code {
-                            break;
-                        } else {
+                    Event::Key(key_event) => match key_event.code {
+                        KeyCode::Char('q') => break,
+                        KeyCode::Char('e') => mode = EditorMode::Edit,
+                        KeyCode::Esc => mode = EditorMode::Normal,
+                        key_code => {
                             editor_move_cursor(
-                                key_event.code,
+                                key_code,
                                 &mut cursor_x,
                                 &mut cursor_y,
                                 &*file_lines,
                             )?;
                         }
-                    }
+                    },
                     Event::Resize(columns, rows) => {
                         terminal_size = (columns, rows);
                     }
