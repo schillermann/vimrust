@@ -2,11 +2,16 @@ I created this editor to help me learn Rust.
 Another reason is to have an editor that does exactly what I want and nothing more.
 The goal is to keep the editor as simple as possible without unnecessarily increasing its complexity.
 
-# Start
+# Quickstart
 
 Start program.
 ```sh
 cargo run
+```
+
+Read file.
+```sh
+cargo run my_file.txt
 ```
 
 # Keys
