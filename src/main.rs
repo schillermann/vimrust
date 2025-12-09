@@ -59,11 +59,11 @@ fn editor_draw_rows(
             }
         } else {
             if let Some(file_line) = file_lines.get(file_line_number.saturating_sub(1)) {
-                let mut file_line_excerpt: String =
-                    file_line.chars().skip(columns_offset as usize).collect();
-                if file_line_excerpt.len() > number_of_columns as usize {
-                    file_line_excerpt.truncate(number_of_columns as usize);
-                }
+                let file_line_excerpt: String = file_line
+                    .chars()
+                    .skip(columns_offset as usize)
+                    .take(number_of_columns as usize)
+                    .collect();
                 queue!(buffer, Print(file_line_excerpt))?;
             }
         }
@@ -143,46 +143,59 @@ fn editor_scroll(
     }
 }
 
+fn file_line_length(file_lines: &Vec<String>, cursor_y: u16) -> u16 {
+    let line_index = cursor_y as usize;
+    if line_index >= file_lines.len() {
+        return 0;
+    }
+
+    match file_lines.get(line_index) {
+        Some(line) => line.chars().count().min(u16::MAX as usize) as u16,
+        None => 0,
+    }
+}
+
 fn editor_move_cursor(
     key_code: KeyCode,
-    terminal_size: (u16, u16),
     cursor_x: &mut u16,
     cursor_y: &mut u16,
     file_lines: &Vec<String>,
 ) -> io::Result<()> {
-    let (number_of_columns, _) = terminal_size;
-    let cursor_y_max = (file_lines.len() as u16).saturating_sub(1);
+    let file_lines_len = file_lines.len().min(u16::MAX as usize) as u16;
+    let file_line_len = file_line_length(file_lines, *cursor_y);
 
     match key_code {
         KeyCode::Char('h') => {
             if *cursor_x > 0 {
-                *cursor_x -= 1;
+                *cursor_x = cursor_x.saturating_sub(1);
             }
         }
         KeyCode::Char('l') => {
-            *cursor_x += 1;
+            if *cursor_x < file_line_len {
+                *cursor_x = cursor_x.saturating_add(1);
+            }
         }
         KeyCode::Home => {
             *cursor_x = 0;
         }
         KeyCode::End => {
-            *cursor_x = number_of_columns.saturating_sub(1);
+            *cursor_x = file_line_len;
         }
         KeyCode::Char('k') => {
             if *cursor_y > 0 {
-                *cursor_y -= 1;
+                *cursor_y = cursor_y.saturating_sub(1);
             }
         }
         KeyCode::Char('j') => {
-            if *cursor_y < file_lines.len() as u16 {
-                *cursor_y += 1;
+            if *cursor_y < file_lines_len {
+                *cursor_y = cursor_y.saturating_add(1);
             }
         }
         KeyCode::PageUp => {
             *cursor_y = 0;
         }
         KeyCode::PageDown => {
-            *cursor_y = cursor_y_max;
+            *cursor_y = file_lines_len;
         }
         _ => {}
     }
@@ -224,7 +237,6 @@ fn run(file_path: Option<String>) -> io::Result<()> {
                         } else {
                             editor_move_cursor(
                                 key_event.code,
-                                terminal_size,
                                 &mut cursor_x,
                                 &mut cursor_y,
                                 &*file_lines,
