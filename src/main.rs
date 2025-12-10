@@ -366,6 +366,43 @@ fn snap_cursor_to_render_character(line: &str, cursor_x: u16, tab_stop: u16) -> 
     clamped_x
 }
 
+fn render_column_to_char_index(line: &str, cursor_x: u16, tab_stop: u16) -> usize {
+    let mut column: u16 = 0;
+    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
+
+    for (idx, ch) in line.char_indices() {
+        let width = char_render_width(ch, tab_size, column);
+        if cursor_x <= column {
+            return idx;
+        }
+        if cursor_x < column.saturating_add(width) {
+            return idx;
+        }
+        column = column.saturating_add(width);
+    }
+
+    line.len()
+}
+
+fn insert_char_at_cursor(
+    file_lines: &mut Vec<String>,
+    cursor_x: &mut u16,
+    cursor_y: u16,
+    ch: char,
+) {
+    let target_line = cursor_y as usize;
+    if target_line >= file_lines.len() {
+        file_lines.resize_with(target_line.saturating_add(1), String::new);
+    }
+
+    if let Some(line) = file_lines.get_mut(target_line) {
+        let insert_at = render_column_to_char_index(line, *cursor_x, DEFAULT_TAB_STOP);
+        line.insert(insert_at, ch);
+        let advance = char_render_width(ch, DEFAULT_TAB_STOP, *cursor_x);
+        *cursor_x = cursor_x.saturating_add(advance);
+    }
+}
+
 fn editor_move_cursor(
     key_code: KeyCode,
     cursor_x: &mut u16,
@@ -444,6 +481,9 @@ fn run(file_path: Option<String>) -> io::Result<()> {
         if let Some(path) = file_path {
             editor_open(&mut file_lines, path)?;
         }
+        if file_lines.is_empty() {
+            file_lines.push(String::new());
+        }
 
         let mut terminal_size = size()?;
         let mut cursor_x = CURSOR_X.lock().unwrap();
@@ -475,11 +515,18 @@ fn run(file_path: Option<String>) -> io::Result<()> {
                                 )?;
                             }
                         },
-                        EditorMode::Edit => {
-                            if let KeyCode::Esc = key_event.code {
-                                mode = EditorMode::Normal;
+                        EditorMode::Edit => match key_event.code {
+                            KeyCode::Esc => mode = EditorMode::Normal,
+                            KeyCode::Char(ch) => {
+                                insert_char_at_cursor(
+                                    &mut file_lines,
+                                    &mut cursor_x,
+                                    *cursor_y,
+                                    ch,
+                                );
                             }
-                        }
+                            _ => {}
+                        },
                     },
                     Event::Resize(columns, rows) => {
                         terminal_size = (columns, rows);
