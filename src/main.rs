@@ -6,7 +6,7 @@ use std::{
 };
 
 use crossterm::{
-    cursor::{Hide, MoveTo, Show},
+    cursor::{Hide, MoveTo, SetCursorStyle, Show},
     event::{self, Event, KeyCode},
     execute, queue,
     style::Print,
@@ -403,6 +403,14 @@ fn insert_char_at_cursor(
     }
 }
 
+fn set_cursor_style(out: &mut io::Stdout, mode: &EditorMode) -> io::Result<()> {
+    let style = match mode {
+        EditorMode::Normal => SetCursorStyle::DefaultUserShape,
+        EditorMode::Edit => SetCursorStyle::SteadyBar,
+    };
+    execute!(out, style)
+}
+
 fn editor_move_cursor(
     key_code: KeyCode,
     cursor_x: &mut u16,
@@ -489,6 +497,7 @@ fn run(file_path: Option<String>) -> io::Result<()> {
         let mut cursor_x = CURSOR_X.lock().unwrap();
         let mut cursor_y = CURSOR_Y.lock().unwrap();
         let mut mode = EditorMode::Normal;
+        set_cursor_style(&mut out, &mode)?;
 
         loop {
             terminal_refresh(
@@ -504,8 +513,14 @@ fn run(file_path: Option<String>) -> io::Result<()> {
                     Event::Key(key_event) => match mode {
                         EditorMode::Normal => match key_event.code {
                             KeyCode::Char('q') => break,
-                            KeyCode::Char('e') => mode = EditorMode::Edit,
-                            KeyCode::Esc => mode = EditorMode::Normal,
+                            KeyCode::Char('e') => {
+                                mode = EditorMode::Edit;
+                                set_cursor_style(&mut out, &mode)?;
+                            }
+                            KeyCode::Esc => {
+                                mode = EditorMode::Normal;
+                                set_cursor_style(&mut out, &mode)?;
+                            }
                             key_code => {
                                 editor_move_cursor(
                                     key_code,
@@ -516,7 +531,10 @@ fn run(file_path: Option<String>) -> io::Result<()> {
                             }
                         },
                         EditorMode::Edit => match key_event.code {
-                            KeyCode::Esc => mode = EditorMode::Normal,
+                            KeyCode::Esc => {
+                                mode = EditorMode::Normal;
+                                set_cursor_style(&mut out, &mode)?;
+                            }
                             KeyCode::Char(ch) => {
                                 insert_char_at_cursor(
                                     &mut file_lines,
