@@ -14,7 +14,9 @@ Read file.
 cargo run my_file.txt
 ```
 
-# Keys
+# Keymap
+
+# Normal Mode
 
 |Key |Description |
 |----|------------|
@@ -23,6 +25,13 @@ cargo run my_file.txt
 |`J` |Cursor Down |
 |`K` |Cursor Up   |
 |`L` |Cursor Right|
+|`E` |Edit Mode   |
+
+# Edit Mode
+
+|Key  |Description|
+|-----|-----------|
+|`Esc`|Normal Mode|
 
 # Decisions
 

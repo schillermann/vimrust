@@ -461,17 +461,24 @@ fn run(file_path: Option<String>) -> io::Result<()> {
             )?;
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
-                    Event::Key(key_event) => match key_event.code {
-                        KeyCode::Char('q') => break,
-                        KeyCode::Char('e') => mode = EditorMode::Edit,
-                        KeyCode::Esc => mode = EditorMode::Normal,
-                        key_code => {
-                            editor_move_cursor(
-                                key_code,
-                                &mut cursor_x,
-                                &mut cursor_y,
-                                &*file_lines,
-                            )?;
+                    Event::Key(key_event) => match mode {
+                        EditorMode::Normal => match key_event.code {
+                            KeyCode::Char('q') => break,
+                            KeyCode::Char('e') => mode = EditorMode::Edit,
+                            KeyCode::Esc => mode = EditorMode::Normal,
+                            key_code => {
+                                editor_move_cursor(
+                                    key_code,
+                                    &mut cursor_x,
+                                    &mut cursor_y,
+                                    &*file_lines,
+                                )?;
+                            }
+                        },
+                        EditorMode::Edit => {
+                            if let KeyCode::Esc = key_event.code {
+                                mode = EditorMode::Normal;
+                            }
                         }
                     },
                     Event::Resize(columns, rows) => {
