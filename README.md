@@ -26,6 +26,7 @@ cargo run my_file.txt
 |`K` |Cursor Up   |
 |`L` |Cursor Right|
 |`E` |Edit Mode   |
+|`S` |Save File   |
 
 # Edit Mode
 

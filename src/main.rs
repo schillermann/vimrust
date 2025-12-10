@@ -38,6 +38,7 @@ static EDITOR_ROWS_OFFSET: Mutex<u16> = Mutex::new(0);
 static EDITOR_COLUMNS_OFFSET: Mutex<u16> = Mutex::new(0);
 static VERSION: &str = "0.1.0";
 const DEFAULT_TAB_STOP: u16 = 4;
+const DEFAULT_STATUS: &str = "| e: edit | Esc: normal | s: save | q: quit";
 
 fn char_render_width(character: char, tab_stop: u16, column: u16) -> u16 {
     let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
@@ -156,6 +157,17 @@ fn displayable_line(line: &str, tab_stop: u16) -> String {
     expanded
 }
 
+fn fit_status(message: &str, max_width: u16) -> String {
+    if max_width == 0 {
+        return String::new();
+    }
+    let mut truncated = message.to_string();
+    if truncated.len() > max_width as usize {
+        truncated.truncate(max_width as usize);
+    }
+    truncated
+}
+
 fn terminal_refresh(
     out: &mut io::Stdout,
     terminal_size: (u16, u16),
@@ -163,6 +175,7 @@ fn terminal_refresh(
     cursor_y: u16,
     file_lines: &Vec<String>,
     mode: &EditorMode,
+    status_message: &str,
 ) -> io::Result<()> {
     let (number_of_columns, number_of_rows) = terminal_size;
     let usable_rows = number_of_rows.saturating_sub(1);
@@ -193,7 +206,16 @@ fn terminal_refresh(
         &mut *buffer,
         MoveTo(0, number_of_rows.saturating_sub(1)),
         Clear(ClearType::CurrentLine),
-        Print(format!("-- {} --", mode.label()))
+        Print(format!(
+            "-- {} -- {}",
+            mode.label(),
+            fit_status(
+                status_message,
+                number_of_columns
+                    .saturating_sub(mode.label().len() as u16)
+                    .saturating_sub(6)
+            )
+        ))
     )?;
     queue!(
         &mut *buffer,
@@ -403,6 +425,15 @@ fn insert_char_at_cursor(
     }
 }
 
+fn editor_save(file_lines: &Vec<String>, file_path: &mut Option<String>) -> io::Result<String> {
+    let path = file_path
+        .get_or_insert_with(|| String::from("untitled.txt"))
+        .clone();
+    let contents = file_lines.join("\n");
+    fs::write(&path, contents)?;
+    Ok(format!("Wrote {}", path))
+}
+
 fn set_cursor_style(out: &mut io::Stdout, mode: &EditorMode) -> io::Result<()> {
     let style = match mode {
         EditorMode::Normal => SetCursorStyle::DefaultUserShape,
@@ -481,12 +512,12 @@ fn editor_open(file_lines: &mut Vec<String>, file_path: String) -> io::Result<()
     Ok(())
 }
 
-fn run(file_path: Option<String>) -> io::Result<()> {
+fn run(mut file_path: Option<String>) -> io::Result<()> {
     let mut out = stdout();
     execute!(out, EnterAlternateScreen)?;
     let result: io::Result<()> = {
         let mut file_lines = FILE_LINES.lock().unwrap();
-        if let Some(path) = file_path {
+        if let Some(path) = file_path.clone() {
             editor_open(&mut file_lines, path)?;
         }
         if file_lines.is_empty() {
@@ -497,6 +528,7 @@ fn run(file_path: Option<String>) -> io::Result<()> {
         let mut cursor_x = CURSOR_X.lock().unwrap();
         let mut cursor_y = CURSOR_Y.lock().unwrap();
         let mut mode = EditorMode::Normal;
+        let mut status_message = String::from(DEFAULT_STATUS);
         set_cursor_style(&mut out, &mode)?;
 
         loop {
@@ -507,6 +539,7 @@ fn run(file_path: Option<String>) -> io::Result<()> {
                 *cursor_y,
                 &*file_lines,
                 &mode,
+                &status_message,
             )?;
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
@@ -516,11 +549,17 @@ fn run(file_path: Option<String>) -> io::Result<()> {
                             KeyCode::Char('e') => {
                                 mode = EditorMode::Edit;
                                 set_cursor_style(&mut out, &mode)?;
+                                status_message = String::from(DEFAULT_STATUS);
                             }
                             KeyCode::Esc => {
                                 mode = EditorMode::Normal;
                                 set_cursor_style(&mut out, &mode)?;
+                                status_message = String::from(DEFAULT_STATUS);
                             }
+                            KeyCode::Char('s') => match editor_save(&*file_lines, &mut file_path) {
+                                Ok(msg) => status_message = msg,
+                                Err(err) => status_message = format!("Error saving: {}", err),
+                            },
                             key_code => {
                                 editor_move_cursor(
                                     key_code,
@@ -534,6 +573,7 @@ fn run(file_path: Option<String>) -> io::Result<()> {
                             KeyCode::Esc => {
                                 mode = EditorMode::Normal;
                                 set_cursor_style(&mut out, &mode)?;
+                                status_message = String::from(DEFAULT_STATUS);
                             }
                             KeyCode::Char(ch) => {
                                 insert_char_at_cursor(
