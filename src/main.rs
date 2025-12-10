@@ -329,6 +329,43 @@ fn previous_render_column(line: &str, current_x: u16, tab_stop: u16) -> u16 {
     best
 }
 
+fn snap_cursor_to_render_character(line: &str, cursor_x: u16, tab_stop: u16) -> u16 {
+    let segments = render_segments(line, tab_stop);
+    if segments.is_empty() {
+        return 0;
+    }
+
+    let line_length = match segments.last() {
+        Some((_, end, _)) => *end,
+        None => 0,
+    };
+    let clamped_x = cursor_x.min(line_length);
+    let last_index = segments.len() - 1;
+
+    for (idx, (start, end, ch)) in segments.iter().enumerate() {
+        let in_segment = clamped_x >= *start && clamped_x < *end;
+        let at_line_end = clamped_x == line_length && idx == last_index;
+
+        if in_segment {
+            return match ch {
+                '\t' => end.saturating_sub(1),
+                '\x00'..='\x1f' | '\x7f' => *start,
+                _ => *start,
+            };
+        }
+
+        if at_line_end {
+            return match ch {
+                '\t' => end.saturating_sub(1),
+                '\x00'..='\x1f' | '\x7f' => *start,
+                _ => clamped_x,
+            };
+        }
+    }
+
+    clamped_x
+}
+
 fn editor_move_cursor(
     key_code: KeyCode,
     cursor_x: &mut u16,
@@ -380,6 +417,9 @@ fn editor_move_cursor(
     let line_length = file_line_length(file_lines, *cursor_y);
     if *cursor_x > line_length {
         *cursor_x = line_length;
+    }
+    if let Some(line) = file_lines.get(*cursor_y as usize) {
+        *cursor_x = snap_cursor_to_render_character(line, *cursor_x, DEFAULT_TAB_STOP);
     }
 
     Ok(())
