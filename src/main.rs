@@ -47,7 +47,7 @@ fn char_render_width(character: char, tab_stop: u16, column: u16) -> u16 {
             let offset = column % tab_size;
             tab_size.saturating_sub(offset)
         }
-        '\x00'..='\x1f' | '\x7f' => 2,
+        '\x00'..='\x1f' | '\x7f' => 4,
         _ => 1,
     }
 }
@@ -138,15 +138,13 @@ fn displayable_line(line: &str, tab_stop: u16) -> String {
                 column = column.saturating_add(spaces);
             }
             '\x00'..='\x1f' => {
-                expanded.push('^');
-                let caret = (ch as u8 + 0x40) as char;
-                expanded.push(caret);
-                column = column.saturating_add(2);
+                let hex = format!("<{:02X}>", ch as u8);
+                expanded.push_str(&hex);
+                column = column.saturating_add(4);
             }
             '\x7f' => {
-                expanded.push('^');
-                expanded.push('?');
-                column = column.saturating_add(2);
+                expanded.push_str("<7F>");
+                column = column.saturating_add(4);
             }
             _ => {
                 expanded.push(ch);
