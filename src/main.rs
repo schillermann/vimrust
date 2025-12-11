@@ -388,6 +388,28 @@ fn snap_cursor_to_render_character(line: &str, cursor_x: u16, tab_stop: u16) -> 
     clamped_x
 }
 
+fn tab_segment_start(line: &str, cursor_x: u16, tab_stop: u16) -> Option<u16> {
+    for (start, end, ch) in render_segments(line, tab_stop) {
+        if cursor_x >= start && cursor_x < end && ch == '\t' {
+            return Some(start);
+        }
+    }
+    None
+}
+
+fn snap_cursor_to_tab_start(
+    file_lines: &Vec<String>,
+    cursor_x: &mut u16,
+    cursor_y: u16,
+    tab_stop: u16,
+) {
+    if let Some(line) = file_lines.get(cursor_y as usize) {
+        if let Some(start) = tab_segment_start(line, *cursor_x, tab_stop) {
+            *cursor_x = start;
+        }
+    }
+}
+
 fn render_column_to_char_index(line: &str, cursor_x: u16, tab_stop: u16) -> usize {
     let mut column: u16 = 0;
     let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
@@ -617,6 +639,12 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                 KeyCode::Char('e') => {
                                     mode = EditorMode::Edit;
                                     set_cursor_style(&mut out, &mode)?;
+                                    snap_cursor_to_tab_start(
+                                        &*file_lines,
+                                        &mut cursor_x,
+                                        *cursor_y,
+                                        DEFAULT_TAB_STOP,
+                                    );
                                     update_status(
                                         &mut status_message,
                                         &mut needs_refresh,
