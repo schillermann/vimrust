@@ -425,6 +425,41 @@ fn insert_char_at_cursor(
     }
 }
 
+fn delete_backspace(file_lines: &mut Vec<String>, cursor_x: &mut u16, cursor_y: &mut u16) {
+    // If at the very start of the buffer, nothing to do.
+    if *cursor_x == 0 && *cursor_y == 0 {
+        return;
+    }
+
+    // Merge with previous line when at column 0.
+    if *cursor_x == 0 {
+        let current_index = *cursor_y as usize;
+        if current_index == 0 || current_index >= file_lines.len() {
+            return;
+        }
+        if let Some(current_line) = file_lines.get(current_index).cloned() {
+            if let Some(previous_line) = file_lines.get_mut(current_index.saturating_sub(1)) {
+                let new_cursor_x = visual_line_length(previous_line, DEFAULT_TAB_STOP);
+                previous_line.push_str(&current_line);
+                file_lines.remove(current_index);
+                *cursor_y = cursor_y.saturating_sub(1);
+                *cursor_x = new_cursor_x;
+            }
+        }
+        return;
+    }
+
+    // Delete character to the left within the line.
+    if let Some(line) = file_lines.get_mut(*cursor_y as usize) {
+        let new_cursor_x = previous_render_column(line, *cursor_x, DEFAULT_TAB_STOP);
+        let delete_idx = render_column_to_char_index(line, new_cursor_x, DEFAULT_TAB_STOP);
+        if delete_idx < line.len() {
+            line.remove(delete_idx);
+            *cursor_x = new_cursor_x;
+        }
+    }
+}
+
 fn editor_save(file_lines: &Vec<String>, file_path: &mut Option<String>) -> io::Result<String> {
     let path = file_path
         .get_or_insert_with(|| String::from("untitled.txt"))
@@ -633,6 +668,9 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                         &mut needs_refresh,
                                         String::from(DEFAULT_STATUS),
                                     );
+                                }
+                                KeyCode::Backspace => {
+                                    delete_backspace(&mut file_lines, &mut cursor_x, &mut cursor_y);
                                 }
                                 KeyCode::Char(ch) => {
                                     insert_char_at_cursor(
