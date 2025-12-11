@@ -447,6 +447,8 @@ fn editor_move_cursor(
     cursor_x: &mut u16,
     cursor_y: &mut u16,
     file_lines: &Vec<String>,
+    usable_rows: u16,
+    rows_offset: &mut u16,
 ) -> io::Result<()> {
     let file_lines_len = file_lines.len().min(u16::MAX as usize) as u16;
 
@@ -478,10 +480,27 @@ fn editor_move_cursor(
             *cursor_y = cursor_y.saturating_add(1);
         }
         KeyCode::PageUp => {
-            *cursor_y = 0;
+            if usable_rows == 0 {
+                *cursor_y = 0;
+                *rows_offset = 0;
+            } else {
+                let new_cursor_y = cursor_y.saturating_sub(usable_rows);
+                let lower_third = usable_rows.saturating_mul(2).saturating_div(3);
+                let new_offset = new_cursor_y.saturating_sub(lower_third);
+                *cursor_y = new_cursor_y;
+                *rows_offset = new_offset;
+            }
         }
         KeyCode::PageDown => {
-            *cursor_y = file_lines_len;
+            if usable_rows == 0 {
+                *cursor_y = file_lines_len;
+            } else {
+                let new_cursor_y = cursor_y.saturating_add(usable_rows).min(file_lines_len);
+                let upper_third = usable_rows.saturating_div(3);
+                let new_offset = new_cursor_y.saturating_sub(upper_third);
+                *cursor_y = new_cursor_y;
+                *rows_offset = new_offset;
+            }
         }
         _ => {}
     }
@@ -593,11 +612,15 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                     }
                                 }
                                 key_code => {
+                                    let usable_rows = terminal_size.1.saturating_sub(1);
+                                    let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
                                     editor_move_cursor(
                                         key_code,
                                         &mut cursor_x,
                                         &mut cursor_y,
                                         &*file_lines,
+                                        usable_rows,
+                                        &mut *rows_offset,
                                     )?;
                                 }
                             },
