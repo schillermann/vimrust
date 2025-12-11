@@ -512,6 +512,13 @@ fn editor_open(file_lines: &mut Vec<String>, file_path: String) -> io::Result<()
     Ok(())
 }
 
+fn update_status(current: &mut String, needs_refresh: &mut bool, message: String) {
+    if *current != message {
+        *current = message;
+        *needs_refresh = true;
+    }
+}
+
 fn run(mut file_path: Option<String>) -> io::Result<()> {
     let mut out = stdout();
     execute!(out, EnterAlternateScreen)?;
@@ -529,65 +536,96 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
         let mut cursor_y = CURSOR_Y.lock().unwrap();
         let mut mode = EditorMode::Normal;
         let mut status_message = String::from(DEFAULT_STATUS);
+        let mut needs_refresh = true;
         set_cursor_style(&mut out, &mode)?;
 
         loop {
-            terminal_refresh(
-                &mut out,
-                terminal_size,
-                *cursor_x,
-                *cursor_y,
-                &*file_lines,
-                &mode,
-                &status_message,
-            )?;
+            if needs_refresh {
+                terminal_refresh(
+                    &mut out,
+                    terminal_size,
+                    *cursor_x,
+                    *cursor_y,
+                    &*file_lines,
+                    &mode,
+                    &status_message,
+                )?;
+                needs_refresh = false;
+            }
+
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
-                    Event::Key(key_event) => match mode {
-                        EditorMode::Normal => match key_event.code {
-                            KeyCode::Char('q') => break,
-                            KeyCode::Char('e') => {
-                                mode = EditorMode::Edit;
-                                set_cursor_style(&mut out, &mode)?;
-                                status_message = String::from(DEFAULT_STATUS);
-                            }
-                            KeyCode::Esc => {
-                                mode = EditorMode::Normal;
-                                set_cursor_style(&mut out, &mode)?;
-                                status_message = String::from(DEFAULT_STATUS);
-                            }
-                            KeyCode::Char('s') => match editor_save(&*file_lines, &mut file_path) {
-                                Ok(msg) => status_message = msg,
-                                Err(err) => status_message = format!("Error saving: {}", err),
+                    Event::Key(key_event) => {
+                        needs_refresh = true;
+                        match mode {
+                            EditorMode::Normal => match key_event.code {
+                                KeyCode::Char('q') => break,
+                                KeyCode::Char('e') => {
+                                    mode = EditorMode::Edit;
+                                    set_cursor_style(&mut out, &mode)?;
+                                    update_status(
+                                        &mut status_message,
+                                        &mut needs_refresh,
+                                        String::from(DEFAULT_STATUS),
+                                    );
+                                }
+                                KeyCode::Esc => {
+                                    mode = EditorMode::Normal;
+                                    set_cursor_style(&mut out, &mode)?;
+                                    update_status(
+                                        &mut status_message,
+                                        &mut needs_refresh,
+                                        String::from(DEFAULT_STATUS),
+                                    );
+                                }
+                                KeyCode::Char('s') => {
+                                    match editor_save(&*file_lines, &mut file_path) {
+                                        Ok(msg) => update_status(
+                                            &mut status_message,
+                                            &mut needs_refresh,
+                                            msg,
+                                        ),
+                                        Err(err) => update_status(
+                                            &mut status_message,
+                                            &mut needs_refresh,
+                                            format!("Error saving: {}", err),
+                                        ),
+                                    }
+                                }
+                                key_code => {
+                                    editor_move_cursor(
+                                        key_code,
+                                        &mut cursor_x,
+                                        &mut cursor_y,
+                                        &*file_lines,
+                                    )?;
+                                }
                             },
-                            key_code => {
-                                editor_move_cursor(
-                                    key_code,
-                                    &mut cursor_x,
-                                    &mut cursor_y,
-                                    &*file_lines,
-                                )?;
-                            }
-                        },
-                        EditorMode::Edit => match key_event.code {
-                            KeyCode::Esc => {
-                                mode = EditorMode::Normal;
-                                set_cursor_style(&mut out, &mode)?;
-                                status_message = String::from(DEFAULT_STATUS);
-                            }
-                            KeyCode::Char(ch) => {
-                                insert_char_at_cursor(
-                                    &mut file_lines,
-                                    &mut cursor_x,
-                                    *cursor_y,
-                                    ch,
-                                );
-                            }
-                            _ => {}
-                        },
-                    },
+                            EditorMode::Edit => match key_event.code {
+                                KeyCode::Esc => {
+                                    mode = EditorMode::Normal;
+                                    set_cursor_style(&mut out, &mode)?;
+                                    update_status(
+                                        &mut status_message,
+                                        &mut needs_refresh,
+                                        String::from(DEFAULT_STATUS),
+                                    );
+                                }
+                                KeyCode::Char(ch) => {
+                                    insert_char_at_cursor(
+                                        &mut file_lines,
+                                        &mut cursor_x,
+                                        *cursor_y,
+                                        ch,
+                                    );
+                                }
+                                _ => {}
+                            },
+                        }
+                    }
                     Event::Resize(columns, rows) => {
                         terminal_size = (columns, rows);
+                        needs_refresh = true;
                     }
                     _ => {}
                 }
