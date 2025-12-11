@@ -482,6 +482,29 @@ fn delete_backspace(file_lines: &mut Vec<String>, cursor_x: &mut u16, cursor_y: 
     }
 }
 
+fn delete_under_cursor(file_lines: &mut Vec<String>, cursor_x: &mut u16, cursor_y: &mut u16) {
+    if let Some(line) = file_lines.get_mut(*cursor_y as usize) {
+        let delete_idx = render_column_to_char_index(line, *cursor_x, DEFAULT_TAB_STOP);
+        if delete_idx < line.len() {
+            line.remove(delete_idx);
+            return;
+        }
+    } else {
+        return;
+    }
+
+    // At end of line: merge with next line if it exists.
+    let current_index = *cursor_y as usize;
+    if current_index + 1 < file_lines.len() {
+        if let Some(next_line) = file_lines.get(current_index + 1).cloned() {
+            if let Some(current_line) = file_lines.get_mut(current_index) {
+                current_line.push_str(&next_line);
+            }
+            file_lines.remove(current_index + 1);
+        }
+    }
+}
+
 fn editor_save(file_lines: &Vec<String>, file_path: &mut Option<String>) -> io::Result<String> {
     let path = file_path
         .get_or_insert_with(|| String::from("untitled.txt"))
@@ -695,6 +718,13 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                         &mut status_message,
                                         &mut needs_refresh,
                                         String::from(DEFAULT_STATUS),
+                                    );
+                                }
+                                KeyCode::Delete => {
+                                    delete_under_cursor(
+                                        &mut file_lines,
+                                        &mut cursor_x,
+                                        &mut cursor_y,
                                     );
                                 }
                                 KeyCode::Backspace => {
