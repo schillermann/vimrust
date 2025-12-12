@@ -40,6 +40,42 @@ static VERSION: &str = "0.1.0";
 const DEFAULT_TAB_STOP: u16 = 4;
 const DEFAULT_STATUS: &str = "| e: edit | Esc: normal | s: save | q: quit";
 
+struct CommandEntry {
+    name: &'static str,
+    description: &'static str,
+}
+
+static COMMANDS: &[CommandEntry] = &[
+    CommandEntry {
+        name: "s",
+        description: "Save the current buffer",
+    },
+    CommandEntry {
+        name: "save",
+        description: "Save the current buffer",
+    },
+    CommandEntry {
+        name: "q",
+        description: "Quit the editor",
+    },
+    CommandEntry {
+        name: "quit",
+        description: "Quit the editor",
+    },
+    CommandEntry {
+        name: "sq",
+        description: "Save and quit",
+    },
+    CommandEntry {
+        name: "o filename",
+        description: "Open a file",
+    },
+    CommandEntry {
+        name: "open filename",
+        description: "Open a file",
+    },
+];
+
 fn char_render_width(character: char, tab_stop: u16, column: u16) -> u16 {
     let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
 
