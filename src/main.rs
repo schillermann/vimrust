@@ -9,7 +9,7 @@ use crossterm::{
     cursor::{Hide, MoveTo, SetCursorStyle, Show},
     event::{self, Event, KeyCode},
     execute, queue,
-    style::Print,
+    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
     terminal::{
         Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
         enable_raw_mode, size,
@@ -39,6 +39,7 @@ static EDITOR_COLUMNS_OFFSET: Mutex<u16> = Mutex::new(0);
 static VERSION: &str = "0.1.0";
 const DEFAULT_TAB_STOP: u16 = 4;
 const DEFAULT_STATUS: &str = "| e: edit | Esc: normal | s: save | q: quit";
+const DEFAULT_COMMAND_PLACEHOLDER: &str = "Press : for commands";
 
 struct CommandEntry {
     name: &'static str,
@@ -113,6 +114,44 @@ fn main() -> io::Result<()> {
     result
 }
 
+fn draw_command_line(
+    buffer: &mut Vec<u8>,
+    number_of_columns: u16,
+    command_line: &str,
+) -> io::Result<()> {
+    queue!(buffer, MoveTo(0, 0), Clear(ClearType::CurrentLine))?;
+    let is_placeholder = command_line.is_empty();
+    let display_content = if is_placeholder {
+        DEFAULT_COMMAND_PLACEHOLDER
+    } else {
+        command_line
+    };
+
+    let mut visible: String = display_content
+        .chars()
+        .take(number_of_columns as usize)
+        .collect();
+    if visible.len() < number_of_columns as usize {
+        visible.push_str(&" ".repeat(number_of_columns as usize - visible.len()));
+    }
+    queue!(
+        buffer,
+        SetBackgroundColor(Color::Rgb {
+            r: 27,
+            g: 27,
+            b: 27
+        }),
+        SetForegroundColor(if is_placeholder {
+            Color::DarkGrey
+        } else {
+            Color::Grey
+        }),
+        Print(visible),
+        ResetColor
+    )?;
+    Ok(())
+}
+
 fn editor_draw_rows(
     buffer: &mut Vec<u8>,
     number_of_columns: u16,
@@ -120,13 +159,15 @@ fn editor_draw_rows(
     columns_offset: u16,
     rows_offset: u16,
     file_lines: &Vec<String>,
+    start_row: u16,
 ) -> io::Result<()> {
-    for row_number in 1..=number_of_rows {
+    for row_number in 0..number_of_rows {
+        let screen_row = start_row.saturating_add(row_number);
         let file_line_number = row_number.saturating_add(rows_offset) as usize;
 
-        queue!(buffer, Clear(ClearType::CurrentLine))?;
+        queue!(buffer, MoveTo(0, screen_row), Clear(ClearType::CurrentLine))?;
 
-        if file_line_number > file_lines.len() {
+        if file_line_number >= file_lines.len() {
             queue!(buffer, Print("~"))?;
             if file_lines.is_empty() && row_number == number_of_rows / 3 {
                 let mut welcome = format!("VimRust -- version {}", VERSION);
@@ -136,22 +177,16 @@ fn editor_draw_rows(
                 let padding = number_of_columns
                     .saturating_sub(welcome.len() as u16)
                     .saturating_div(2);
-                queue!(buffer, MoveTo(padding as u16, row_number), Print(welcome))?;
+                queue!(buffer, MoveTo(padding as u16, screen_row), Print(welcome))?;
             }
-        } else {
-            if let Some(file_line) = file_lines.get(file_line_number.saturating_sub(1)) {
-                let displayable_line = displayable_line(file_line, DEFAULT_TAB_STOP);
-                let visible_slice: String = displayable_line
-                    .chars()
-                    .skip(columns_offset as usize)
-                    .take(number_of_columns as usize)
-                    .collect();
-                queue!(buffer, Print(visible_slice))?;
-            }
-        }
-
-        if row_number < number_of_rows {
-            queue!(buffer, Print("\r\n"))?;
+        } else if let Some(file_line) = file_lines.get(file_line_number) {
+            let displayable_line = displayable_line(file_line, DEFAULT_TAB_STOP);
+            let visible_slice: String = displayable_line
+                .chars()
+                .skip(columns_offset as usize)
+                .take(number_of_columns as usize)
+                .collect();
+            queue!(buffer, Print(visible_slice))?;
         }
     }
 
@@ -212,32 +247,39 @@ fn terminal_refresh(
     file_lines: &Vec<String>,
     mode: &EditorMode,
     status_message: &str,
+    command_line: &str,
 ) -> io::Result<()> {
     let (number_of_columns, number_of_rows) = terminal_size;
-    let usable_rows = number_of_rows.saturating_sub(1);
+    let usable_rows = number_of_rows.saturating_sub(2);
     let mut columns_offset = EDITOR_COLUMNS_OFFSET.lock().unwrap();
     let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
     let mut buffer = BUFFER.lock().unwrap();
 
     buffer.clear();
-    editor_scroll(
-        cursor_x,
-        cursor_y,
-        number_of_columns,
-        usable_rows,
-        &mut columns_offset,
-        &mut rows_offset,
-    );
 
     queue!(&mut *buffer, Hide, MoveTo(0, 0))?;
-    editor_draw_rows(
-        &mut buffer,
-        number_of_columns,
-        usable_rows,
-        *columns_offset,
-        *rows_offset,
-        file_lines,
-    )?;
+    draw_command_line(&mut buffer, number_of_columns, command_line)?;
+
+    if usable_rows > 0 {
+        editor_scroll(
+            cursor_x,
+            cursor_y,
+            number_of_columns,
+            usable_rows,
+            &mut columns_offset,
+            &mut rows_offset,
+        );
+        editor_draw_rows(
+            &mut buffer,
+            number_of_columns,
+            usable_rows,
+            *columns_offset,
+            *rows_offset,
+            file_lines,
+            1,
+        )?;
+    }
+
     queue!(
         &mut *buffer,
         MoveTo(0, number_of_rows.saturating_sub(1)),
@@ -253,12 +295,12 @@ fn terminal_refresh(
             )
         ))
     )?;
+    let editor_row = cursor_y.saturating_sub(*rows_offset).saturating_add(1);
+    let max_row = number_of_rows.saturating_sub(1).max(1);
+    let cursor_row = editor_row.max(1).min(max_row);
     queue!(
         &mut *buffer,
-        MoveTo(
-            cursor_x.saturating_sub(*columns_offset),
-            cursor_y.saturating_sub(*rows_offset)
-        ),
+        MoveTo(cursor_x.saturating_sub(*columns_offset), cursor_row),
         Show
     )?;
 
@@ -671,6 +713,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
         let mut cursor_y = CURSOR_Y.lock().unwrap();
         let mut mode = EditorMode::Normal;
         let mut status_message = String::from(DEFAULT_STATUS);
+        let mut command_line = String::new();
         let mut needs_refresh = true;
         set_cursor_style(&mut out, &mode)?;
 
@@ -684,6 +727,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                     &*file_lines,
                     &mode,
                     &status_message,
+                    &command_line,
                 )?;
                 needs_refresh = false;
             }
