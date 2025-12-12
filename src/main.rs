@@ -1,31 +1,29 @@
 use std::{
     env, fs,
-    io::{self, Write, stdout},
+    io,
     sync::Mutex,
     time::Duration,
 };
 
 use crossterm::{
-    cursor::{Hide, MoveTo, SetCursorStyle, Show},
+    cursor::MoveTo,
     event::{self, Event, KeyCode},
-    execute, queue,
-    style::{
-        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
-    },
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode, size,
-    },
+    queue,
+    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
+    terminal::{Clear, ClearType},
 };
 
-enum EditorMode {
+mod terminal;
+use terminal::Terminal;
+
+pub(crate) enum EditorMode {
     Normal,
     Edit,
     Command,
 }
 
 impl EditorMode {
-    fn label(&self) -> &'static str {
+    pub(crate) fn label(&self) -> &'static str {
         match self {
             EditorMode::Normal => "NORMAL",
             EditorMode::Edit => "EDIT",
@@ -34,16 +32,15 @@ impl EditorMode {
     }
 }
 
-static BUFFER: Mutex<Vec<u8>> = Mutex::new(Vec::new());
-static CURSOR_X: Mutex<u16> = Mutex::new(0);
-static CURSOR_Y: Mutex<u16> = Mutex::new(0);
-static FILE_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
-static EDITOR_ROWS_OFFSET: Mutex<u16> = Mutex::new(0);
-static EDITOR_COLUMNS_OFFSET: Mutex<u16> = Mutex::new(0);
+pub(crate) static CURSOR_X: Mutex<u16> = Mutex::new(0);
+pub(crate) static CURSOR_Y: Mutex<u16> = Mutex::new(0);
+pub(crate) static FILE_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+pub(crate) static EDITOR_ROWS_OFFSET: Mutex<u16> = Mutex::new(0);
+pub(crate) static EDITOR_COLUMNS_OFFSET: Mutex<u16> = Mutex::new(0);
 static VERSION: &str = "0.1.0";
 const DEFAULT_TAB_STOP: u16 = 4;
 const DEFAULT_STATUS: &str = "| e: edit | Esc: normal | s: save | q: quit";
-const DEFAULT_COMMAND_PLACEHOLDER: &str = "Press : for commands";
+pub(crate) const DEFAULT_COMMAND_PLACEHOLDER: &str = "Press : for commands";
 
 struct CommandEntry {
     name: &'static str,
@@ -112,57 +109,13 @@ fn render_segments(line: &str, tab_stop: u16) -> Vec<(u16, u16, char)> {
 
 fn main() -> io::Result<()> {
     let file_path = env::args().nth(1);
-    enable_raw_mode()?;
-    let result = run(file_path);
-    disable_raw_mode()?;
+    let mut terminal = Terminal::new()?;
+    let result = run(&mut terminal, file_path);
+    terminal.cleanup();
     result
 }
 
-fn draw_command_line(
-    buffer: &mut Vec<u8>,
-    number_of_columns: u16,
-    command_line: &str,
-) -> io::Result<()> {
-    queue!(buffer, MoveTo(0, 0), Clear(ClearType::CurrentLine))?;
-    let is_placeholder = command_line.is_empty();
-    let display_content = if is_placeholder {
-        DEFAULT_COMMAND_PLACEHOLDER
-    } else {
-        command_line
-    };
-
-    // Leave one column of padding on both sides of the command line.
-    let inner_width = number_of_columns.saturating_sub(2) as usize;
-    let mut visible: String = display_content.chars().take(inner_width).collect();
-    if visible.len() < inner_width {
-        visible.push_str(&" ".repeat(inner_width - visible.len()));
-    }
-    let mut visible = format!(" {} ", visible);
-    let target_width = number_of_columns as usize;
-    if visible.len() < target_width {
-        visible.push_str(&" ".repeat(target_width - visible.len()));
-    } else if visible.len() > target_width {
-        visible.truncate(target_width);
-    }
-    queue!(
-        buffer,
-        SetBackgroundColor(Color::Rgb {
-            r: 27,
-            g: 27,
-            b: 27
-        }),
-        SetForegroundColor(if is_placeholder {
-            Color::DarkGrey
-        } else {
-            Color::Grey
-        }),
-        Print(visible),
-        ResetColor
-    )?;
-    Ok(())
-}
-
-fn editor_draw_rows(
+pub(crate) fn editor_draw_rows(
     buffer: &mut Vec<u8>,
     number_of_columns: u16,
     number_of_rows: u16,
@@ -301,7 +254,7 @@ fn filter_commands(query: &str) -> Vec<&'static CommandEntry> {
         .collect()
 }
 
-fn draw_command_list(
+pub(crate) fn draw_command_list(
     buffer: &mut Vec<u8>,
     number_of_columns: u16,
     start_row: u16,
@@ -498,122 +451,6 @@ fn displayable_line(line: &str, tab_stop: u16) -> String {
     }
 
     expanded
-}
-
-fn terminal_refresh(
-    out: &mut io::Stdout,
-    terminal_size: (u16, u16),
-    cursor_x: u16,
-    cursor_y: u16,
-    file_lines: &Vec<String>,
-    mode: &EditorMode,
-    file_path: &Option<String>,
-    command_line: &str,
-    command_cursor_x: u16,
-    command_selected_index: usize,
-    command_scroll_offset: usize,
-    command_focus_on_list: bool,
-) -> io::Result<()> {
-    let (number_of_columns, number_of_rows) = terminal_size;
-    if number_of_rows == 0 {
-        return Ok(());
-    }
-
-    let usable_rows = number_of_rows.saturating_sub(2);
-    let mut columns_offset = EDITOR_COLUMNS_OFFSET.lock().unwrap();
-    let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
-    let mut buffer = BUFFER.lock().unwrap();
-
-    buffer.clear();
-    queue!(&mut *buffer, Hide)?;
-
-    draw_command_line(&mut buffer, number_of_columns, command_line)?;
-
-    if usable_rows > 0 {
-        if matches!(mode, EditorMode::Command) {
-            draw_command_list(
-                &mut buffer,
-                number_of_columns,
-                1,
-                usable_rows,
-                command_line,
-                command_selected_index,
-                command_scroll_offset,
-            )?;
-        } else {
-            editor_scroll(
-                cursor_x,
-                cursor_y,
-                number_of_columns,
-                usable_rows,
-                &mut columns_offset,
-                &mut rows_offset,
-            );
-
-            editor_draw_rows(
-                &mut buffer,
-                number_of_columns,
-                usable_rows,
-                *columns_offset,
-                *rows_offset,
-                file_lines,
-                1,
-            )?;
-        }
-    }
-    // If the terminal is too small, the command line must not be overwritten by the status line.
-    if number_of_rows > 1 {
-        let filename = file_path.as_deref().unwrap_or("[No Filename]");
-        // Leave one column of padding on both sides of the status line.
-        let inner_width = number_of_columns.saturating_sub(2);
-        let mut status = format!("{} > {}", mode.label(), filename);
-        if status.len() < inner_width as usize {
-            status.push_str(&" ".repeat(inner_width as usize - status.len()));
-        } else {
-            status.truncate(inner_width as usize);
-        }
-        let status = format!(" {} ", status);
-        queue!(
-            &mut *buffer,
-            MoveTo(0, number_of_rows.saturating_sub(1)),
-            Clear(ClearType::CurrentLine),
-            SetBackgroundColor(Color::Grey),
-            SetForegroundColor(Color::Black),
-            Print(status),
-            ResetColor
-        )?;
-    }
-    let (cursor_col, cursor_row) = match mode {
-        EditorMode::Command if command_focus_on_list => {
-            let relative_row = command_selected_index.saturating_sub(command_scroll_offset) as u16;
-            let list_row = 1u16
-                .saturating_add(1)
-                .saturating_add(2)
-                .saturating_add(relative_row)
-                .min(number_of_rows.saturating_sub(1));
-            (0, list_row)
-        }
-        EditorMode::Command => (
-            command_cursor_x
-                .saturating_add(1) // left padding on command line
-                .min(number_of_columns.saturating_sub(1)),
-            0,
-        ),
-        _ => (
-            cursor_x
-                .saturating_sub(*columns_offset)
-                .min(number_of_columns.saturating_sub(1)),
-            cursor_y
-                .saturating_sub(*rows_offset)
-                .saturating_add(1)
-                .min(number_of_rows.saturating_sub(1)),
-        ),
-    };
-    queue!(&mut *buffer, MoveTo(cursor_col, cursor_row), Show)?;
-
-    out.write_all(&buffer)?;
-    out.flush()?;
-    Ok(())
 }
 
 fn editor_scroll(
@@ -899,15 +736,6 @@ fn editor_save(file_lines: &Vec<String>, file_path: &mut Option<String>) -> io::
     Ok(format!("Wrote {}", path))
 }
 
-fn set_cursor_style(out: &mut io::Stdout, mode: &EditorMode) -> io::Result<()> {
-    let style = match mode {
-        EditorMode::Normal => SetCursorStyle::DefaultUserShape,
-        EditorMode::Edit => SetCursorStyle::SteadyBar,
-        EditorMode::Command => SetCursorStyle::SteadyBar,
-    };
-    execute!(out, style)
-}
-
 fn editor_move_cursor(
     key_code: KeyCode,
     cursor_x: &mut u16,
@@ -1004,9 +832,7 @@ fn update_status(current: &mut String, needs_refresh: &mut bool, message: String
     }
 }
 
-fn run(mut file_path: Option<String>) -> io::Result<()> {
-    let mut out = stdout();
-    execute!(out, EnterAlternateScreen)?;
+fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()> {
     let result: io::Result<()> = {
         let mut file_lines = FILE_LINES.lock().unwrap();
         if let Some(path) = file_path.clone() {
@@ -1016,7 +842,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
             file_lines.push(String::new());
         }
 
-        let mut terminal_size = size()?;
+        let mut terminal_size = terminal.size;
         let mut cursor_x = CURSOR_X.lock().unwrap();
         let mut cursor_y = CURSOR_Y.lock().unwrap();
         let mut mode = EditorMode::Normal;
@@ -1027,13 +853,13 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
         let mut command_selected_index: usize = 0;
         let mut command_scroll_offset: usize = 0;
         let mut command_focus_on_list: bool = false;
-        set_cursor_style(&mut out, &mode)?;
+        terminal.set_cursor_style(&mode)?;
 
         loop {
             if needs_refresh {
-                terminal_refresh(
-                    &mut out,
-                    terminal_size,
+                let mut columns_offset = EDITOR_COLUMNS_OFFSET.lock().unwrap();
+                let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
+                terminal.render_frame(
                     *cursor_x,
                     *cursor_y,
                     &*file_lines,
@@ -1044,6 +870,8 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                     command_selected_index,
                     command_scroll_offset,
                     command_focus_on_list,
+                    &mut *columns_offset,
+                    &mut *rows_offset,
                 )?;
                 needs_refresh = false;
             }
@@ -1057,7 +885,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                 KeyCode::Char('q') => break,
                                 KeyCode::Char('e') => {
                                     mode = EditorMode::Edit;
-                                    set_cursor_style(&mut out, &mode)?;
+                                    terminal.set_cursor_style(&mode)?;
                                     snap_cursor_to_tab_start(
                                         &*file_lines,
                                         &mut cursor_x,
@@ -1072,7 +900,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                 }
                                 KeyCode::Esc => {
                                     mode = EditorMode::Normal;
-                                    set_cursor_style(&mut out, &mode)?;
+                                    terminal.set_cursor_style(&mode)?;
                                     update_status(
                                         &mut status_message,
                                         &mut needs_refresh,
@@ -1101,7 +929,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                     command_selected_index = 0;
                                     command_scroll_offset = 0;
                                     command_focus_on_list = false;
-                                    set_cursor_style(&mut out, &mode)?;
+                                    terminal.set_cursor_style(&mode)?;
                                 }
                                 key_code => {
                                     let usable_rows = terminal_size.1.saturating_sub(2);
@@ -1119,7 +947,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                             EditorMode::Edit => match key_event.code {
                                 KeyCode::Esc => {
                                     mode = EditorMode::Normal;
-                                    set_cursor_style(&mut out, &mode)?;
+                                    terminal.set_cursor_style(&mode)?;
                                     update_status(
                                         &mut status_message,
                                         &mut needs_refresh,
@@ -1149,7 +977,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                             EditorMode::Command => match key_event.code {
                                 KeyCode::Esc => {
                                     mode = EditorMode::Normal;
-                                    set_cursor_style(&mut out, &mode)?;
+                                    terminal.set_cursor_style(&mode)?;
                                     command_line.clear();
                                     command_cursor_x = 0;
                                     command_selected_index = 0;
@@ -1268,8 +1096,9 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                             },
                         }
                     }
-                    Event::Resize(columns, rows) => {
-                        terminal_size = (columns, rows);
+                    Event::Resize(_, _) => {
+                        terminal.update_size()?;
+                        terminal_size = terminal.size;
                         needs_refresh = true;
                     }
                     _ => {}
@@ -1281,11 +1110,5 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
         Ok(())
     };
 
-    let _ = execute!(
-        out,
-        Clear(ClearType::All),
-        MoveTo(0, 0),
-        LeaveAlternateScreen
-    );
     result
 }
