@@ -19,6 +19,7 @@ use crossterm::{
 enum EditorMode {
     Normal,
     Edit,
+    Command,
 }
 
 impl EditorMode {
@@ -26,6 +27,7 @@ impl EditorMode {
         match self {
             EditorMode::Normal => "NORMAL",
             EditorMode::Edit => "EDIT",
+            EditorMode::Command => "COMMAND",
         }
     }
 }
@@ -248,16 +250,24 @@ fn terminal_refresh(
     mode: &EditorMode,
     status_message: &str,
     command_line: &str,
+    command_cursor_x: u16,
+    command_selected_index: usize,
+    command_scroll_offset: usize,
+    command_focus_on_list: bool,
 ) -> io::Result<()> {
     let (number_of_columns, number_of_rows) = terminal_size;
+    if number_of_rows == 0 {
+        return Ok(());
+    }
+
     let usable_rows = number_of_rows.saturating_sub(2);
     let mut columns_offset = EDITOR_COLUMNS_OFFSET.lock().unwrap();
     let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
     let mut buffer = BUFFER.lock().unwrap();
 
     buffer.clear();
+    queue!(&mut *buffer, Hide)?;
 
-    queue!(&mut *buffer, Hide, MoveTo(0, 0))?;
     draw_command_line(&mut buffer, number_of_columns, command_line)?;
 
     if usable_rows > 0 {
@@ -269,6 +279,7 @@ fn terminal_refresh(
             &mut columns_offset,
             &mut rows_offset,
         );
+
         editor_draw_rows(
             &mut buffer,
             number_of_columns,
@@ -279,12 +290,9 @@ fn terminal_refresh(
             1,
         )?;
     }
-
-    queue!(
-        &mut *buffer,
-        MoveTo(0, number_of_rows.saturating_sub(1)),
-        Clear(ClearType::CurrentLine),
-        Print(format!(
+    // If the terminal is too small, the command line must not be overwritten by the status line.
+    if number_of_rows > 1 {
+        let mut status = format!(
             "-- {} -- {}",
             mode.label(),
             fit_status(
@@ -293,16 +301,44 @@ fn terminal_refresh(
                     .saturating_sub(mode.label().len() as u16)
                     .saturating_sub(6)
             )
-        ))
-    )?;
-    let editor_row = cursor_y.saturating_sub(*rows_offset).saturating_add(1);
-    let max_row = number_of_rows.saturating_sub(1).max(1);
-    let cursor_row = editor_row.max(1).min(max_row);
-    queue!(
-        &mut *buffer,
-        MoveTo(cursor_x.saturating_sub(*columns_offset), cursor_row),
-        Show
-    )?;
+        );
+        if status.len() < number_of_columns as usize {
+            status.push_str(&" ".repeat(number_of_columns as usize - status.len()));
+        } else {
+            status.truncate(number_of_columns as usize);
+        }
+        queue!(
+            &mut *buffer,
+            MoveTo(0, number_of_rows.saturating_sub(1)),
+            Clear(ClearType::CurrentLine),
+            SetBackgroundColor(Color::Grey),
+            SetForegroundColor(Color::Black),
+            Print(status),
+            ResetColor
+        )?;
+    }
+    let (cursor_col, cursor_row) = match mode {
+        EditorMode::Command if command_focus_on_list => {
+            let relative_row = command_selected_index.saturating_sub(command_scroll_offset) as u16;
+            let list_row = 1u16
+                .saturating_add(1)
+                .saturating_add(2)
+                .saturating_add(relative_row)
+                .min(number_of_rows.saturating_sub(1));
+            (0, list_row)
+        }
+        EditorMode::Command => (command_cursor_x.min(number_of_columns.saturating_sub(1)), 0),
+        _ => (
+            cursor_x
+                .saturating_sub(*columns_offset)
+                .min(number_of_columns.saturating_sub(1)),
+            cursor_y
+                .saturating_sub(*rows_offset)
+                .saturating_add(1)
+                .min(number_of_rows.saturating_sub(1)),
+        ),
+    };
+    queue!(&mut *buffer, MoveTo(cursor_col, cursor_row), Show)?;
 
     out.write_all(&buffer)?;
     out.flush()?;
@@ -596,6 +632,7 @@ fn set_cursor_style(out: &mut io::Stdout, mode: &EditorMode) -> io::Result<()> {
     let style = match mode {
         EditorMode::Normal => SetCursorStyle::DefaultUserShape,
         EditorMode::Edit => SetCursorStyle::SteadyBar,
+        EditorMode::Command => SetCursorStyle::SteadyBar,
     };
     execute!(out, style)
 }
@@ -713,8 +750,12 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
         let mut cursor_y = CURSOR_Y.lock().unwrap();
         let mut mode = EditorMode::Normal;
         let mut status_message = String::from(DEFAULT_STATUS);
-        let mut command_line = String::new();
         let mut needs_refresh = true;
+        let mut command_line = String::new();
+        let mut command_cursor_x: u16 = 0;
+        let mut command_selected_index: usize = 0;
+        let mut command_scroll_offset: usize = 0;
+        let mut command_focus_on_list: bool = false;
         set_cursor_style(&mut out, &mode)?;
 
         loop {
@@ -728,6 +769,10 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                     &mode,
                     &status_message,
                     &command_line,
+                    command_cursor_x,
+                    command_selected_index,
+                    command_scroll_offset,
+                    command_focus_on_list,
                 )?;
                 needs_refresh = false;
             }
@@ -777,8 +822,18 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                         ),
                                     }
                                 }
+                                KeyCode::Char(':') => {
+                                    mode = EditorMode::Command;
+                                    command_line.clear();
+                                    command_line.push(':');
+                                    command_cursor_x = 1;
+                                    command_selected_index = 0;
+                                    command_scroll_offset = 0;
+                                    command_focus_on_list = false;
+                                    set_cursor_style(&mut out, &mode)?;
+                                }
                                 key_code => {
-                                    let usable_rows = terminal_size.1.saturating_sub(1);
+                                    let usable_rows = terminal_size.1.saturating_sub(2);
                                     let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
                                     editor_move_cursor(
                                         key_code,
@@ -817,6 +872,77 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                                         *cursor_y,
                                         ch,
                                     );
+                                }
+                                _ => {}
+                            },
+                            EditorMode::Command => match key_event.code {
+                                KeyCode::Esc => {
+                                    mode = EditorMode::Normal;
+                                    set_cursor_style(&mut out, &mode)?;
+                                    command_line.clear();
+                                    command_cursor_x = 0;
+                                    command_selected_index = 0;
+                                    command_scroll_offset = 0;
+                                    command_focus_on_list = false;
+                                    update_status(
+                                        &mut status_message,
+                                        &mut needs_refresh,
+                                        String::from(DEFAULT_STATUS),
+                                    );
+                                }
+                                KeyCode::Backspace => {
+                                    if command_cursor_x > 0 {
+                                        let delete_at = command_cursor_x.saturating_sub(1) as usize;
+                                        if delete_at < command_line.len() {
+                                            command_line.remove(delete_at);
+                                            command_cursor_x = command_cursor_x.saturating_sub(1);
+                                            command_selected_index = 0;
+                                            command_scroll_offset = 0;
+                                            command_focus_on_list = false;
+                                        }
+                                    }
+                                }
+                                KeyCode::Delete => {
+                                    let delete_at = command_cursor_x as usize;
+                                    if delete_at < command_line.len() {
+                                        command_line.remove(delete_at);
+                                        command_selected_index = 0;
+                                        command_scroll_offset = 0;
+                                        command_focus_on_list = false;
+                                    }
+                                    command_cursor_x =
+                                        command_cursor_x.min(command_line.len() as u16);
+                                }
+                                KeyCode::Left => {
+                                    if command_cursor_x > 0 {
+                                        command_cursor_x = command_cursor_x.saturating_sub(1);
+                                    }
+                                    command_focus_on_list = false;
+                                }
+                                KeyCode::Right => {
+                                    let limit = command_line.len() as u16;
+                                    if command_cursor_x < limit {
+                                        command_cursor_x = command_cursor_x.saturating_add(1);
+                                    }
+                                    command_focus_on_list = false;
+                                }
+                                KeyCode::Home => {
+                                    command_cursor_x = 0;
+                                    command_focus_on_list = false;
+                                }
+                                KeyCode::End => {
+                                    command_cursor_x = command_line.len() as u16;
+                                    command_focus_on_list = false;
+                                }
+                                KeyCode::Char(ch) => {
+                                    let insert_at = command_cursor_x as usize;
+                                    if insert_at <= command_line.len() {
+                                        command_line.insert(insert_at, ch);
+                                        command_cursor_x = command_cursor_x.saturating_add(1);
+                                        command_selected_index = 0;
+                                        command_scroll_offset = 0;
+                                        command_focus_on_list = false;
+                                    }
                                 }
                                 _ => {}
                             },
