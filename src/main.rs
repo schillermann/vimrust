@@ -131,12 +131,18 @@ fn draw_command_line(
         command_line
     };
 
-    let mut visible: String = display_content
-        .chars()
-        .take(number_of_columns as usize)
-        .collect();
-    if visible.len() < number_of_columns as usize {
-        visible.push_str(&" ".repeat(number_of_columns as usize - visible.len()));
+    // Leave one column of padding on both sides of the command line.
+    let inner_width = number_of_columns.saturating_sub(2) as usize;
+    let mut visible: String = display_content.chars().take(inner_width).collect();
+    if visible.len() < inner_width {
+        visible.push_str(&" ".repeat(inner_width - visible.len()));
+    }
+    let mut visible = format!(" {} ", visible);
+    let target_width = number_of_columns as usize;
+    if visible.len() < target_width {
+        visible.push_str(&" ".repeat(target_width - visible.len()));
+    } else if visible.len() > target_width {
+        visible.truncate(target_width);
     }
     queue!(
         buffer,
@@ -587,7 +593,12 @@ fn terminal_refresh(
                 .min(number_of_rows.saturating_sub(1));
             (0, list_row)
         }
-        EditorMode::Command => (command_cursor_x.min(number_of_columns.saturating_sub(1)), 0),
+        EditorMode::Command => (
+            command_cursor_x
+                .saturating_add(1) // left padding on command line
+                .min(number_of_columns.saturating_sub(1)),
+            0,
+        ),
         _ => (
             cursor_x
                 .saturating_sub(*columns_offset)
