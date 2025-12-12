@@ -1,16 +1,18 @@
-use std::{
-    env, fs,
-    io,
-    sync::Mutex,
-    time::Duration,
+use std::{env, fs, io, sync::Mutex, time::Duration};
+
+use crossterm::{
+    cursor::MoveTo,
+    event::{self, Event, KeyCode},
+    queue,
+    style::Print,
+    terminal::{Clear, ClearType},
 };
 
-use crossterm::event::{self, Event, KeyCode};
-
+mod command_line;
 mod command_list;
 mod terminal;
-use terminal::Terminal;
 use command_list::filter_commands;
+use terminal::Terminal;
 
 pub(crate) enum EditorMode {
     Normal,
@@ -36,7 +38,6 @@ pub(crate) static EDITOR_COLUMNS_OFFSET: Mutex<u16> = Mutex::new(0);
 static VERSION: &str = "0.1.0";
 const DEFAULT_TAB_STOP: u16 = 4;
 const DEFAULT_STATUS: &str = "| e: edit | Esc: normal | s: save | q: quit";
-pub(crate) const DEFAULT_COMMAND_PLACEHOLDER: &str = "Press : for commands";
 
 fn char_render_width(character: char, tab_stop: u16, column: u16) -> u16 {
     let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
