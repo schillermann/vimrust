@@ -494,17 +494,6 @@ fn displayable_line(line: &str, tab_stop: u16) -> String {
     expanded
 }
 
-fn fit_status(message: &str, max_width: u16) -> String {
-    if max_width == 0 {
-        return String::new();
-    }
-    let mut truncated = message.to_string();
-    if truncated.len() > max_width as usize {
-        truncated.truncate(max_width as usize);
-    }
-    truncated
-}
-
 fn terminal_refresh(
     out: &mut io::Stdout,
     terminal_size: (u16, u16),
@@ -512,7 +501,7 @@ fn terminal_refresh(
     cursor_y: u16,
     file_lines: &Vec<String>,
     mode: &EditorMode,
-    status_message: &str,
+    file_path: &Option<String>,
     command_line: &str,
     command_cursor_x: u16,
     command_selected_index: usize,
@@ -568,21 +557,16 @@ fn terminal_refresh(
     }
     // If the terminal is too small, the command line must not be overwritten by the status line.
     if number_of_rows > 1 {
-        let mut status = format!(
-            "-- {} -- {}",
-            mode.label(),
-            fit_status(
-                status_message,
-                number_of_columns
-                    .saturating_sub(mode.label().len() as u16)
-                    .saturating_sub(6)
-            )
-        );
-        if status.len() < number_of_columns as usize {
-            status.push_str(&" ".repeat(number_of_columns as usize - status.len()));
+        let filename = file_path.as_deref().unwrap_or("[No Filename]");
+        // Leave one column of padding on both sides of the status line.
+        let inner_width = number_of_columns.saturating_sub(2);
+        let mut status = format!("{} > {}", mode.label(), filename);
+        if status.len() < inner_width as usize {
+            status.push_str(&" ".repeat(inner_width as usize - status.len()));
         } else {
-            status.truncate(number_of_columns as usize);
+            status.truncate(inner_width as usize);
         }
+        let status = format!(" {} ", status);
         queue!(
             &mut *buffer,
             MoveTo(0, number_of_rows.saturating_sub(1)),
@@ -1043,7 +1027,7 @@ fn run(mut file_path: Option<String>) -> io::Result<()> {
                     *cursor_y,
                     &*file_lines,
                     &mode,
-                    &status_message,
+                    &file_path,
                     &command_line,
                     command_cursor_x,
                     command_selected_index,
