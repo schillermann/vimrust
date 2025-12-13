@@ -6,6 +6,7 @@ mod buffer;
 mod command_line;
 mod command_list;
 mod editor;
+mod status_line;
 mod terminal;
 
 use command_list::filter_commands;

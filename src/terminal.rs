@@ -4,14 +4,11 @@ use crossterm::{
     Command,
     cursor::{Hide, MoveTo, SetCursorStyle, Show},
     execute, queue,
-    style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{
-        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
-        enable_raw_mode, size,
-    },
+    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size},
 };
 
 use crate::{buffer::Buffer, command_line::CommandLine, command_list::draw_command_list, editor::Editor, EditorMode};
+use crate::status_line::StatusLine;
 
 pub struct Terminal {
     pub size: (u16, u16),
@@ -105,22 +102,7 @@ impl Terminal {
             }
 
             if number_of_rows > 1 {
-                let filename = file_path.as_deref().unwrap_or("[No Filename]");
-                // Leave one column of padding on both sides of the status line.
-                let inner_width = number_of_columns.saturating_sub(2);
-                let mut status = format!("{} > {}", mode.label(), filename);
-                if status.len() < inner_width as usize {
-                    status.push_str(&" ".repeat(inner_width as usize - status.len()));
-                } else {
-                    status.truncate(inner_width as usize);
-                }
-                let status = format!(" {} ", status);
-                self.add_command_to_queue(MoveTo(0, number_of_rows.saturating_sub(1)))?;
-                self.add_command_to_queue(Clear(ClearType::CurrentLine))?;
-                self.add_command_to_queue(SetBackgroundColor(Color::Grey))?;
-                self.add_command_to_queue(SetForegroundColor(Color::Black))?;
-                self.add_command_to_queue(Print(status))?;
-                self.add_command_to_queue(ResetColor)?;
+                StatusLine::draw(self, mode, file_path, number_of_columns, number_of_rows)?;
             }
 
             let (cursor_col, cursor_row) = match mode {
