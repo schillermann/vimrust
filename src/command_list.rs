@@ -2,10 +2,13 @@ use std::io;
 
 use crossterm::{
     cursor::MoveTo,
-    queue,
-    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
+    style::{
+        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+    },
     terminal::{Clear, ClearType},
 };
+
+use crate::terminal::Terminal;
 
 pub struct CommandEntry {
     pub name: &'static str,
@@ -96,7 +99,7 @@ fn command_query_from_input(command_line: &str) -> String {
 }
 
 fn queue_highlighted(
-    buffer: &mut Vec<u8>,
+    terminal: &mut Terminal,
     text: &str,
     match_indices: &[usize],
     default_fg: Option<Color>,
@@ -107,23 +110,24 @@ fn queue_highlighted(
     let mut next_match = match_iter.next();
 
     if let Some(color) = default_fg {
-        queue!(buffer, SetForegroundColor(color))?;
+        terminal.add_command_to_queue(SetForegroundColor(color))?;
     }
 
     for (idx, ch) in text.chars().enumerate() {
         if let Some(target) = next_match {
             if idx == target {
-                queue!(buffer, SetForegroundColor(highlight_fg), Print(ch))?;
+                terminal.add_command_to_queue(SetForegroundColor(highlight_fg))?;
+                terminal.add_command_to_queue(Print(ch))?;
                 if let Some(color) = default_fg {
-                    queue!(buffer, SetForegroundColor(color))?;
+                    terminal.add_command_to_queue(SetForegroundColor(color))?;
                 } else if !keep_background {
-                    queue!(buffer, ResetColor)?;
+                    terminal.add_command_to_queue(ResetColor)?;
                 }
                 next_match = match_iter.next();
                 continue;
             }
         }
-        queue!(buffer, Print(ch))?;
+        terminal.add_command_to_queue(Print(ch))?;
     }
 
     Ok(())
@@ -142,7 +146,7 @@ pub fn filter_commands(query: &str) -> Vec<&'static CommandEntry> {
 }
 
 pub fn draw_command_list(
-    buffer: &mut Vec<u8>,
+    terminal: &mut Terminal,
     number_of_columns: u16,
     start_row: u16,
     number_of_rows: u16,
@@ -185,32 +189,24 @@ pub fn draw_command_list(
         header.push_str(&" ".repeat(inner_width as usize - header.len()));
     }
     let header_line = format!(" {} ", header);
-    queue!(
-        buffer,
-        MoveTo(0, start_row),
-        Clear(ClearType::CurrentLine),
-        Print(format!(" {} ", " ".repeat(inner_width as usize)))
-    )?;
-    queue!(
-        buffer,
-        MoveTo(0, start_row.saturating_add(1)),
-        Clear(ClearType::CurrentLine),
-        SetAttribute(Attribute::Bold),
-        Print(header_line),
-        SetAttribute(Attribute::Reset)
-    )?;
+    terminal.add_command_to_queue(MoveTo(0, start_row))?;
+    terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
+    terminal.add_command_to_queue(Print(format!(" {} ", " ".repeat(inner_width as usize))))?;
+    terminal.add_command_to_queue(MoveTo(0, start_row.saturating_add(1)))?;
+    terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
+    terminal.add_command_to_queue(SetAttribute(Attribute::Bold))?;
+    terminal.add_command_to_queue(Print(header_line))?;
+    terminal.add_command_to_queue(SetAttribute(Attribute::Reset))?;
 
     // Divider line under header
-    queue!(
-        buffer,
-        MoveTo(0, start_row.saturating_add(2)),
-        Clear(ClearType::CurrentLine),
-        Print(format!(" {} ", "─".repeat(inner_width as usize)))
-    )?;
+    terminal.add_command_to_queue(MoveTo(0, start_row.saturating_add(2)))?;
+    terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
+    terminal.add_command_to_queue(Print(format!(" {} ", "─".repeat(inner_width as usize))))?;
 
     for row in 0..available_rows {
         let screen_row = start_row.saturating_add(row + 3);
-        queue!(buffer, MoveTo(0, screen_row), Clear(ClearType::CurrentLine))?;
+        terminal.add_command_to_queue(MoveTo(0, screen_row))?;
+        terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
 
         if let Some(entry) = matches.get(scroll_offset.saturating_add(row as usize)) {
             let is_selected = selected_index == scroll_offset.saturating_add(row as usize);
@@ -250,14 +246,11 @@ pub fn draw_command_list(
             };
 
             if is_selected {
-                queue!(
-                    buffer,
-                    Print(" "),
-                    SetBackgroundColor(Color::DarkGrey),
-                    SetForegroundColor(Color::White)
-                )?;
+                terminal.add_command_to_queue(Print(" "))?;
+                terminal.add_command_to_queue(SetBackgroundColor(Color::DarkGrey))?;
+                terminal.add_command_to_queue(SetForegroundColor(Color::White))?;
                 queue_highlighted(
-                    buffer,
+                    terminal,
                     &name_display,
                     &name_matches,
                     Some(Color::White),
@@ -265,9 +258,9 @@ pub fn draw_command_list(
                     true,
                 )?;
                 if !desc_display.is_empty() {
-                    queue!(buffer, Print(" "))?;
+                    terminal.add_command_to_queue(Print(" "))?;
                     queue_highlighted(
-                        buffer,
+                        terminal,
                         &desc_display,
                         &desc_matches,
                         Some(Color::White),
@@ -275,11 +268,12 @@ pub fn draw_command_list(
                         true,
                     )?;
                 }
-                queue!(buffer, ResetColor, Print(" "))?;
+                terminal.add_command_to_queue(ResetColor)?;
+                terminal.add_command_to_queue(Print(" "))?;
             } else {
-                queue!(buffer, Print(" "))?;
+                terminal.add_command_to_queue(Print(" "))?;
                 queue_highlighted(
-                    buffer,
+                    terminal,
                     &name_display,
                     &name_matches,
                     None,
@@ -287,9 +281,9 @@ pub fn draw_command_list(
                     false,
                 )?;
                 if !desc_display.is_empty() {
-                    queue!(buffer, Print(" "))?;
+                    terminal.add_command_to_queue(Print(" "))?;
                     queue_highlighted(
-                        buffer,
+                        terminal,
                         &desc_display,
                         &desc_matches,
                         None,
@@ -297,7 +291,8 @@ pub fn draw_command_list(
                         false,
                     )?;
                 }
-                queue!(buffer, ResetColor, Print(" "))?;
+                terminal.add_command_to_queue(ResetColor)?;
+                terminal.add_command_to_queue(Print(" "))?;
             }
         }
     }

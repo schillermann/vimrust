@@ -1,21 +1,25 @@
 use std::io::{self, Stdout, Write};
 
 use crossterm::{
+    Command,
     cursor::{Hide, MoveTo, SetCursorStyle, Show},
     execute, queue,
     style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor},
-    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode, size},
+    terminal::{
+        Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode,
+        enable_raw_mode, size,
+    },
 };
 
 use crate::{
-    command_line::CommandLine, command_list::draw_command_list, editor_draw_rows, editor_scroll,
-    EditorMode,
+    EditorMode, buffer::Buffer, command_line::CommandLine, command_list::draw_command_list,
+    editor_draw_rows, editor_scroll,
 };
 
 pub struct Terminal {
     pub size: (u16, u16),
     out: Stdout,
-    buffer: Vec<u8>,
+    buffer: Buffer,
 }
 
 impl Terminal {
@@ -27,12 +31,17 @@ impl Terminal {
         Ok(Self {
             size,
             out,
-            buffer: Vec::new(),
+            buffer: Buffer::new(),
         })
     }
 
     pub fn cleanup(&mut self) {
-        let _ = execute!(self.out, Clear(ClearType::All), MoveTo(0, 0), LeaveAlternateScreen);
+        let _ = execute!(
+            self.out,
+            Clear(ClearType::All),
+            MoveTo(0, 0),
+            LeaveAlternateScreen
+        );
         let _ = disable_raw_mode();
     }
 
@@ -48,6 +57,12 @@ impl Terminal {
             EditorMode::Command => SetCursorStyle::SteadyBar,
         };
         execute!(self.out, style)
+    }
+
+    pub fn add_command_to_queue<C: Command>(&mut self, command: C) -> io::Result<()> {
+        let writer = self.buffer.writer();
+        queue!(writer, command)?;
+        Ok(())
     }
 
     pub fn render_frame(
@@ -73,98 +88,98 @@ impl Terminal {
         let usable_rows = number_of_rows.saturating_sub(2);
 
         self.buffer.clear();
-        queue!(&mut self.buffer, Hide)?;
+        {
+            self.add_command_to_queue(Hide)?;
 
-        CommandLine::draw(&mut self.buffer, number_of_columns, command_line)?;
+            CommandLine::draw(self, number_of_columns, command_line)?;
 
-        if usable_rows > 0 {
-            if matches!(mode, EditorMode::Command) {
-                draw_command_list(
-                    &mut self.buffer,
-                    number_of_columns,
-                    1,
-                    usable_rows,
-                    command_line,
-                    command_selected_index,
-                    command_scroll_offset,
-                )?;
-            } else {
-                editor_scroll(
-                    cursor_x,
-                    cursor_y,
-                    number_of_columns,
-                    usable_rows,
-                    columns_offset,
-                    rows_offset,
-                );
+            if usable_rows > 0 {
+                if matches!(mode, EditorMode::Command) {
+                    draw_command_list(
+                        self,
+                        number_of_columns,
+                        1,
+                        usable_rows,
+                        command_line,
+                        command_selected_index,
+                        command_scroll_offset,
+                    )?;
+                } else {
+                    editor_scroll(
+                        cursor_x,
+                        cursor_y,
+                        number_of_columns,
+                        usable_rows,
+                        columns_offset,
+                        rows_offset,
+                    );
 
-                editor_draw_rows(
-                    &mut self.buffer,
-                    number_of_columns,
-                    usable_rows,
-                    *columns_offset,
-                    *rows_offset,
-                    file_lines,
-                    1,
-                )?;
+                    editor_draw_rows(
+                        self,
+                        number_of_columns,
+                        usable_rows,
+                        *columns_offset,
+                        *rows_offset,
+                        file_lines,
+                        1,
+                    )?;
+                }
             }
+
+            if number_of_rows > 1 {
+                let filename = file_path.as_deref().unwrap_or("[No Filename]");
+                // Leave one column of padding on both sides of the status line.
+                let inner_width = number_of_columns.saturating_sub(2);
+                let mut status = format!("{} > {}", mode.label(), filename);
+                if status.len() < inner_width as usize {
+                    status.push_str(&" ".repeat(inner_width as usize - status.len()));
+                } else {
+                    status.truncate(inner_width as usize);
+                }
+                let status = format!(" {} ", status);
+                self.add_command_to_queue(MoveTo(0, number_of_rows.saturating_sub(1)))?;
+                self.add_command_to_queue(Clear(ClearType::CurrentLine))?;
+                self.add_command_to_queue(SetBackgroundColor(Color::Grey))?;
+                self.add_command_to_queue(SetForegroundColor(Color::Black))?;
+                self.add_command_to_queue(Print(status))?;
+                self.add_command_to_queue(ResetColor)?;
+            }
+
+            let (cursor_col, cursor_row) = match mode {
+                EditorMode::Command if command_focus_on_list => {
+                    let relative_row =
+                        command_selected_index.saturating_sub(command_scroll_offset) as u16;
+                    let list_row = 1u16
+                        .saturating_add(1)
+                        .saturating_add(2)
+                        .saturating_add(relative_row)
+                        .min(number_of_rows.saturating_sub(1));
+                    (0, list_row)
+                }
+                EditorMode::Command => (
+                    command_cursor_x
+                        .saturating_add(1) // left padding on command line
+                        .min(number_of_columns.saturating_sub(1)),
+                    0,
+                ),
+                _ => {
+                    let cursor_col = cursor_x
+                        .saturating_sub(*columns_offset)
+                        .min(number_of_columns.saturating_sub(1));
+                    let base_row = cursor_y.saturating_sub(*rows_offset).saturating_add(1);
+                    // Keep the edit cursor off the command-line row (row 0).
+                    let min_editor_row = 1;
+                    let max_editor_row = number_of_rows.saturating_sub(1).max(min_editor_row);
+                    let cursor_row = base_row.max(1).min(max_editor_row);
+                    (cursor_col, cursor_row)
+                }
+            };
+            self.add_command_to_queue(MoveTo(cursor_col, cursor_row))?;
+            self.add_command_to_queue(Show)?;
         }
 
-        if number_of_rows > 1 {
-            let filename = file_path.as_deref().unwrap_or("[No Filename]");
-            // Leave one column of padding on both sides of the status line.
-            let inner_width = number_of_columns.saturating_sub(2);
-            let mut status = format!("{} > {}", mode.label(), filename);
-            if status.len() < inner_width as usize {
-                status.push_str(&" ".repeat(inner_width as usize - status.len()));
-            } else {
-                status.truncate(inner_width as usize);
-            }
-            let status = format!(" {} ", status);
-            queue!(
-                &mut self.buffer,
-                MoveTo(0, number_of_rows.saturating_sub(1)),
-                Clear(ClearType::CurrentLine),
-                SetBackgroundColor(Color::Grey),
-                SetForegroundColor(Color::Black),
-                Print(status),
-                ResetColor
-            )?;
-        }
-
-        let (cursor_col, cursor_row) = match mode {
-            EditorMode::Command if command_focus_on_list => {
-                let relative_row = command_selected_index.saturating_sub(command_scroll_offset) as u16;
-                let list_row = 1u16
-                    .saturating_add(1)
-                    .saturating_add(2)
-                    .saturating_add(relative_row)
-                    .min(number_of_rows.saturating_sub(1));
-                (0, list_row)
-            }
-            EditorMode::Command => (
-                command_cursor_x
-                    .saturating_add(1) // left padding on command line
-                    .min(number_of_columns.saturating_sub(1)),
-                0,
-            ),
-            _ => {
-                let cursor_col = cursor_x
-                    .saturating_sub(*columns_offset)
-                    .min(number_of_columns.saturating_sub(1));
-                let base_row = cursor_y.saturating_sub(*rows_offset).saturating_add(1);
-                // Keep the edit cursor off the command-line row (row 0).
-                let min_editor_row = 1;
-                let max_editor_row = number_of_rows.saturating_sub(1).max(min_editor_row);
-                let cursor_row = base_row.max(1).min(max_editor_row);
-                (cursor_col, cursor_row)
-            }
-        };
-        queue!(&mut self.buffer, MoveTo(cursor_col, cursor_row), Show)?;
-
-        self.out.write_all(&self.buffer)?;
+        self.out.write_all(self.buffer.as_slice())?;
         self.out.flush()?;
         Ok(())
     }
-
 }

@@ -3,11 +3,11 @@ use std::{env, fs, io, sync::Mutex, time::Duration};
 use crossterm::{
     cursor::MoveTo,
     event::{self, Event, KeyCode},
-    queue,
     style::Print,
     terminal::{Clear, ClearType},
 };
 
+mod buffer;
 mod command_line;
 mod command_list;
 mod terminal;
@@ -77,7 +77,7 @@ fn main() -> io::Result<()> {
 }
 
 pub(crate) fn editor_draw_rows(
-    buffer: &mut Vec<u8>,
+    terminal: &mut Terminal,
     number_of_columns: u16,
     number_of_rows: u16,
     columns_offset: u16,
@@ -89,10 +89,11 @@ pub(crate) fn editor_draw_rows(
         let screen_row = start_row.saturating_add(row_number);
         let file_line_number = row_number.saturating_add(rows_offset) as usize;
 
-        queue!(buffer, MoveTo(0, screen_row), Clear(ClearType::CurrentLine))?;
+        terminal.add_command_to_queue(MoveTo(0, screen_row))?;
+        terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
 
         if file_line_number >= file_lines.len() {
-            queue!(buffer, Print("~"))?;
+            terminal.add_command_to_queue(Print("~"))?;
             if file_lines.is_empty() && row_number == number_of_rows / 3 {
                 let mut welcome = format!("VimRust -- version {}", VERSION);
                 if welcome.len() > number_of_columns as usize {
@@ -101,7 +102,8 @@ pub(crate) fn editor_draw_rows(
                 let padding = number_of_columns
                     .saturating_sub(welcome.len() as u16)
                     .saturating_div(2);
-                queue!(buffer, MoveTo(padding as u16, screen_row), Print(welcome))?;
+                terminal.add_command_to_queue(MoveTo(padding as u16, screen_row))?;
+                terminal.add_command_to_queue(Print(welcome))?;
             }
         } else if let Some(file_line) = file_lines.get(file_line_number) {
             let displayable_line = displayable_line(file_line, DEFAULT_TAB_STOP);
@@ -110,7 +112,7 @@ pub(crate) fn editor_draw_rows(
                 .skip(columns_offset as usize)
                 .take(number_of_columns as usize)
                 .collect();
-            queue!(buffer, Print(visible_slice))?;
+            terminal.add_command_to_queue(Print(visible_slice))?;
         }
     }
 
