@@ -11,7 +11,7 @@ use crate::{buffer::Buffer, command_line::CommandLine, command_list::draw_comman
 use crate::status_line::StatusLine;
 
 pub struct Terminal {
-    pub size: (u16, u16),
+    size: (u16, u16),
     out: Stdout,
     buffer: Buffer,
 }
@@ -42,6 +42,10 @@ impl Terminal {
     pub fn update_size(&mut self) -> io::Result<()> {
         self.size = size()?;
         Ok(())
+    }
+
+    pub fn size(&self) -> (u16, u16) {
+        self.size
     }
 
     pub fn set_cursor_style(&mut self, mode: &EditorMode) -> io::Result<()> {

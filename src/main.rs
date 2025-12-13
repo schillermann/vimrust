@@ -58,7 +58,7 @@ fn run(
         }
         editor.ensure_minimum_line();
 
-        let mut terminal_size = terminal.size;
+        let mut terminal_size = terminal.size();
         let mut mode = EditorMode::Normal;
         let mut status_message = String::from(DEFAULT_STATUS);
         let mut needs_refresh = true;
@@ -271,7 +271,7 @@ fn run(
                     }
                     Event::Resize(_, _) => {
                         terminal.update_size()?;
-                        terminal_size = terminal.size;
+                        terminal_size = terminal.size();
                         needs_refresh = true;
                     }
                     _ => {}
