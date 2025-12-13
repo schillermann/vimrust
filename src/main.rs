@@ -1,17 +1,15 @@
-use std::{env, fs, io, sync::Mutex, time::Duration};
+use std::{env, io, time::Duration};
 
-use crossterm::{
-    cursor::MoveTo,
-    event::{self, Event, KeyCode},
-    style::Print,
-    terminal::{Clear, ClearType},
-};
+use crossterm::event::{self, Event, KeyCode};
 
 mod buffer;
 mod command_line;
 mod command_list;
+mod editor;
 mod terminal;
+
 use command_list::filter_commands;
+use editor::Editor;
 use terminal::Terminal;
 
 pub(crate) enum EditorMode {
@@ -30,500 +28,15 @@ impl EditorMode {
     }
 }
 
-pub(crate) static CURSOR_X: Mutex<u16> = Mutex::new(0);
-pub(crate) static CURSOR_Y: Mutex<u16> = Mutex::new(0);
-pub(crate) static FILE_LINES: Mutex<Vec<String>> = Mutex::new(Vec::new());
-pub(crate) static EDITOR_ROWS_OFFSET: Mutex<u16> = Mutex::new(0);
-pub(crate) static EDITOR_COLUMNS_OFFSET: Mutex<u16> = Mutex::new(0);
-static VERSION: &str = "0.1.0";
-const DEFAULT_TAB_STOP: u16 = 4;
 const DEFAULT_STATUS: &str = "| e: edit | Esc: normal | s: save | q: quit";
-
-fn char_render_width(character: char, tab_stop: u16, column: u16) -> u16 {
-    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
-
-    match character {
-        '\t' => {
-            let offset = column % tab_size;
-            tab_size.saturating_sub(offset)
-        }
-        '\x00'..='\x1f' | '\x7f' => 4,
-        _ => 1,
-    }
-}
-
-fn render_segments(line: &str, tab_stop: u16) -> Vec<(u16, u16, char)> {
-    let mut segments = Vec::new();
-    let mut column: u16 = 0;
-    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
-
-    for ch in line.chars() {
-        let start = column;
-        let char_width = char_render_width(ch, tab_size, column);
-        let end = column.saturating_add(char_width);
-        segments.push((start, end, ch));
-        column = end;
-    }
-
-    segments
-}
 
 fn main() -> io::Result<()> {
     let file_path = env::args().nth(1);
     let mut terminal = Terminal::new()?;
-    let result = run(&mut terminal, file_path);
+    let mut editor = Editor::new();
+    let result = run(&mut terminal, &mut editor, file_path);
     terminal.cleanup();
     result
-}
-
-pub(crate) fn editor_draw_rows(
-    terminal: &mut Terminal,
-    number_of_columns: u16,
-    number_of_rows: u16,
-    columns_offset: u16,
-    rows_offset: u16,
-    file_lines: &Vec<String>,
-    start_row: u16,
-) -> io::Result<()> {
-    for row_number in 0..number_of_rows {
-        let screen_row = start_row.saturating_add(row_number);
-        let file_line_number = row_number.saturating_add(rows_offset) as usize;
-
-        terminal.add_command_to_queue(MoveTo(0, screen_row))?;
-        terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
-
-        if file_line_number >= file_lines.len() {
-            terminal.add_command_to_queue(Print("~"))?;
-            if file_lines.is_empty() && row_number == number_of_rows / 3 {
-                let mut welcome = format!("VimRust -- version {}", VERSION);
-                if welcome.len() > number_of_columns as usize {
-                    welcome.truncate(number_of_columns as usize);
-                }
-                let padding = number_of_columns
-                    .saturating_sub(welcome.len() as u16)
-                    .saturating_div(2);
-                terminal.add_command_to_queue(MoveTo(padding as u16, screen_row))?;
-                terminal.add_command_to_queue(Print(welcome))?;
-            }
-        } else if let Some(file_line) = file_lines.get(file_line_number) {
-            let displayable_line = displayable_line(file_line, DEFAULT_TAB_STOP);
-            let visible_slice: String = displayable_line
-                .chars()
-                .skip(columns_offset as usize)
-                .take(number_of_columns as usize)
-                .collect();
-            terminal.add_command_to_queue(Print(visible_slice))?;
-        }
-    }
-
-    Ok(())
-}
-
-fn displayable_line(line: &str, tab_stop: u16) -> String {
-    let mut expanded = String::new();
-    let mut column: u16 = 0;
-    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
-
-    for ch in line.chars() {
-        match ch {
-            '\t' => {
-                let spaces = char_render_width(ch, tab_size, column);
-                let mut count = 0;
-                while count < spaces {
-                    expanded.push(' ');
-                    count += 1;
-                }
-                column = column.saturating_add(spaces);
-            }
-            '\x00'..='\x1f' => {
-                let hex = format!("<{:02X}>", ch as u8);
-                expanded.push_str(&hex);
-                column = column.saturating_add(4);
-            }
-            '\x7f' => {
-                expanded.push_str("<7F>");
-                column = column.saturating_add(4);
-            }
-            _ => {
-                expanded.push(ch);
-                column = column.saturating_add(1);
-            }
-        }
-    }
-
-    expanded
-}
-
-fn editor_scroll(
-    cursor_x: u16,
-    cursor_y: u16,
-    number_of_columns: u16,
-    number_of_rows: u16,
-    columns_offset: &mut u16,
-    rows_offset: &mut u16,
-) {
-    if number_of_rows == 0 {
-        return;
-    }
-    if cursor_y < *rows_offset {
-        *rows_offset = cursor_y;
-    }
-    if cursor_y >= (*rows_offset).saturating_add(number_of_rows) {
-        *rows_offset = cursor_y.saturating_sub(number_of_rows).saturating_add(1);
-    }
-    if cursor_x < *columns_offset {
-        *columns_offset = cursor_x;
-    }
-    if cursor_x >= (*columns_offset).saturating_add(number_of_columns) {
-        *columns_offset = cursor_x.saturating_sub(number_of_columns).saturating_add(1);
-    }
-}
-
-fn file_line_length(file_lines: &Vec<String>, cursor_y: u16) -> u16 {
-    let line_index = cursor_y as usize;
-    if line_index >= file_lines.len() {
-        return 0;
-    }
-
-    if let Some(line) = file_lines.get(line_index) {
-        return visual_line_length(line, DEFAULT_TAB_STOP);
-    }
-
-    0
-}
-
-fn visual_line_length(line: &str, tab_stop: u16) -> u16 {
-    let mut column: u16 = 0;
-    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
-
-    for ch in line.chars() {
-        let width = char_render_width(ch, tab_size, column);
-        column = column.saturating_add(width);
-    }
-
-    column
-}
-
-fn next_render_column(line: &str, cursor_x: u16, tab_stop: u16) -> u16 {
-    let segments = render_segments(line, tab_stop);
-    if segments.is_empty() {
-        return 0;
-    }
-
-    for (idx, (start, end, ch)) in segments.iter().enumerate() {
-        let next_segment = segments.get(idx.saturating_add(1));
-
-        if cursor_x < *start {
-            if *ch == '\t' {
-                return end.saturating_sub(1);
-            }
-            return *start;
-        }
-
-        if cursor_x < *end {
-            if *ch == '\t' {
-                let target = end.saturating_sub(1);
-                if cursor_x < target {
-                    return target;
-                }
-                if let Some((next_start, next_end, next_ch)) = next_segment {
-                    if *next_ch == '\t' {
-                        return next_end.saturating_sub(1);
-                    }
-                    return *next_start;
-                }
-                return *end;
-            }
-
-            if let Some((_, next_end, next_char)) = next_segment {
-                if *next_char == '\t' {
-                    return next_end.saturating_sub(1);
-                }
-            }
-
-            return *end;
-        }
-    }
-
-    if let Some((_, end, _)) = segments.last() {
-        *end
-    } else {
-        0
-    }
-}
-
-fn previous_render_column(line: &str, current_x: u16, tab_stop: u16) -> u16 {
-    let segments = render_segments(line, tab_stop);
-    if segments.is_empty() {
-        return 0;
-    }
-
-    let mut best: u16 = 0;
-    for (start, end, ch) in segments {
-        let stop = if ch == '\t' {
-            end.saturating_sub(1)
-        } else {
-            start
-        };
-
-        if stop < current_x && stop >= best {
-            best = stop;
-        }
-    }
-
-    best
-}
-
-fn snap_cursor_to_render_character(line: &str, cursor_x: u16, tab_stop: u16) -> u16 {
-    let segments = render_segments(line, tab_stop);
-    if segments.is_empty() {
-        return 0;
-    }
-
-    let line_length = match segments.last() {
-        Some((_, end, _)) => *end,
-        None => 0,
-    };
-    let clamped_x = cursor_x.min(line_length);
-    let last_index = segments.len() - 1;
-
-    for (idx, (start, end, ch)) in segments.iter().enumerate() {
-        let in_segment = clamped_x >= *start && clamped_x < *end;
-        let at_line_end = clamped_x == line_length && idx == last_index;
-
-        if in_segment {
-            return match ch {
-                '\t' => end.saturating_sub(1),
-                '\x00'..='\x1f' | '\x7f' => *start,
-                _ => *start,
-            };
-        }
-
-        if at_line_end {
-            return match ch {
-                '\t' => end.saturating_sub(1),
-                '\x00'..='\x1f' | '\x7f' => *start,
-                _ => clamped_x,
-            };
-        }
-    }
-
-    clamped_x
-}
-
-fn tab_segment_start(line: &str, cursor_x: u16, tab_stop: u16) -> Option<u16> {
-    for (start, end, ch) in render_segments(line, tab_stop) {
-        if cursor_x >= start && cursor_x < end && ch == '\t' {
-            return Some(start);
-        }
-    }
-    None
-}
-
-fn snap_cursor_to_tab_start(
-    file_lines: &Vec<String>,
-    cursor_x: &mut u16,
-    cursor_y: u16,
-    tab_stop: u16,
-) {
-    if let Some(line) = file_lines.get(cursor_y as usize) {
-        if let Some(start) = tab_segment_start(line, *cursor_x, tab_stop) {
-            *cursor_x = start;
-        }
-    }
-}
-
-fn render_column_to_char_index(line: &str, cursor_x: u16, tab_stop: u16) -> usize {
-    let mut column: u16 = 0;
-    let tab_size = if tab_stop == 0 { 1 } else { tab_stop };
-
-    for (idx, ch) in line.char_indices() {
-        let width = char_render_width(ch, tab_size, column);
-        if cursor_x <= column {
-            return idx;
-        }
-        if cursor_x < column.saturating_add(width) {
-            return idx;
-        }
-        column = column.saturating_add(width);
-    }
-
-    line.len()
-}
-
-fn insert_char_at_cursor(
-    file_lines: &mut Vec<String>,
-    cursor_x: &mut u16,
-    cursor_y: u16,
-    ch: char,
-) {
-    let target_line = cursor_y as usize;
-    if target_line >= file_lines.len() {
-        file_lines.resize_with(target_line.saturating_add(1), String::new);
-    }
-
-    if let Some(line) = file_lines.get_mut(target_line) {
-        let insert_at = render_column_to_char_index(line, *cursor_x, DEFAULT_TAB_STOP);
-        line.insert(insert_at, ch);
-        let advance = char_render_width(ch, DEFAULT_TAB_STOP, *cursor_x);
-        *cursor_x = cursor_x.saturating_add(advance);
-    }
-}
-
-fn delete_backspace(file_lines: &mut Vec<String>, cursor_x: &mut u16, cursor_y: &mut u16) {
-    // If at the very start of the buffer, nothing to do.
-    if *cursor_x == 0 && *cursor_y == 0 {
-        return;
-    }
-
-    // Merge with previous line when at column 0.
-    if *cursor_x == 0 {
-        let current_index = *cursor_y as usize;
-        if current_index == 0 || current_index >= file_lines.len() {
-            return;
-        }
-        if let Some(current_line) = file_lines.get(current_index).cloned() {
-            if let Some(previous_line) = file_lines.get_mut(current_index.saturating_sub(1)) {
-                let new_cursor_x = visual_line_length(previous_line, DEFAULT_TAB_STOP);
-                previous_line.push_str(&current_line);
-                file_lines.remove(current_index);
-                *cursor_y = cursor_y.saturating_sub(1);
-                *cursor_x = new_cursor_x;
-            }
-        }
-        return;
-    }
-
-    // Delete character to the left within the line.
-    if let Some(line) = file_lines.get_mut(*cursor_y as usize) {
-        let new_cursor_x = previous_render_column(line, *cursor_x, DEFAULT_TAB_STOP);
-        let delete_idx = render_column_to_char_index(line, new_cursor_x, DEFAULT_TAB_STOP);
-        if delete_idx < line.len() {
-            line.remove(delete_idx);
-            *cursor_x = new_cursor_x;
-        }
-    }
-}
-
-fn delete_under_cursor(file_lines: &mut Vec<String>, cursor_x: &mut u16, cursor_y: &mut u16) {
-    if let Some(line) = file_lines.get_mut(*cursor_y as usize) {
-        let delete_idx = render_column_to_char_index(line, *cursor_x, DEFAULT_TAB_STOP);
-        if delete_idx < line.len() {
-            line.remove(delete_idx);
-            return;
-        }
-    } else {
-        return;
-    }
-
-    // At end of line: merge with next line if it exists.
-    let current_index = *cursor_y as usize;
-    if current_index + 1 < file_lines.len() {
-        if let Some(next_line) = file_lines.get(current_index + 1).cloned() {
-            if let Some(current_line) = file_lines.get_mut(current_index) {
-                current_line.push_str(&next_line);
-            }
-            file_lines.remove(current_index + 1);
-        }
-    }
-}
-
-fn editor_save(file_lines: &Vec<String>, file_path: &mut Option<String>) -> io::Result<String> {
-    let path = file_path
-        .get_or_insert_with(|| String::from("untitled.txt"))
-        .clone();
-    let contents = file_lines.join("\n");
-    fs::write(&path, contents)?;
-    Ok(format!("Wrote {}", path))
-}
-
-fn editor_move_cursor(
-    key_code: KeyCode,
-    cursor_x: &mut u16,
-    cursor_y: &mut u16,
-    file_lines: &Vec<String>,
-    usable_rows: u16,
-    rows_offset: &mut u16,
-) -> io::Result<()> {
-    let file_lines_len = file_lines.len().min(u16::MAX as usize) as u16;
-
-    match key_code {
-        KeyCode::Char('h') => {
-            if let Some(line) = file_lines.get(*cursor_y as usize) {
-                *cursor_x = previous_render_column(line, *cursor_x, DEFAULT_TAB_STOP);
-            } else {
-                *cursor_x = cursor_x.saturating_sub(1);
-            }
-        }
-        KeyCode::Char('l') => {
-            if let Some(line) = file_lines.get(*cursor_y as usize) {
-                *cursor_x = next_render_column(line, *cursor_x, DEFAULT_TAB_STOP);
-            } else {
-                *cursor_x = cursor_x.saturating_add(1);
-            }
-        }
-        KeyCode::Home => {
-            *cursor_x = 0;
-        }
-        KeyCode::End => {
-            *cursor_x = file_line_length(file_lines, *cursor_y);
-        }
-        KeyCode::Char('k') => {
-            *cursor_y = cursor_y.saturating_sub(1);
-        }
-        KeyCode::Char('j') => {
-            *cursor_y = cursor_y.saturating_add(1);
-        }
-        KeyCode::PageUp => {
-            if usable_rows == 0 {
-                *cursor_y = 0;
-                *rows_offset = 0;
-            } else {
-                let new_cursor_y = cursor_y.saturating_sub(usable_rows);
-                let lower_third = usable_rows.saturating_mul(2).saturating_div(3);
-                let new_offset = new_cursor_y.saturating_sub(lower_third);
-                *cursor_y = new_cursor_y;
-                *rows_offset = new_offset;
-            }
-        }
-        KeyCode::PageDown => {
-            if usable_rows == 0 {
-                *cursor_y = file_lines_len;
-            } else {
-                let new_cursor_y = cursor_y.saturating_add(usable_rows).min(file_lines_len);
-                let upper_third = usable_rows.saturating_div(3);
-                let new_offset = new_cursor_y.saturating_sub(upper_third);
-                *cursor_y = new_cursor_y;
-                *rows_offset = new_offset;
-            }
-        }
-        _ => {}
-    }
-
-    if *cursor_y > file_lines_len {
-        *cursor_y = file_lines_len;
-    }
-
-    let line_length = file_line_length(file_lines, *cursor_y);
-    if *cursor_x > line_length {
-        *cursor_x = line_length;
-    }
-    if let Some(line) = file_lines.get(*cursor_y as usize) {
-        *cursor_x = snap_cursor_to_render_character(line, *cursor_x, DEFAULT_TAB_STOP);
-    }
-
-    Ok(())
-}
-
-fn editor_open(file_lines: &mut Vec<String>, file_path: String) -> io::Result<()> {
-    let contents = fs::read_to_string(file_path)?;
-    for line in contents.lines() {
-        file_lines.push(line.to_string());
-    }
-    if file_lines.is_empty() {
-        file_lines.push(String::new());
-    }
-    Ok(())
 }
 
 fn update_status(current: &mut String, needs_refresh: &mut bool, message: String) {
@@ -533,19 +46,18 @@ fn update_status(current: &mut String, needs_refresh: &mut bool, message: String
     }
 }
 
-fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()> {
+fn run(
+    terminal: &mut Terminal,
+    editor: &mut Editor,
+    mut file_path: Option<String>,
+) -> io::Result<()> {
     let result: io::Result<()> = {
-        let mut file_lines = FILE_LINES.lock().unwrap();
         if let Some(path) = file_path.clone() {
-            editor_open(&mut file_lines, path)?;
+            editor.open(path)?;
         }
-        if file_lines.is_empty() {
-            file_lines.push(String::new());
-        }
+        editor.ensure_minimum_line();
 
         let mut terminal_size = terminal.size;
-        let mut cursor_x = CURSOR_X.lock().unwrap();
-        let mut cursor_y = CURSOR_Y.lock().unwrap();
         let mut mode = EditorMode::Normal;
         let mut status_message = String::from(DEFAULT_STATUS);
         let mut needs_refresh = true;
@@ -558,12 +70,8 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
 
         loop {
             if needs_refresh {
-                let mut columns_offset = EDITOR_COLUMNS_OFFSET.lock().unwrap();
-                let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
                 terminal.render_frame(
-                    *cursor_x,
-                    *cursor_y,
-                    &*file_lines,
+                    editor,
                     &mode,
                     &file_path,
                     &command_line,
@@ -571,8 +79,6 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                     command_selected_index,
                     command_scroll_offset,
                     command_focus_on_list,
-                    &mut *columns_offset,
-                    &mut *rows_offset,
                 )?;
                 needs_refresh = false;
             }
@@ -587,41 +93,23 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                                 KeyCode::Char('e') => {
                                     mode = EditorMode::Edit;
                                     terminal.set_cursor_style(&mode)?;
-                                    snap_cursor_to_tab_start(
-                                        &*file_lines,
-                                        &mut cursor_x,
-                                        *cursor_y,
-                                        DEFAULT_TAB_STOP,
-                                    );
+                                    editor.snap_cursor_to_tab_start();
                                     update_status(
                                         &mut status_message,
                                         &mut needs_refresh,
                                         String::from(DEFAULT_STATUS),
                                     );
                                 }
-                                KeyCode::Esc => {
-                                    mode = EditorMode::Normal;
-                                    terminal.set_cursor_style(&mode)?;
-                                    update_status(
-                                        &mut status_message,
-                                        &mut needs_refresh,
-                                        String::from(DEFAULT_STATUS),
-                                    );
-                                }
-                                KeyCode::Char('s') => {
-                                    match editor_save(&*file_lines, &mut file_path) {
-                                        Ok(msg) => update_status(
-                                            &mut status_message,
-                                            &mut needs_refresh,
-                                            msg,
-                                        ),
-                                        Err(err) => update_status(
-                                            &mut status_message,
-                                            &mut needs_refresh,
-                                            format!("Error saving: {}", err),
-                                        ),
+                                KeyCode::Char('s') => match editor.save(&mut file_path) {
+                                    Ok(msg) => {
+                                        update_status(&mut status_message, &mut needs_refresh, msg)
                                     }
-                                }
+                                    Err(err) => update_status(
+                                        &mut status_message,
+                                        &mut needs_refresh,
+                                        format!("Error saving: {}", err),
+                                    ),
+                                },
                                 KeyCode::Char(':') => {
                                     mode = EditorMode::Command;
                                     command_line.clear();
@@ -634,15 +122,7 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                                 }
                                 key_code => {
                                     let usable_rows = terminal_size.1.saturating_sub(2);
-                                    let mut rows_offset = EDITOR_ROWS_OFFSET.lock().unwrap();
-                                    editor_move_cursor(
-                                        key_code,
-                                        &mut cursor_x,
-                                        &mut cursor_y,
-                                        &*file_lines,
-                                        usable_rows,
-                                        &mut *rows_offset,
-                                    )?;
+                                    editor.move_cursor(key_code, usable_rows)?;
                                 }
                             },
                             EditorMode::Edit => match key_event.code {
@@ -656,22 +136,13 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                                     );
                                 }
                                 KeyCode::Delete => {
-                                    delete_under_cursor(
-                                        &mut file_lines,
-                                        &mut cursor_x,
-                                        &mut cursor_y,
-                                    );
+                                    editor.delete_under_cursor();
                                 }
                                 KeyCode::Backspace => {
-                                    delete_backspace(&mut file_lines, &mut cursor_x, &mut cursor_y);
+                                    editor.delete_backspace();
                                 }
                                 KeyCode::Char(ch) => {
-                                    insert_char_at_cursor(
-                                        &mut file_lines,
-                                        &mut cursor_x,
-                                        *cursor_y,
-                                        ch,
-                                    );
+                                    editor.insert_char(ch);
                                 }
                                 _ => {}
                             },

@@ -11,10 +11,7 @@ use crossterm::{
     },
 };
 
-use crate::{
-    EditorMode, buffer::Buffer, command_line::CommandLine, command_list::draw_command_list,
-    editor_draw_rows, editor_scroll,
-};
+use crate::{buffer::Buffer, command_line::CommandLine, command_list::draw_command_list, editor::Editor, EditorMode};
 
 pub struct Terminal {
     pub size: (u16, u16),
@@ -67,9 +64,7 @@ impl Terminal {
 
     pub fn render_frame(
         &mut self,
-        cursor_x: u16,
-        cursor_y: u16,
-        file_lines: &Vec<String>,
+        editor: &mut Editor,
         mode: &EditorMode,
         file_path: &Option<String>,
         command_line: &str,
@@ -77,8 +72,6 @@ impl Terminal {
         command_selected_index: usize,
         command_scroll_offset: usize,
         command_focus_on_list: bool,
-        columns_offset: &mut u16,
-        rows_offset: &mut u16,
     ) -> io::Result<()> {
         let (number_of_columns, number_of_rows) = self.size;
         if number_of_rows == 0 {
@@ -105,24 +98,9 @@ impl Terminal {
                         command_scroll_offset,
                     )?;
                 } else {
-                    editor_scroll(
-                        cursor_x,
-                        cursor_y,
-                        number_of_columns,
-                        usable_rows,
-                        columns_offset,
-                        rows_offset,
-                    );
+                    editor.scroll(number_of_columns, usable_rows);
 
-                    editor_draw_rows(
-                        self,
-                        number_of_columns,
-                        usable_rows,
-                        *columns_offset,
-                        *rows_offset,
-                        file_lines,
-                        1,
-                    )?;
+                    editor.draw_rows(self, number_of_columns, usable_rows, 1)?;
                 }
             }
 
@@ -163,10 +141,14 @@ impl Terminal {
                     0,
                 ),
                 _ => {
-                    let cursor_col = cursor_x
-                        .saturating_sub(*columns_offset)
+                    let cursor_col = editor
+                        .cursor_x
+                        .saturating_sub(editor.columns_offset)
                         .min(number_of_columns.saturating_sub(1));
-                    let base_row = cursor_y.saturating_sub(*rows_offset).saturating_add(1);
+                    let base_row = editor
+                        .cursor_y
+                        .saturating_sub(editor.rows_offset)
+                        .saturating_add(1);
                     // Keep the edit cursor off the command-line row (row 0).
                     let min_editor_row = 1;
                     let max_editor_row = number_of_rows.saturating_sub(1).max(min_editor_row);
