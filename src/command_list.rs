@@ -110,24 +110,24 @@ fn queue_highlighted(
     let mut next_match = match_iter.next();
 
     if let Some(color) = default_fg {
-        terminal.add_command_to_queue(SetForegroundColor(color))?;
+        terminal.queue_add_command(SetForegroundColor(color))?;
     }
 
     for (idx, ch) in text.chars().enumerate() {
         if let Some(target) = next_match {
             if idx == target {
-                terminal.add_command_to_queue(SetForegroundColor(highlight_fg))?;
-                terminal.add_command_to_queue(Print(ch))?;
+                terminal.queue_add_command(SetForegroundColor(highlight_fg))?;
+                terminal.queue_add_command(Print(ch))?;
                 if let Some(color) = default_fg {
-                    terminal.add_command_to_queue(SetForegroundColor(color))?;
+                    terminal.queue_add_command(SetForegroundColor(color))?;
                 } else if !keep_background {
-                    terminal.add_command_to_queue(ResetColor)?;
+                    terminal.queue_add_command(ResetColor)?;
                 }
                 next_match = match_iter.next();
                 continue;
             }
         }
-        terminal.add_command_to_queue(Print(ch))?;
+        terminal.queue_add_command(Print(ch))?;
     }
 
     Ok(())
@@ -189,24 +189,24 @@ pub fn draw_command_list(
         header.push_str(&" ".repeat(inner_width as usize - header.len()));
     }
     let header_line = format!(" {} ", header);
-    terminal.add_command_to_queue(MoveTo(0, start_row))?;
-    terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
-    terminal.add_command_to_queue(Print(format!(" {} ", " ".repeat(inner_width as usize))))?;
-    terminal.add_command_to_queue(MoveTo(0, start_row.saturating_add(1)))?;
-    terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
-    terminal.add_command_to_queue(SetAttribute(Attribute::Bold))?;
-    terminal.add_command_to_queue(Print(header_line))?;
-    terminal.add_command_to_queue(SetAttribute(Attribute::Reset))?;
+    terminal.queue_add_command(MoveTo(0, start_row))?;
+    terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
+    terminal.queue_add_command(Print(format!(" {} ", " ".repeat(inner_width as usize))))?;
+    terminal.queue_add_command(MoveTo(0, start_row.saturating_add(1)))?;
+    terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
+    terminal.queue_add_command(SetAttribute(Attribute::Bold))?;
+    terminal.queue_add_command(Print(header_line))?;
+    terminal.queue_add_command(SetAttribute(Attribute::Reset))?;
 
     // Divider line under header
-    terminal.add_command_to_queue(MoveTo(0, start_row.saturating_add(2)))?;
-    terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
-    terminal.add_command_to_queue(Print(format!(" {} ", "─".repeat(inner_width as usize))))?;
+    terminal.queue_add_command(MoveTo(0, start_row.saturating_add(2)))?;
+    terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
+    terminal.queue_add_command(Print(format!(" {} ", "─".repeat(inner_width as usize))))?;
 
     for row in 0..available_rows {
         let screen_row = start_row.saturating_add(row + 3);
-        terminal.add_command_to_queue(MoveTo(0, screen_row))?;
-        terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
+        terminal.queue_add_command(MoveTo(0, screen_row))?;
+        terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
 
         if let Some(entry) = matches.get(scroll_offset.saturating_add(row as usize)) {
             let is_selected = selected_index == scroll_offset.saturating_add(row as usize);
@@ -246,9 +246,9 @@ pub fn draw_command_list(
             };
 
             if is_selected {
-                terminal.add_command_to_queue(Print(" "))?;
-                terminal.add_command_to_queue(SetBackgroundColor(Color::DarkGrey))?;
-                terminal.add_command_to_queue(SetForegroundColor(Color::White))?;
+                terminal.queue_add_command(Print(" "))?;
+                terminal.queue_add_command(SetBackgroundColor(Color::DarkGrey))?;
+                terminal.queue_add_command(SetForegroundColor(Color::White))?;
                 queue_highlighted(
                     terminal,
                     &name_display,
@@ -258,7 +258,7 @@ pub fn draw_command_list(
                     true,
                 )?;
                 if !desc_display.is_empty() {
-                    terminal.add_command_to_queue(Print(" "))?;
+                    terminal.queue_add_command(Print(" "))?;
                     queue_highlighted(
                         terminal,
                         &desc_display,
@@ -268,10 +268,10 @@ pub fn draw_command_list(
                         true,
                     )?;
                 }
-                terminal.add_command_to_queue(ResetColor)?;
-                terminal.add_command_to_queue(Print(" "))?;
+                terminal.queue_add_command(ResetColor)?;
+                terminal.queue_add_command(Print(" "))?;
             } else {
-                terminal.add_command_to_queue(Print(" "))?;
+                terminal.queue_add_command(Print(" "))?;
                 queue_highlighted(
                     terminal,
                     &name_display,
@@ -281,7 +281,7 @@ pub fn draw_command_list(
                     false,
                 )?;
                 if !desc_display.is_empty() {
-                    terminal.add_command_to_queue(Print(" "))?;
+                    terminal.queue_add_command(Print(" "))?;
                     queue_highlighted(
                         terminal,
                         &desc_display,
@@ -291,8 +291,8 @@ pub fn draw_command_list(
                         false,
                     )?;
                 }
-                terminal.add_command_to_queue(ResetColor)?;
-                terminal.add_command_to_queue(Print(" "))?;
+                terminal.queue_add_command(ResetColor)?;
+                terminal.queue_add_command(Print(" "))?;
             }
         }
     }

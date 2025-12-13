@@ -8,10 +8,12 @@ mod command_list;
 mod editor;
 mod status_line;
 mod terminal;
+mod ui;
 
 use command_list::filter_commands;
 use editor::Editor;
 use terminal::Terminal;
+use ui::Ui;
 
 pub(crate) enum EditorMode {
     Normal,
@@ -29,8 +31,6 @@ impl EditorMode {
     }
 }
 
-const DEFAULT_STATUS: &str = "| e: edit | Esc: normal | s: save | q: quit";
-
 fn main() -> io::Result<()> {
     let file_path = env::args().nth(1);
     let mut terminal = Terminal::new()?;
@@ -40,76 +40,68 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn update_status(current: &mut String, needs_refresh: &mut bool, message: String) {
-    if *current != message {
-        *current = message;
-        *needs_refresh = true;
-    }
-}
-
 fn run(
     terminal: &mut Terminal,
     editor: &mut Editor,
     mut file_path: Option<String>,
 ) -> io::Result<()> {
     let result: io::Result<()> = {
-        if let Some(path) = file_path.clone() {
-            editor.open(path)?;
-        }
-        editor.ensure_minimum_line();
+        let mut ui = Ui::new(terminal, editor);
 
-        let mut terminal_size = terminal.size();
+        if let Some(path) = file_path.clone() {
+            ui.editor().file_open(path)?;
+        } else {
+            ui.editor().file_new();
+        }
+
+        ui.terminal().size_update()?;
+        let mut terminal_size = ui.terminal().size();
         let mut mode = EditorMode::Normal;
-        let mut status_message = String::from(DEFAULT_STATUS);
-        let mut needs_refresh = true;
+        let mut status_message: Option<String> = None;
+        let mut clear_status_on_key = false;
         let mut command_line = String::new();
         let mut command_cursor_x: u16 = 0;
         let mut command_selected_index: usize = 0;
         let mut command_scroll_offset: usize = 0;
         let mut command_focus_on_list: bool = false;
-        terminal.set_cursor_style(&mode)?;
+        ui.terminal().set_cursor_style(&mode)?;
 
         loop {
-            if needs_refresh {
-                terminal.render_frame(
-                    editor,
-                    &mode,
-                    &file_path,
-                    &command_line,
-                    command_cursor_x,
-                    command_selected_index,
-                    command_scroll_offset,
-                    command_focus_on_list,
-                )?;
-                needs_refresh = false;
-            }
+            ui.render(
+                &mode,
+                &file_path,
+                &status_message,
+                &command_line,
+                command_cursor_x,
+                command_selected_index,
+                command_scroll_offset,
+                command_focus_on_list,
+            )?;
 
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
                     Event::Key(key_event) => {
-                        needs_refresh = true;
+                        if clear_status_on_key && status_message.is_some() {
+                            status_message = None;
+                            clear_status_on_key = false;
+                        }
                         match mode {
                             EditorMode::Normal => match key_event.code {
                                 KeyCode::Char('q') => break,
                                 KeyCode::Char('e') => {
                                     mode = EditorMode::Edit;
-                                    terminal.set_cursor_style(&mode)?;
-                                    editor.snap_cursor_to_tab_start();
-                                    update_status(
-                                        &mut status_message,
-                                        &mut needs_refresh,
-                                        String::from(DEFAULT_STATUS),
-                                    );
+                                    ui.enter_mode_edit()?;
+                                    status_message = None;
+                                    clear_status_on_key = false;
                                 }
-                                KeyCode::Char('s') => match editor.save(&mut file_path) {
+                                KeyCode::Char('s') => match ui.editor().save(&mut file_path) {
                                     Ok(msg) => {
-                                        update_status(&mut status_message, &mut needs_refresh, msg)
+                                        status_message = Some(msg);
+                                        clear_status_on_key = true;
                                     }
-                                    Err(err) => update_status(
-                                        &mut status_message,
-                                        &mut needs_refresh,
-                                        format!("Error saving: {}", err),
-                                    ),
+                                    Err(err) => {
+                                        status_message = Some(format!("Error saving: {}", err))
+                                    }
                                 },
                                 KeyCode::Char(':') => {
                                     mode = EditorMode::Command;
@@ -119,48 +111,42 @@ fn run(
                                     command_selected_index = 0;
                                     command_scroll_offset = 0;
                                     command_focus_on_list = false;
-                                    terminal.set_cursor_style(&mode)?;
+                                    ui.enter_mode_command()?;
                                 }
                                 key_code => {
                                     let usable_rows = terminal_size.1.saturating_sub(2);
-                                    editor.move_cursor(key_code, usable_rows)?;
+                                    ui.editor().move_cursor(key_code, usable_rows)?;
                                 }
                             },
                             EditorMode::Edit => match key_event.code {
                                 KeyCode::Esc => {
                                     mode = EditorMode::Normal;
-                                    terminal.set_cursor_style(&mode)?;
-                                    update_status(
-                                        &mut status_message,
-                                        &mut needs_refresh,
-                                        String::from(DEFAULT_STATUS),
-                                    );
+                                    ui.terminal().set_cursor_style(&mode)?;
+                                    status_message = None;
+                                    clear_status_on_key = false;
                                 }
                                 KeyCode::Delete => {
-                                    editor.delete_under_cursor();
+                                    ui.editor().delete_under_cursor();
                                 }
                                 KeyCode::Backspace => {
-                                    editor.delete_backspace();
+                                    ui.editor().delete_backspace();
                                 }
                                 KeyCode::Char(ch) => {
-                                    editor.insert_char(ch);
+                                    ui.editor().insert_char(ch);
                                 }
                                 _ => {}
                             },
                             EditorMode::Command => match key_event.code {
                                 KeyCode::Esc => {
                                     mode = EditorMode::Normal;
-                                    terminal.set_cursor_style(&mode)?;
+                                    ui.terminal().set_cursor_style(&mode)?;
                                     command_line.clear();
                                     command_cursor_x = 0;
                                     command_selected_index = 0;
                                     command_scroll_offset = 0;
                                     command_focus_on_list = false;
-                                    update_status(
-                                        &mut status_message,
-                                        &mut needs_refresh,
-                                        String::from(DEFAULT_STATUS),
-                                    );
+                                    status_message = None;
+                                    clear_status_on_key = false;
                                 }
                                 KeyCode::Enter => {
                                     let matches = filter_commands(&command_line);
@@ -270,9 +256,8 @@ fn run(
                         }
                     }
                     Event::Resize(_, _) => {
-                        terminal.update_size()?;
-                        terminal_size = terminal.size();
-                        needs_refresh = true;
+                        ui.terminal().size_update()?;
+                        terminal_size = ui.terminal().size();
                     }
                     _ => {}
                 }

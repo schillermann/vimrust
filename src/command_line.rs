@@ -19,8 +19,8 @@ impl CommandLine {
         number_of_columns: u16,
         command_line: &str,
     ) -> io::Result<()> {
-        terminal.add_command_to_queue(MoveTo(0, 0))?;
-        terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
+        terminal.queue_add_command(MoveTo(0, 0))?;
+        terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
         let is_placeholder = command_line.is_empty();
         let display_content = if is_placeholder {
             Self::PLACEHOLDER
@@ -41,18 +41,18 @@ impl CommandLine {
         } else if visible.len() > target_width {
             visible.truncate(target_width);
         }
-        terminal.add_command_to_queue(SetBackgroundColor(Color::Rgb {
+        terminal.queue_add_command(SetBackgroundColor(Color::Rgb {
             r: 27,
             g: 27,
             b: 27,
         }))?;
-        terminal.add_command_to_queue(SetForegroundColor(if is_placeholder {
+        terminal.queue_add_command(SetForegroundColor(if is_placeholder {
             Color::DarkGrey
         } else {
             Color::Grey
         }))?;
-        terminal.add_command_to_queue(Print(visible))?;
-        terminal.add_command_to_queue(ResetColor)?;
+        terminal.queue_add_command(Print(visible))?;
+        terminal.queue_add_command(ResetColor)?;
         Ok(())
     }
 }

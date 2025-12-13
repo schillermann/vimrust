@@ -33,19 +33,21 @@ impl Editor {
         }
     }
 
-    pub fn ensure_minimum_line(&mut self) {
-        if self.file_lines.is_empty() {
-            self.file_lines.push(String::new());
-        }
-    }
-
-    pub fn open(&mut self, file_path: String) -> io::Result<()> {
+    pub fn file_open(&mut self, file_path: String) -> io::Result<()> {
         let contents = fs::read_to_string(file_path)?;
         for line in contents.lines() {
             self.file_lines.push(line.to_string());
         }
-        self.ensure_minimum_line();
         Ok(())
+    }
+
+    pub fn file_new(&mut self) {
+        self.file_lines.clear();
+        self.file_lines.push(String::new());
+        self.cursor_x = 0;
+        self.cursor_y = 0;
+        self.columns_offset = 0;
+        self.rows_offset = 0;
     }
 
     pub fn save(&self, file_path: &mut Option<String>) -> io::Result<String> {
@@ -92,11 +94,11 @@ impl Editor {
             let screen_row = start_row.saturating_add(row_number);
             let file_line_number = row_number.saturating_add(self.rows_offset) as usize;
 
-            terminal.add_command_to_queue(MoveTo(0, screen_row))?;
-            terminal.add_command_to_queue(Clear(ClearType::CurrentLine))?;
+            terminal.queue_add_command(MoveTo(0, screen_row))?;
+            terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
 
             if file_line_number >= self.file_lines.len() {
-                terminal.add_command_to_queue(Print("~"))?;
+                terminal.queue_add_command(Print("~"))?;
                 if self.file_lines.is_empty() && row_number == number_of_rows / 3 {
                     let mut welcome = format!("VimRust -- version {}", VERSION);
                     if welcome.len() > number_of_columns as usize {
@@ -105,8 +107,8 @@ impl Editor {
                     let padding = number_of_columns
                         .saturating_sub(welcome.len() as u16)
                         .saturating_div(2);
-                    terminal.add_command_to_queue(MoveTo(padding as u16, screen_row))?;
-                    terminal.add_command_to_queue(Print(welcome))?;
+                    terminal.queue_add_command(MoveTo(padding as u16, screen_row))?;
+                    terminal.queue_add_command(Print(welcome))?;
                 }
             } else if let Some(file_line) = self.file_lines.get(file_line_number) {
                 let displayable_line = self.displayable_line(file_line);
@@ -115,7 +117,7 @@ impl Editor {
                     .skip(self.columns_offset as usize)
                     .take(number_of_columns as usize)
                     .collect();
-                terminal.add_command_to_queue(Print(visible_slice))?;
+                terminal.queue_add_command(Print(visible_slice))?;
             }
         }
 
@@ -226,10 +228,7 @@ impl Editor {
                 return;
             }
             if let Some(current_line) = self.file_lines.get(current_index).cloned() {
-                let new_cursor_x = match self
-                    .file_lines
-                    .get(current_index.saturating_sub(1))
-                {
+                let new_cursor_x = match self.file_lines.get(current_index.saturating_sub(1)) {
                     Some(prev) => self.visual_line_length(prev),
                     None => 0,
                 };
@@ -248,7 +247,10 @@ impl Editor {
         let (new_cursor_x, delete_idx) = match self.file_lines.get(self.cursor_y as usize) {
             Some(line) => (
                 self.previous_render_column(line, self.cursor_x),
-                self.render_column_to_char_index(line, self.previous_render_column(line, self.cursor_x)),
+                self.render_column_to_char_index(
+                    line,
+                    self.previous_render_column(line, self.cursor_x),
+                ),
             ),
             None => (0, 0),
         };
