@@ -1,9 +1,6 @@
 use std::io;
 
-use crossterm::{
-    cursor::{Hide, MoveTo, Show},
-    event::KeyCode,
-};
+use crossterm::cursor::{Hide, MoveTo, Show};
 
 use crate::{
     EditorMode, command_line::CommandLine, command_list::draw_command_list, editor::Editor,
@@ -14,6 +11,7 @@ use crate::{
 pub struct Ui<'a> {
     terminal: &'a mut Terminal,
     editor: &'a mut Editor,
+    status_line: StatusLine,
     updated: bool,
 }
 
@@ -22,6 +20,7 @@ impl<'a> Ui<'a> {
         Self {
             terminal,
             editor,
+            status_line: StatusLine::new(),
             updated: false,
         }
     }
@@ -33,6 +32,10 @@ impl<'a> Ui<'a> {
 
     pub fn terminal(&mut self) -> &mut Terminal {
         self.terminal
+    }
+
+    pub fn status_line(&mut self) -> &mut StatusLine {
+        &mut self.status_line
     }
 
     pub fn enter_mode_command(&mut self) -> io::Result<()> {
@@ -47,11 +50,18 @@ impl<'a> Ui<'a> {
         Ok(())
     }
 
+    pub fn save(&mut self, file_path: &mut Option<String>) {
+        let new_message = match self.editor.save(file_path) {
+            Ok(msg) => Some(msg),
+            Err(err) => Some(format!("Error saving: {}", err)),
+        };
+        self.status_line.message_update(new_message)
+    }
+
     pub fn render(
         &mut self,
         mode: &EditorMode,
         file_path: &Option<String>,
-        status_message: &Option<String>,
         command_line: &str,
         command_cursor_x: u16,
         command_selected_index: usize,
@@ -96,11 +106,10 @@ impl<'a> Ui<'a> {
             }
 
             if number_of_rows > 1 {
-                StatusLine::draw(
+                self.status_line.draw(
                     self.terminal,
                     mode,
                     file_path,
-                    status_message,
                     number_of_columns,
                     number_of_rows,
                 )?;

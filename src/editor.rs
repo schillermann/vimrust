@@ -56,7 +56,7 @@ impl Editor {
             .clone();
         let contents = self.file_lines.join("\n");
         fs::write(&path, contents)?;
-        Ok(format!("Wrote {}", path))
+        Ok(String::from("written"))
     }
 
     pub fn scroll(&mut self, number_of_columns: u16, number_of_rows: u16) {

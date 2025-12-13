@@ -57,8 +57,6 @@ fn run(
         ui.terminal().size_update()?;
         let mut terminal_size = ui.terminal().size();
         let mut mode = EditorMode::Normal;
-        let mut status_message: Option<String> = None;
-        let mut clear_status_on_key = false;
         let mut command_line = String::new();
         let mut command_cursor_x: u16 = 0;
         let mut command_selected_index: usize = 0;
@@ -70,7 +68,6 @@ fn run(
             ui.render(
                 &mode,
                 &file_path,
-                &status_message,
                 &command_line,
                 command_cursor_x,
                 command_selected_index,
@@ -81,9 +78,8 @@ fn run(
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
                     Event::Key(key_event) => {
-                        if clear_status_on_key && status_message.is_some() {
-                            status_message = None;
-                            clear_status_on_key = false;
+                        if ui.status_line().message().is_some() {
+                            ui.status_line().message_clear();
                         }
                         match mode {
                             EditorMode::Normal => match key_event.code {
@@ -91,18 +87,10 @@ fn run(
                                 KeyCode::Char('e') => {
                                     mode = EditorMode::Edit;
                                     ui.enter_mode_edit()?;
-                                    status_message = None;
-                                    clear_status_on_key = false;
                                 }
-                                KeyCode::Char('s') => match ui.editor().save(&mut file_path) {
-                                    Ok(msg) => {
-                                        status_message = Some(msg);
-                                        clear_status_on_key = true;
-                                    }
-                                    Err(err) => {
-                                        status_message = Some(format!("Error saving: {}", err))
-                                    }
-                                },
+                                KeyCode::Char('s') => {
+                                    ui.save(&mut file_path);
+                                }
                                 KeyCode::Char(':') => {
                                     mode = EditorMode::Command;
                                     command_line.clear();
@@ -122,8 +110,7 @@ fn run(
                                 KeyCode::Esc => {
                                     mode = EditorMode::Normal;
                                     ui.terminal().set_cursor_style(&mode)?;
-                                    status_message = None;
-                                    clear_status_on_key = false;
+                                    ui.status_line().message_clear();
                                 }
                                 KeyCode::Delete => {
                                     ui.editor().delete_under_cursor();
@@ -145,8 +132,7 @@ fn run(
                                     command_selected_index = 0;
                                     command_scroll_offset = 0;
                                     command_focus_on_list = false;
-                                    status_message = None;
-                                    clear_status_on_key = false;
+                                    ui.status_line().message_clear();
                                 }
                                 KeyCode::Enter => {
                                     let matches = filter_commands(&command_line);
