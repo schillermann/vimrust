@@ -46,12 +46,14 @@ impl<'a> Ui<'a> {
         self.editor
     }
 
-    pub fn terminal(&mut self) -> &mut Terminal {
-        self.terminal
-    }
-
     pub fn status_line(&mut self) -> &mut StatusLine {
         &mut self.status_line
+    }
+
+    pub fn terminal_update_size(&mut self) -> io::Result<()> {
+        self.terminal.size_update()?;
+        self.updated = true;
+        Ok(())
     }
 
     pub fn mode_command_enter(&mut self) -> io::Result<()> {
@@ -77,6 +79,7 @@ impl<'a> Ui<'a> {
     }
 
     pub fn command_list_enter_select(&mut self) {
+        self.updated = true;
         let matches = self.command_list.filter(self.command_line.command_line());
         if self.command_focus_on_list && !matches.is_empty() {
             let index = self
@@ -92,43 +95,51 @@ impl<'a> Ui<'a> {
     }
 
     pub fn command_line_backspace(&mut self) {
+        self.updated = true;
         self.command_line.backspace();
         self.command_list.reset_selection();
         self.set_command_focus_on_list(false);
     }
 
     pub fn command_line_delete(&mut self) {
+        self.updated = true;
         self.command_line.delete();
         self.command_list.reset_selection();
         self.set_command_focus_on_list(false);
     }
 
     pub fn command_line_move_left(&mut self) {
+        self.updated = true;
         self.command_line.move_left();
         self.set_command_focus_on_list(false);
     }
 
     pub fn command_line_move_right(&mut self) {
+        self.updated = true;
         self.command_line.move_right();
         self.set_command_focus_on_list(false);
     }
 
     pub fn command_line_move_home(&mut self) {
+        self.updated = true;
         self.command_line.move_home();
         self.set_command_focus_on_list(false);
     }
 
     pub fn command_line_move_end(&mut self) {
+        self.updated = true;
         self.command_line.move_end();
         self.set_command_focus_on_list(false);
     }
 
     pub fn command_line_insert_char(&mut self, ch: char) {
+        self.updated = true;
         self.command_line.insert_char(ch);
         self.command_list.reset_selection();
         self.set_command_focus_on_list(false);
     }
     pub fn command_list_move_selection(&mut self, direction: KeyCode) {
+        self.updated = true;
         let list_rows = self.terminal.size().1.saturating_sub(2).saturating_sub(3) as usize;
         let matches = self.command_list.filter(self.command_line.command_line());
         if matches.is_empty() {
@@ -189,10 +200,11 @@ impl<'a> Ui<'a> {
     }
 
     pub fn render(&mut self, file_path: &Option<String>) -> io::Result<()> {
-        if self.updated {
-            self.updated = false;
+        if !self.updated {
             return Ok(());
         }
+
+        self.updated = false;
 
         let (number_of_columns, number_of_rows) = self.terminal.size();
         if number_of_rows == 0 {
@@ -223,8 +235,7 @@ impl<'a> Ui<'a> {
                 } else {
                     self.editor.scroll(number_of_columns, usable_rows);
 
-                    self.editor
-                        .draw_rows(number_of_columns, usable_rows, 1)?;
+                    self.editor.draw_rows(number_of_columns, usable_rows, 1)?;
                 }
             }
 

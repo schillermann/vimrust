@@ -55,7 +55,7 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
             ui.editor().file_new();
         }
 
-        ui.terminal().size_update()?;
+        ui.terminal_update_size()?;
 
         loop {
             ui.render(&file_path)?;
@@ -133,7 +133,7 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                         }
                     }
                     Event::Resize(_, _) => {
-                        ui.terminal().size_update()?;
+                        ui.terminal_update_size()?;
                     }
                     _ => {}
                 }
