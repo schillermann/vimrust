@@ -9,23 +9,109 @@ use crossterm::{
 use crate::terminal::Terminal;
 
 /// Handles rendering of the command line (top row).
-pub struct CommandLine;
+pub struct CommandLine {
+    content: String,
+    cursor_x: u16,
+}
 
 impl CommandLine {
     pub const PLACEHOLDER: &'static str = "Press : for commands";
 
-    pub fn draw(
-        terminal: &mut Terminal,
-        number_of_columns: u16,
-        command_line: &str,
-    ) -> io::Result<()> {
+    pub fn new() -> Self {
+        Self {
+            content: String::new(),
+            cursor_x: 0,
+        }
+    }
+
+    pub fn start_prompt(&mut self) {
+        self.content.clear();
+        self.content.push(':');
+        self.cursor_x = 1;
+    }
+
+    pub fn clear(&mut self) {
+        self.content.clear();
+        self.cursor_x = 0;
+    }
+
+    pub fn set_content(&mut self, new_content: String) {
+        self.content = new_content;
+        self.cursor_x = self.content.len() as u16;
+    }
+
+    pub fn command_line(&self) -> &str {
+        self.content()
+    }
+
+    pub fn content(&self) -> &str {
+        &self.content
+    }
+
+    pub fn command_cursor_x(&self) -> u16 {
+        self.cursor_x()
+    }
+
+    pub fn cursor_x(&self) -> u16 {
+        self.cursor_x
+    }
+
+    pub fn backspace(&mut self) {
+        if self.cursor_x == 0 {
+            return;
+        }
+        let delete_at = self.cursor_x.saturating_sub(1) as usize;
+        if delete_at < self.content.len() {
+            self.content.remove(delete_at);
+            self.cursor_x = self.cursor_x.saturating_sub(1);
+        }
+    }
+
+    pub fn delete(&mut self) {
+        let delete_at = self.cursor_x as usize;
+        if delete_at < self.content.len() {
+            self.content.remove(delete_at);
+            self.cursor_x = self.cursor_x.min(self.content.len() as u16);
+        }
+    }
+
+    pub fn move_left(&mut self) {
+        if self.cursor_x > 0 {
+            self.cursor_x = self.cursor_x.saturating_sub(1);
+        }
+    }
+
+    pub fn move_right(&mut self) {
+        let limit = self.content.len() as u16;
+        if self.cursor_x < limit {
+            self.cursor_x = self.cursor_x.saturating_add(1);
+        }
+    }
+
+    pub fn move_home(&mut self) {
+        self.cursor_x = 0;
+    }
+
+    pub fn move_end(&mut self) {
+        self.cursor_x = self.content.len() as u16;
+    }
+
+    pub fn insert_char(&mut self, ch: char) {
+        let insert_at = self.cursor_x as usize;
+        if insert_at <= self.content.len() {
+            self.content.insert(insert_at, ch);
+            self.cursor_x = self.cursor_x.saturating_add(1);
+        }
+    }
+
+    pub fn draw(terminal: &mut Terminal, number_of_columns: u16, content: &str) -> io::Result<()> {
         terminal.queue_add_command(MoveTo(0, 0))?;
         terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
-        let is_placeholder = command_line.is_empty();
+        let is_placeholder = content.is_empty();
         let display_content = if is_placeholder {
             Self::PLACEHOLDER
         } else {
-            command_line
+            content
         };
 
         // Leave one column of padding on both sides of the command line.

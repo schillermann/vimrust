@@ -8,6 +8,7 @@ use crossterm::{
 };
 
 use crate::terminal::Terminal;
+use std::ptr::NonNull;
 
 const DEFAULT_TAB_STOP: u16 = 4;
 const VERSION: &str = "0.1.0";
@@ -19,10 +20,11 @@ pub struct Editor {
     pub rows_offset: u16,
     pub file_lines: Vec<String>,
     tab_stop: u16,
+    terminal: NonNull<Terminal>,
 }
 
 impl Editor {
-    pub fn new() -> Self {
+    pub fn new(terminal: &Terminal) -> Self {
         Self {
             cursor_x: 0,
             cursor_y: 0,
@@ -30,6 +32,7 @@ impl Editor {
             rows_offset: 0,
             file_lines: Vec::new(),
             tab_stop: DEFAULT_TAB_STOP,
+            terminal: NonNull::from(terminal),
         }
     }
 
@@ -85,11 +88,11 @@ impl Editor {
 
     pub fn draw_rows(
         &mut self,
-        terminal: &mut Terminal,
         number_of_columns: u16,
         number_of_rows: u16,
         start_row: u16,
     ) -> io::Result<()> {
+        let terminal = unsafe { self.terminal.as_mut() };
         for row_number in 0..number_of_rows {
             let screen_row = start_row.saturating_add(row_number);
             let file_line_number = row_number.saturating_add(self.rows_offset) as usize;
@@ -124,7 +127,8 @@ impl Editor {
         Ok(())
     }
 
-    pub fn move_cursor(&mut self, key_code: KeyCode, usable_rows: u16) -> io::Result<()> {
+    pub fn move_cursor(&mut self, key_code: KeyCode) {
+        let usable_rows = unsafe { self.terminal.as_ref().size().1.saturating_sub(2) };
         let file_lines_len = self.file_lines.len().min(u16::MAX as usize) as u16;
 
         match key_code {
@@ -194,8 +198,6 @@ impl Editor {
         if let Some(line) = self.file_lines.get(self.cursor_y as usize) {
             self.cursor_x = self.snap_cursor_to_render_character(line, self.cursor_x);
         }
-
-        Ok(())
     }
 
     pub fn insert_char(&mut self, ch: char) {

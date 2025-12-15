@@ -1,9 +1,12 @@
 use std::io;
 
-use crossterm::cursor::{Hide, MoveTo, Show};
+use crossterm::{
+    cursor::{Hide, MoveTo, Show},
+    event::KeyCode,
+};
 
 use crate::{
-    EditorMode, command_line::CommandLine, command_list::draw_command_list, editor::Editor,
+    EditorMode, command_line::CommandLine, command_list::CommandList, editor::Editor,
     status_line::StatusLine, terminal::Terminal,
 };
 
@@ -11,17 +14,30 @@ use crate::{
 pub struct Ui<'a> {
     terminal: &'a mut Terminal,
     editor: &'a mut Editor,
+    command_line: &'a mut CommandLine,
+    command_list: &'a mut CommandList,
     status_line: StatusLine,
     updated: bool,
+    command_focus_on_list: bool,
+    mode: EditorMode,
 }
 
 impl<'a> Ui<'a> {
-    pub fn new(terminal: &'a mut Terminal, editor: &'a mut Editor) -> Self {
+    pub fn new(
+        terminal: &'a mut Terminal,
+        editor: &'a mut Editor,
+        command_line: &'a mut CommandLine,
+        command_list: &'a mut CommandList,
+    ) -> Self {
         Self {
             terminal,
             editor,
+            command_line,
+            command_list,
             status_line: StatusLine::new(),
             updated: false,
+            command_focus_on_list: false,
+            mode: EditorMode::Normal,
         }
     }
 
@@ -38,36 +54,141 @@ impl<'a> Ui<'a> {
         &mut self.status_line
     }
 
-    pub fn enter_mode_command(&mut self) -> io::Result<()> {
-        self.updated = true;
-        self.terminal.set_cursor_style(&EditorMode::Command)
+    pub fn mode_command_enter(&mut self) -> io::Result<()> {
+        self.command_line.start_prompt();
+        self.command_list.reset_selection();
+        self.set_command_focus_on_list(false);
+        self.enter_mode_command()
     }
 
-    pub fn enter_mode_edit(&mut self) -> io::Result<()> {
+    pub fn mode_command_exit(&mut self) -> io::Result<()> {
+        self.set_mode(EditorMode::Normal)?;
+        self.command_line.clear();
+        self.command_list.reset_selection();
+        self.set_command_focus_on_list(false);
+        self.status_line.message_clear();
+        Ok(())
+    }
+
+    pub fn mode_normal_enter(&mut self) -> io::Result<()> {
+        self.set_mode(EditorMode::Normal)?;
+        self.status_line.message_clear();
+        Ok(())
+    }
+
+    pub fn command_list_enter_select(&mut self) {
+        let matches = self.command_list.filter(self.command_line.command_line());
+        if self.command_focus_on_list && !matches.is_empty() {
+            let index = self
+                .command_list
+                .command_selected_index()
+                .min(matches.len() - 1);
+            if let Some(entry) = matches.get(index) {
+                self.command_line.set_content(format!(":{}", entry.name));
+                self.command_list.reset_selection();
+                self.set_command_focus_on_list(false);
+            }
+        }
+    }
+
+    pub fn command_line_backspace(&mut self) {
+        self.command_line.backspace();
+        self.command_list.reset_selection();
+        self.set_command_focus_on_list(false);
+    }
+
+    pub fn command_line_delete(&mut self) {
+        self.command_line.delete();
+        self.command_list.reset_selection();
+        self.set_command_focus_on_list(false);
+    }
+
+    pub fn command_line_move_left(&mut self) {
+        self.command_line.move_left();
+        self.set_command_focus_on_list(false);
+    }
+
+    pub fn command_line_move_right(&mut self) {
+        self.command_line.move_right();
+        self.set_command_focus_on_list(false);
+    }
+
+    pub fn command_line_move_home(&mut self) {
+        self.command_line.move_home();
+        self.set_command_focus_on_list(false);
+    }
+
+    pub fn command_line_move_end(&mut self) {
+        self.command_line.move_end();
+        self.set_command_focus_on_list(false);
+    }
+
+    pub fn command_line_insert_char(&mut self, ch: char) {
+        self.command_line.insert_char(ch);
+        self.command_list.reset_selection();
+        self.set_command_focus_on_list(false);
+    }
+    pub fn command_list_move_selection(&mut self, direction: KeyCode) {
+        let list_rows = self.terminal.size().1.saturating_sub(2).saturating_sub(3) as usize;
+        let matches = self.command_list.filter(self.command_line.command_line());
+        if matches.is_empty() {
+            self.command_list.reset_selection();
+            self.set_command_focus_on_list(false);
+            return;
+        }
+
+        self.set_command_focus_on_list(true);
+        let current_index = self.command_list.command_selected_index();
+        let max_index = matches.len().saturating_sub(1);
+        match direction {
+            KeyCode::Up if current_index > 0 => {
+                self.command_list
+                    .set_selected_index(current_index.saturating_sub(1));
+            }
+            KeyCode::Down if current_index < max_index => {
+                self.command_list
+                    .set_selected_index(current_index.saturating_add(1));
+            }
+            _ => {}
+        }
+        self.command_list.adjust_scroll_for_visible_rows(list_rows);
+    }
+
+    pub fn set_command_focus_on_list(&mut self, focus: bool) {
+        self.command_focus_on_list = focus;
+    }
+
+    pub fn enter_mode_command(&mut self) -> io::Result<()> {
         self.updated = true;
-        self.terminal.set_cursor_style(&EditorMode::Edit)?;
+        self.set_mode(EditorMode::Command)
+    }
+
+    pub fn mode_edit_enter(&mut self) -> io::Result<()> {
+        self.set_mode(EditorMode::Edit)?;
         self.editor.snap_cursor_to_tab_start();
         Ok(())
     }
 
-    pub fn save(&mut self, file_path: &mut Option<String>) {
+    pub fn set_mode(&mut self, mode: EditorMode) -> io::Result<()> {
+        self.mode = mode;
+        self.updated = true;
+        self.terminal.set_cursor_style(&self.mode)
+    }
+
+    pub fn mode(&self) -> &EditorMode {
+        &self.mode
+    }
+
+    pub fn file_save(&mut self, file_path: &mut Option<String>) {
         let new_message = match self.editor.save(file_path) {
             Ok(msg) => Some(msg),
             Err(err) => Some(format!("Error saving: {}", err)),
         };
-        self.status_line.message_update(new_message)
+        self.status_line.message_update(new_message);
+        self.updated = true;
     }
 
-    pub fn render(
-        &mut self,
-        mode: &EditorMode,
-        file_path: &Option<String>,
-        command_line: &str,
-        command_cursor_x: u16,
-        command_selected_index: usize,
-        command_scroll_offset: usize,
-        command_focus_on_list: bool,
-    ) -> io::Result<()> {
+    pub fn render(&mut self, file_path: &Option<String>) -> io::Result<()> {
         if self.updated {
             self.updated = false;
             return Ok(());
@@ -84,41 +205,46 @@ impl<'a> Ui<'a> {
         {
             self.terminal.queue_add_command(Hide)?;
 
-            CommandLine::draw(self.terminal, number_of_columns, command_line)?;
+            CommandLine::draw(
+                self.terminal,
+                number_of_columns,
+                self.command_line.command_line(),
+            )?;
 
             if usable_rows > 0 {
-                if matches!(mode, EditorMode::Command) {
-                    draw_command_list(
+                if matches!(self.mode, EditorMode::Command) {
+                    self.command_list.draw(
                         self.terminal,
                         number_of_columns,
                         1,
                         usable_rows,
-                        command_line,
-                        command_selected_index,
-                        command_scroll_offset,
+                        self.command_line.command_line(),
                     )?;
                 } else {
                     self.editor.scroll(number_of_columns, usable_rows);
 
                     self.editor
-                        .draw_rows(self.terminal, number_of_columns, usable_rows, 1)?;
+                        .draw_rows(number_of_columns, usable_rows, 1)?;
                 }
             }
 
             if number_of_rows > 1 {
                 self.status_line.draw(
                     self.terminal,
-                    mode,
+                    &self.mode,
                     file_path,
                     number_of_columns,
                     number_of_rows,
                 )?;
             }
 
-            let (cursor_col, cursor_row) = match mode {
-                EditorMode::Command if command_focus_on_list => {
-                    let relative_row =
-                        command_selected_index.saturating_sub(command_scroll_offset) as u16;
+            let (cursor_col, cursor_row) = match self.mode {
+                EditorMode::Command if self.command_focus_on_list => {
+                    let relative_row = self
+                        .command_list
+                        .command_selected_index()
+                        .saturating_sub(self.command_list.command_scroll_offset())
+                        as u16;
                     let list_row = 1u16
                         .saturating_add(1)
                         .saturating_add(2)
@@ -127,7 +253,8 @@ impl<'a> Ui<'a> {
                     (0, list_row)
                 }
                 EditorMode::Command => (
-                    command_cursor_x
+                    self.command_line
+                        .command_cursor_x()
                         .saturating_add(1) // left padding on command line
                         .min(number_of_columns.saturating_sub(1)),
                     0,
