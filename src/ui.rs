@@ -245,7 +245,10 @@ impl<'a> Ui<'a> {
                 } else {
                     self.editor.scroll(number_of_columns, usable_rows);
 
-                    let rows = self.editor.render_rows(number_of_columns, usable_rows);
+                    let view = self.editor.view();
+                    let rows = self
+                        .editor
+                        .rows_render(&view, number_of_columns, usable_rows);
                     for (idx, row) in rows.iter().enumerate() {
                         let screen_row = 1u16.saturating_add(idx as u16);
                         self.terminal.queue_add_command(MoveTo(0, screen_row))?;

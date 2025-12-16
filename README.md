@@ -14,6 +14,13 @@ Read file.
 cargo run my_file.txt
 ```
 
+Start headless
+```sh
+cargo run -- --rpc file.txt
+```
+Drive it by sending JSON lines over stdin e.g. `{"type":"render"}`
+The render RPC response sends a JSON string frame containing mode, cursor, rows, status, and related data.
+
 # Keymap
 
 # Normal Mode

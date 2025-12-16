@@ -7,6 +7,14 @@ use crate::file::File;
 const DEFAULT_TAB_STOP: u16 = 4;
 const VERSION: &str = "0.1.0";
 
+pub struct EditorView<'a> {
+    pub file: &'a File,
+    pub cursor_x: u16,
+    pub cursor_y: u16,
+    pub columns_offset: u16,
+    pub rows_offset: u16,
+}
+
 pub struct Editor {
     pub cursor_x: u16,
     pub cursor_y: u16,
@@ -28,6 +36,29 @@ impl Editor {
         }
     }
 
+    pub fn view(&self) -> EditorView<'_> {
+        EditorView {
+            file: &self.file,
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+            columns_offset: self.columns_offset,
+            rows_offset: self.rows_offset,
+        }
+    }
+
+    /// Returns a read-only view with scroll offsets adjusted for the viewport.
+    pub fn view_with_scroll(&self, number_of_columns: u16, number_of_rows: u16) -> EditorView<'_> {
+        let (columns_offset, rows_offset) =
+            self.compute_scroll_offsets(number_of_columns, number_of_rows);
+        EditorView {
+            file: &self.file,
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+            columns_offset,
+            rows_offset,
+        }
+    }
+
     pub fn file_read(&mut self) -> io::Result<()> {
         self.file.read()
     }
@@ -39,37 +70,59 @@ impl Editor {
     }
 
     pub fn scroll(&mut self, number_of_columns: u16, number_of_rows: u16) {
+        let (columns_offset, rows_offset) =
+            self.compute_scroll_offsets(number_of_columns, number_of_rows);
+        self.columns_offset = columns_offset;
+        self.rows_offset = rows_offset;
+    }
+
+    fn compute_scroll_offsets(
+        &self,
+        number_of_columns: u16,
+        number_of_rows: u16,
+    ) -> (u16, u16) {
         if number_of_rows == 0 {
-            return;
+            return (self.columns_offset, self.rows_offset);
         }
-        if self.cursor_y < self.rows_offset {
-            self.rows_offset = self.cursor_y;
+
+        let mut rows_offset = self.rows_offset;
+        let mut columns_offset = self.columns_offset;
+
+        if self.cursor_y < rows_offset {
+            rows_offset = self.cursor_y;
         }
-        if self.cursor_y >= self.rows_offset.saturating_add(number_of_rows) {
-            self.rows_offset = self
+        if self.cursor_y >= rows_offset.saturating_add(number_of_rows) {
+            rows_offset = self
                 .cursor_y
                 .saturating_sub(number_of_rows)
                 .saturating_add(1);
         }
-        if self.cursor_x < self.columns_offset {
-            self.columns_offset = self.cursor_x;
+        if self.cursor_x < columns_offset {
+            columns_offset = self.cursor_x;
         }
-        if self.cursor_x >= self.columns_offset.saturating_add(number_of_columns) {
-            self.columns_offset = self
+        if self.cursor_x >= columns_offset.saturating_add(number_of_columns) {
+            columns_offset = self
                 .cursor_x
                 .saturating_sub(number_of_columns)
                 .saturating_add(1);
         }
+
+        (columns_offset, rows_offset)
     }
 
-    pub fn rows_render(&self, number_of_columns: u16, number_of_rows: u16) -> Vec<String> {
+    pub fn rows_render(
+        &self,
+        view: &EditorView<'_>,
+        number_of_columns: u16,
+        number_of_rows: u16,
+    ) -> Vec<String> {
         let mut rows = Vec::with_capacity(number_of_rows as usize);
         for row_number in 0..number_of_rows {
-            let file_line_number = row_number.saturating_add(self.rows_offset) as usize;
+            let file_line_number = row_number.saturating_add(view.rows_offset) as usize;
 
-            if file_line_number >= self.file.len() {
+            if file_line_number >= view.file.len() {
                 let mut line = String::from("~");
-                if self.file.len() == 0 && row_number == number_of_rows / 3 {
+                if view.file.len() == 0 && row_number == number_of_rows / 3 {
                     let mut welcome = format!("VimRust -- version {}", VERSION);
                     if welcome.len() > number_of_columns as usize {
                         welcome.truncate(number_of_columns as usize);
@@ -86,11 +139,11 @@ impl Editor {
                     line.truncate(number_of_columns as usize);
                 }
                 rows.push(line);
-            } else if let Some(file_line) = self.file.line(file_line_number) {
+            } else if let Some(file_line) = view.file.line(file_line_number) {
                 let displayable_line = self.displayable_line(file_line);
                 let visible_slice: String = displayable_line
                     .chars()
-                    .skip(self.columns_offset as usize)
+                    .skip(view.columns_offset as usize)
                     .take(number_of_columns as usize)
                     .collect();
                 rows.push(visible_slice);

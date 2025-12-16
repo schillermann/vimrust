@@ -7,6 +7,7 @@ mod command_line;
 mod command_list;
 mod editor;
 mod file;
+mod rpc;
 mod status_line;
 mod terminal;
 mod ui;
@@ -35,7 +36,15 @@ impl EditorMode {
 }
 
 fn main() -> io::Result<()> {
-    let file_path = env::args().nth(1);
+    let mut args = env::args().skip(1);
+    let first_arg = args.next();
+    let rpc_mode = first_arg.as_deref() == Some("--rpc");
+    let file_path = if rpc_mode { args.next() } else { first_arg };
+
+    if rpc_mode {
+        return rpc::serve_stdio(file_path);
+    }
+
     let mut terminal = Terminal::new()?;
     let result = run(&mut terminal, file_path);
     terminal.cleanup();
