@@ -286,3 +286,59 @@ fn write_error(stdout: &mut impl Write, message: String) -> io::Result<()> {
     stdout.write_all(b"\n")?;
     stdout.flush()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn insert_request_updates_rows() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+
+        let outcome = handle_request(
+            RpcRequest::Insert {
+                text: "hi".to_string(),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+        );
+        assert!(matches!(outcome, RequestOutcome::Frame));
+
+        let frame = build_frame(&editor, &mode, &status, size);
+        assert_eq!(frame.rows.get(0).map(String::as_str), Some("hi"));
+    }
+
+    #[test]
+    fn save_as_writes_file_and_updates_status() {
+        let mut editor = Editor::new(File::new(None));
+        editor.file.file_lines = vec![String::from("hello")];
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let path = std::env::temp_dir().join("vimrust_rpc_test.txt");
+        let _ = fs::remove_file(&path);
+
+        let outcome = handle_request(
+            RpcRequest::SaveAs {
+                path: path.to_string_lossy().to_string(),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+        );
+        assert!(matches!(outcome, RequestOutcome::Frame));
+        assert_eq!(status.as_deref(), Some("written"));
+        assert_eq!(
+            fs::read_to_string(&path).unwrap_or_default(),
+            String::from("hello")
+        );
+        let _ = fs::remove_file(&path);
+    }
+}
