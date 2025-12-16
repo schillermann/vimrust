@@ -14,12 +14,24 @@ Read file.
 cargo run my_file.txt
 ```
 
-Start headless
+# RPC protocol
+
+Headless mode (stdio JSON):
 ```sh
 cargo run -- --rpc file.txt
 ```
-Drive it by sending JSON lines over stdin e.g. `{"type":"render"}`
-The render RPC response sends a JSON string frame containing mode, cursor, rows, status, and related data.
+
+Send line-delimited JSON requests over stdin. Examples:
+- `{"type":"resize","cols":120,"rows":30}`
+- `{"type":"open","path":"/tmp/foo.txt"}`
+- `{"type":"insert","text":"hello"}`
+- `{"type":"move_cursor","direction":"left"}`
+- `{"type":"delete","kind":"backspace"}`
+- `{"type":"save_as","path":"/tmp/bar.txt"}`
+- `{"type":"get_state"}`
+- `{"type":"quit"}`
+
+Responses include frames with mode, cursor, visible rows, status, file path, and size, or errors if a request fails.
 
 # Keymap
 

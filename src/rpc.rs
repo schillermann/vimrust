@@ -5,14 +5,23 @@ use serde::{Deserialize, Serialize};
 
 use crate::{editor::Editor, file::File, EditorMode};
 
-/// Minimal stdio-based RPC loop for driving the editor core without the terminal UI.
+/// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
 ///
-/// Protocol (line-delimited JSON):
-/// - {"type":"resize","cols":80,"rows":24}
-/// - {"type":"input","key":"h"} (same key semantics as Normal/Edit modes: h/j/k/l, e, s, q, backspace, delete, esc, pageup, pagedown, home, end)
-/// - {"type":"render"} (returns a frame)
-/// - {"type":"quit"}
-/// Any input triggers a frame response so the client can redraw.
+/// Requests (`"type"` field):
+/// - resize: {"type":"resize","cols":80,"rows":24}
+/// - open: {"type":"open","path":"/tmp/file.txt"}
+/// - save: {"type":"save"}
+/// - save_as: {"type":"save_as","path":"/tmp/new.txt"}
+/// - insert: {"type":"insert","text":"hello"}
+/// - delete: {"type":"delete","kind":"backspace"|"under"}
+/// - move_cursor: {"type":"move_cursor","direction":"left"|"right"|"up"|"down"|"page_up"|"page_down"|"home"|"end"}
+/// - set_mode: {"type":"set_mode","mode":"normal"|"edit"|"command"}
+/// - get_state: {"type":"get_state"}
+/// - quit: {"type":"quit"}
+///
+/// Responses:
+/// - frame: {"type":"frame", ...} for state snapshots (emitted after state changes and on get_state)
+/// - error: {"type":"error","message":"..."} on failure
 pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
@@ -39,30 +48,25 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
             }
         };
 
-        let send_frame = true;
-        match request {
-            RpcRequest::Resize { cols, rows } => {
-                size = (cols, rows);
-            }
-            RpcRequest::Input { key } => {
-                let control = handle_key(&key, &mut editor, &mut mode, &mut status_message, size);
-                if control == ControlFlow::Quit {
-                    break;
+        match handle_request(
+            request,
+            &mut editor,
+            &mut mode,
+            &mut status_message,
+            &mut size,
+        ) {
+            RequestOutcome::Frame => {
+                let frame = build_frame(&editor, &mode, &status_message, size);
+                if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
+                    let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
+                } else {
+                    let _ = stdout.write_all(b"\n");
+                    let _ = stdout.flush();
                 }
             }
-            RpcRequest::Render => {
-                // fallthrough to send frame
-            }
-            RpcRequest::Quit => break,
-        }
-
-        if send_frame {
-            let frame = build_frame(&editor, &mode, &status_message, size);
-            if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
-                let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
-            } else {
-                let _ = stdout.write_all(b"\n");
-                let _ = stdout.flush();
+            RequestOutcome::Quit => break,
+            RequestOutcome::Error(message) => {
+                let _ = write_error(&mut stdout, message);
             }
         }
     }
@@ -71,12 +75,46 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
 }
 
 #[derive(Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
+#[serde(tag = "type", rename_all = "snake_case")]
 enum RpcRequest {
     Resize { cols: u16, rows: u16 },
-    Input { key: String },
-    Render,
+    Open { path: String },
+    Save,
+    SaveAs { path: String },
+    Insert { text: String },
+    Delete { kind: DeleteKind },
+    MoveCursor { direction: MoveDir },
+    SetMode { mode: RpcMode },
+    GetState,
     Quit,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DeleteKind {
+    Backspace,
+    Under,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum MoveDir {
+    Left,
+    Right,
+    Up,
+    Down,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RpcMode {
+    Normal,
+    Edit,
+    Command,
 }
 
 #[derive(Serialize)]
@@ -102,74 +140,94 @@ struct Cursor {
     row: u16,
 }
 
-#[derive(PartialEq)]
-enum ControlFlow {
-    Continue,
+enum RequestOutcome {
+    Frame,
     Quit,
+    Error(String),
 }
 
-fn handle_key(
-    key: &str,
+fn handle_request(
+    request: RpcRequest,
     editor: &mut Editor,
     mode: &mut EditorMode,
     status: &mut Option<String>,
-    size: (u16, u16),
-) -> ControlFlow {
-    let usable_rows = size.1.saturating_sub(2);
-    match *mode {
-        EditorMode::Normal => match key {
-            "q" => return ControlFlow::Quit,
-            "e" => {
-                *mode = EditorMode::Edit;
-                editor.snap_cursor_to_tab_start();
+    size: &mut (u16, u16),
+) -> RequestOutcome {
+    match request {
+        RpcRequest::Resize { cols, rows } => {
+            *size = (cols, rows);
+            RequestOutcome::Frame
+        }
+        RpcRequest::Open { path } => {
+            let mut new_file = File::new(Some(path));
+            if let Err(err) = new_file.read() {
+                return RequestOutcome::Error(format!("open failed: {}", err));
             }
-            "s" => match editor.save(&mut None) {
-                Ok(msg) => *status = Some(msg),
-                Err(err) => *status = Some(format!("Error saving: {}", err)),
-            },
-            ":" => {
-                *mode = EditorMode::Command;
+            *editor = Editor::new(new_file);
+            *status = None;
+            *mode = EditorMode::Normal;
+            RequestOutcome::Frame
+        }
+        RpcRequest::Save => match editor.save(&mut None) {
+            Ok(msg) => {
+                *status = Some(msg);
+                RequestOutcome::Frame
             }
-            "h" | "left" => editor.cursor_move(KeyCode::Char('h'), usable_rows),
-            "j" | "down" => editor.cursor_move(KeyCode::Char('j'), usable_rows),
-            "k" | "up" => editor.cursor_move(KeyCode::Char('k'), usable_rows),
-            "l" | "right" => editor.cursor_move(KeyCode::Char('l'), usable_rows),
-            "pageup" => editor.cursor_move(KeyCode::PageUp, usable_rows),
-            "pagedown" => editor.cursor_move(KeyCode::PageDown, usable_rows),
-            "home" => editor.cursor_move(KeyCode::Home, usable_rows),
-            "end" => editor.cursor_move(KeyCode::End, usable_rows),
-            other if other.len() == 1 => {
-                // Unknown single-char in normal mode: ignore.
-                let _ = other;
-            }
-            _ => {}
+            Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
         },
-        EditorMode::Edit => match key {
-            "esc" => {
-                *mode = EditorMode::Normal;
-            }
-            "backspace" => editor.delete_backspace(),
-            "delete" => editor.delete_under_cursor(),
-            "pageup" => editor.cursor_move(KeyCode::PageUp, usable_rows),
-            "pagedown" => editor.cursor_move(KeyCode::PageDown, usable_rows),
-            "home" => editor.cursor_move(KeyCode::Home, usable_rows),
-            "end" => editor.cursor_move(KeyCode::End, usable_rows),
-            other if other.len() == 1 => {
-                if let Some(ch) = other.chars().next() {
-                    editor.insert_char(ch);
+        RpcRequest::SaveAs { path } => {
+            let mut new_file = File::new(Some(path));
+            new_file.file_lines = editor.file.file_lines.clone();
+            match new_file.save() {
+                Ok(msg) => {
+                    *editor = Editor::new(new_file);
+                    *status = Some(msg);
+                    RequestOutcome::Frame
                 }
-            }
-            _ => {}
-        },
-        EditorMode::Command => {
-            // Command mode not yet implemented in RPC; ESC returns to normal.
-            if key == "esc" {
-                *mode = EditorMode::Normal;
+                Err(err) => RequestOutcome::Error(format!("save_as failed: {}", err)),
             }
         }
+        RpcRequest::Insert { text } => {
+            for ch in text.chars() {
+                editor.insert_char(ch);
+            }
+            RequestOutcome::Frame
+        }
+        RpcRequest::Delete { kind } => {
+            match kind {
+                DeleteKind::Backspace => editor.delete_backspace(),
+                DeleteKind::Under => editor.delete_under_cursor(),
+            }
+            RequestOutcome::Frame
+        }
+        RpcRequest::MoveCursor { direction } => {
+            let usable_rows = size.1.saturating_sub(2);
+            match direction {
+                MoveDir::Left => editor.cursor_move(KeyCode::Char('h'), usable_rows),
+                MoveDir::Right => editor.cursor_move(KeyCode::Char('l'), usable_rows),
+                MoveDir::Up => editor.cursor_move(KeyCode::Char('k'), usable_rows),
+                MoveDir::Down => editor.cursor_move(KeyCode::Char('j'), usable_rows),
+                MoveDir::PageUp => editor.cursor_move(KeyCode::PageUp, usable_rows),
+                MoveDir::PageDown => editor.cursor_move(KeyCode::PageDown, usable_rows),
+                MoveDir::Home => editor.cursor_move(KeyCode::Home, usable_rows),
+                MoveDir::End => editor.cursor_move(KeyCode::End, usable_rows),
+            }
+            RequestOutcome::Frame
+        }
+        RpcRequest::SetMode { mode: new_mode } => {
+            *mode = match new_mode {
+                RpcMode::Normal => EditorMode::Normal,
+                RpcMode::Edit => {
+                    editor.snap_cursor_to_tab_start();
+                    EditorMode::Edit
+                }
+                RpcMode::Command => EditorMode::Command,
+            };
+            RequestOutcome::Frame
+        }
+        RpcRequest::GetState => RequestOutcome::Frame,
+        RpcRequest::Quit => RequestOutcome::Quit,
     }
-
-    ControlFlow::Continue
 }
 
 fn build_frame(
