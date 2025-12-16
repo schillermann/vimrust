@@ -44,7 +44,7 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()> {
     let file = File::new(file_path.clone());
-    let mut editor = Editor::new(&terminal, file);
+    let mut editor = Editor::new(file);
     let mut command_list = CommandList::new();
     let mut command_line = CommandLine::new();
 
@@ -76,7 +76,8 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                                     ui.mode_command_enter()?;
                                 }
                                 key_code => {
-                                    ui.editor().move_cursor(key_code);
+                                    let usable_rows = ui.editor_view_rows();
+                                    ui.editor().cursor_move(key_code, usable_rows);
                                 }
                             },
                             EditorMode::Edit => match key_event.code {

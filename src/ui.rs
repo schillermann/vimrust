@@ -3,6 +3,8 @@ use std::io;
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
     event::KeyCode,
+    style::Print,
+    terminal::{Clear, ClearType},
 };
 
 use crate::{
@@ -44,6 +46,14 @@ impl<'a> Ui<'a> {
     pub fn editor(&mut self) -> &mut Editor {
         self.updated = true;
         self.editor
+    }
+
+    pub fn terminal_size(&self) -> (u16, u16) {
+        self.terminal.size()
+    }
+
+    pub fn editor_view_rows(&self) -> u16 {
+        self.terminal.size().1.saturating_sub(2)
     }
 
     pub fn status_line(&mut self) -> &mut StatusLine {
@@ -140,7 +150,7 @@ impl<'a> Ui<'a> {
     }
     pub fn command_list_move_selection(&mut self, direction: KeyCode) {
         self.updated = true;
-        let list_rows = self.terminal.size().1.saturating_sub(2).saturating_sub(3) as usize;
+        let list_rows = self.editor_view_rows().saturating_sub(3) as usize;
         let matches = self.command_list.filter(self.command_line.command_line());
         if matches.is_empty() {
             self.command_list.reset_selection();
@@ -206,7 +216,7 @@ impl<'a> Ui<'a> {
 
         self.updated = false;
 
-        let (number_of_columns, number_of_rows) = self.terminal.size();
+        let (number_of_columns, number_of_rows) = self.terminal_size();
         if number_of_rows == 0 {
             return Ok(());
         }
@@ -235,7 +245,14 @@ impl<'a> Ui<'a> {
                 } else {
                     self.editor.scroll(number_of_columns, usable_rows);
 
-                    self.editor.draw_rows(number_of_columns, usable_rows, 1)?;
+                    let rows = self.editor.render_rows(number_of_columns, usable_rows);
+                    for (idx, row) in rows.iter().enumerate() {
+                        let screen_row = 1u16.saturating_add(idx as u16);
+                        self.terminal.queue_add_command(MoveTo(0, screen_row))?;
+                        self.terminal
+                            .queue_add_command(Clear(ClearType::CurrentLine))?;
+                        self.terminal.queue_add_command(Print(row))?;
+                    }
                 }
             }
 

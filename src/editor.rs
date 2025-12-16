@@ -1,14 +1,8 @@
 use std::io;
 
-use crossterm::{
-    cursor::MoveTo,
-    event::KeyCode,
-    style::Print,
-    terminal::{Clear, ClearType},
-};
+use crossterm::event::KeyCode;
 
-use crate::{file::File, terminal::Terminal};
-use std::ptr::NonNull;
+use crate::file::File;
 
 const DEFAULT_TAB_STOP: u16 = 4;
 const VERSION: &str = "0.1.0";
@@ -20,11 +14,10 @@ pub struct Editor {
     pub rows_offset: u16,
     pub file: File,
     tab_stop: u16,
-    terminal: NonNull<Terminal>,
 }
 
 impl Editor {
-    pub fn new(terminal: &Terminal, file: File) -> Self {
+    pub fn new(file: File) -> Self {
         Self {
             cursor_x: 0,
             cursor_y: 0,
@@ -32,7 +25,6 @@ impl Editor {
             rows_offset: 0,
             file,
             tab_stop: DEFAULT_TAB_STOP,
-            terminal: NonNull::from(terminal),
         }
     }
 
@@ -70,22 +62,13 @@ impl Editor {
         }
     }
 
-    pub fn draw_rows(
-        &mut self,
-        number_of_columns: u16,
-        number_of_rows: u16,
-        start_row: u16,
-    ) -> io::Result<()> {
-        let terminal = unsafe { self.terminal.as_mut() };
+    pub fn rows_render(&self, number_of_columns: u16, number_of_rows: u16) -> Vec<String> {
+        let mut rows = Vec::with_capacity(number_of_rows as usize);
         for row_number in 0..number_of_rows {
-            let screen_row = start_row.saturating_add(row_number);
             let file_line_number = row_number.saturating_add(self.rows_offset) as usize;
 
-            terminal.queue_add_command(MoveTo(0, screen_row))?;
-            terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
-
             if file_line_number >= self.file.len() {
-                terminal.queue_add_command(Print("~"))?;
+                let mut line = String::from("~");
                 if self.file.len() == 0 && row_number == number_of_rows / 3 {
                     let mut welcome = format!("VimRust -- version {}", VERSION);
                     if welcome.len() > number_of_columns as usize {
@@ -94,9 +77,15 @@ impl Editor {
                     let padding = number_of_columns
                         .saturating_sub(welcome.len() as u16)
                         .saturating_div(2);
-                    terminal.queue_add_command(MoveTo(padding as u16, screen_row))?;
-                    terminal.queue_add_command(Print(welcome))?;
+                    if padding > 1 {
+                        line.push_str(&" ".repeat(padding.saturating_sub(1) as usize));
+                    }
+                    line.push_str(&welcome);
                 }
+                if line.len() > number_of_columns as usize {
+                    line.truncate(number_of_columns as usize);
+                }
+                rows.push(line);
             } else if let Some(file_line) = self.file.line(file_line_number) {
                 let displayable_line = self.displayable_line(file_line);
                 let visible_slice: String = displayable_line
@@ -104,15 +93,14 @@ impl Editor {
                     .skip(self.columns_offset as usize)
                     .take(number_of_columns as usize)
                     .collect();
-                terminal.queue_add_command(Print(visible_slice))?;
+                rows.push(visible_slice);
             }
         }
 
-        Ok(())
+        rows
     }
 
-    pub fn move_cursor(&mut self, key_code: KeyCode) {
-        let usable_rows = unsafe { self.terminal.as_ref().size().1.saturating_sub(2) };
+    pub fn cursor_move(&mut self, key_code: KeyCode, usable_rows: u16) {
         let file_lines_len = self.file.len().min(u16::MAX as usize) as u16;
 
         match key_code {
