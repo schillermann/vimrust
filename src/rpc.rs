@@ -65,6 +65,7 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
                 }
             }
             RequestOutcome::Quit => break,
+            RequestOutcome::Skip => {}
             RequestOutcome::Error(message) => {
                 let _ = write_error(&mut stdout, message);
             }
@@ -77,7 +78,11 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 enum RpcRequest {
-    Resize { cols: u16, rows: u16 },
+    Resize {
+        cols: u16,
+        rows: u16,
+        suppress_frame: bool,
+    },
     Open { path: String },
     Save,
     SaveAs { path: String },
@@ -142,6 +147,7 @@ struct Cursor {
 
 enum RequestOutcome {
     Frame,
+    Skip,
     Quit,
     Error(String),
 }
@@ -154,9 +160,18 @@ fn handle_request(
     size: &mut (u16, u16),
 ) -> RequestOutcome {
     match request {
-        RpcRequest::Resize { cols, rows } => {
+        RpcRequest::Resize {
+            cols,
+            rows,
+            suppress_frame,
+        } => {
+            let prev = *size;
             *size = (cols, rows);
-            RequestOutcome::Frame
+            if suppress_frame && *size == prev {
+                RequestOutcome::Skip
+            } else {
+                RequestOutcome::Frame
+            }
         }
         RpcRequest::Open { path } => {
             let mut new_file = File::new(Some(path));

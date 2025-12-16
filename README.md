@@ -23,6 +23,7 @@ cargo run -- --rpc file.txt
 
 Send line-delimited JSON requests over stdin. Examples:
 - `{"type":"resize","cols":120,"rows":30}`
+- `{"type":"resize","cols":120,"rows":30,"suppress_frame":true}` (avoid a frame response)
 - `{"type":"open","path":"/tmp/foo.txt"}`
 - `{"type":"insert","text":"hello"}`
 - `{"type":"move_cursor","direction":"left"}`
