@@ -6,6 +6,7 @@ mod buffer;
 mod command_line;
 mod command_list;
 mod editor;
+mod file;
 mod status_line;
 mod terminal;
 mod ui;
@@ -13,6 +14,7 @@ mod ui;
 use command_line::CommandLine;
 use command_list::CommandList;
 use editor::Editor;
+use file::File;
 use terminal::Terminal;
 use ui::Ui;
 
@@ -41,20 +43,15 @@ fn main() -> io::Result<()> {
 }
 
 fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()> {
-    let mut editor = Editor::new(&terminal);
+    let file = File::new(file_path.clone());
+    let mut editor = Editor::new(&terminal, file);
     let mut command_list = CommandList::new();
     let mut command_line = CommandLine::new();
 
     let result: io::Result<()> = {
         let mut ui = Ui::new(terminal, &mut editor, &mut command_line, &mut command_list);
         ui.set_mode(EditorMode::Normal)?;
-
-        if let Some(path) = file_path.clone() {
-            ui.editor().file_open(path)?;
-        } else {
-            ui.editor().file_new();
-        }
-
+        ui.editor().file_read()?;
         ui.terminal_update_size()?;
 
         loop {
