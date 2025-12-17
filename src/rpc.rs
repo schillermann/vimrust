@@ -96,7 +96,7 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
 
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-enum RpcRequest {
+pub enum RpcRequest {
     Resize {
         cols: u16,
         rows: u16,
@@ -127,14 +127,14 @@ enum RpcRequest {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum DeleteKind {
+pub enum DeleteKind {
     Backspace,
     Under,
 }
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum MoveDir {
+pub enum MoveDir {
     Left,
     Right,
     Up,
@@ -147,7 +147,7 @@ enum MoveDir {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "snake_case")]
-enum RpcMode {
+pub enum RpcMode {
     Normal,
     Edit,
     Command,
@@ -162,22 +162,22 @@ enum RpcResponse {
 }
 
 #[derive(Serialize, Debug, PartialEq)]
-struct Ack {
-    kind: AckKind,
-    message: Option<String>,
-    file_path: Option<String>,
+pub struct Ack {
+    pub kind: AckKind,
+    pub message: Option<String>,
+    pub file_path: Option<String>,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
 #[serde(rename_all = "snake_case")]
-enum AckKind {
+pub enum AckKind {
     Open,
     Save,
     SaveAs,
 }
 
 #[derive(Serialize)]
-struct Frame {
+pub struct Frame {
     mode: &'static str,
     cursor: Cursor,
     rows: Vec<String>,
@@ -192,7 +192,7 @@ struct Cursor {
     row: u16,
 }
 
-enum RequestOutcome {
+pub enum RequestOutcome {
     Frame,
     Ack(Ack),
     FrameAndAck(Ack),
@@ -201,7 +201,7 @@ enum RequestOutcome {
     Error(String),
 }
 
-fn handle_request(
+pub fn handle_request(
     request: RpcRequest,
     editor: &mut Editor,
     mode: &mut EditorMode,

@@ -62,8 +62,28 @@ impl<'a> Ui<'a> {
         &mut self.status_line
     }
 
+    pub fn set_status_message(&mut self, message: Option<String>) {
+        self.status_line.message_update(message);
+        self.updated = true;
+    }
+
     pub fn quit(&self) -> bool {
         self.quit
+    }
+
+    pub fn set_quit(&mut self) {
+        self.quit = true;
+        self.updated = true;
+    }
+
+    pub fn set_mode_external(&mut self, mode: EditorMode) {
+        self.mode = mode;
+        self.updated = true;
+        let _ = self.terminal.set_cursor_style(&self.mode);
+    }
+
+    pub fn mark_dirty(&mut self) {
+        self.updated = true;
     }
 
     pub fn terminal_update_size(&mut self) -> io::Result<()> {
@@ -84,12 +104,6 @@ impl<'a> Ui<'a> {
         self.command_line.clear();
         self.command_list.reset_selection();
         self.set_command_focus_on_list(false);
-        self.status_line.message_clear();
-        Ok(())
-    }
-
-    pub fn mode_normal_enter(&mut self) -> io::Result<()> {
-        self.set_mode(EditorMode::Normal)?;
         self.status_line.message_clear();
         Ok(())
     }
@@ -246,12 +260,6 @@ impl<'a> Ui<'a> {
     pub fn enter_mode_command(&mut self) -> io::Result<()> {
         self.updated = true;
         self.set_mode(EditorMode::Command)
-    }
-
-    pub fn mode_edit_enter(&mut self) -> io::Result<()> {
-        self.set_mode(EditorMode::Edit)?;
-        self.editor.snap_cursor_to_tab_start();
-        Ok(())
     }
 
     pub fn set_mode(&mut self, mode: EditorMode) -> io::Result<()> {
