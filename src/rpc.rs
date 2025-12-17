@@ -21,6 +21,7 @@ use crate::{EditorMode, editor::Editor, file::File};
 ///
 /// Responses:
 /// - frame: {"type":"frame", ...} for state snapshots (emitted after state changes and on get_state)
+/// - ack: {"type":"ack","kind":"save"|"save_as"|"open","message":"...","file_path":"/tmp/foo.txt"} for success confirmation
 /// - error: {"type":"error","message":"..."} on failure
 pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
     let stdin = io::stdin();
@@ -56,6 +57,24 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
             &mut size,
         ) {
             RequestOutcome::Frame => {
+                let frame = build_frame(&editor, &mode, &status_message, size);
+                if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
+                    let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
+                } else {
+                    let _ = stdout.write_all(b"\n");
+                    let _ = stdout.flush();
+                }
+            }
+            RequestOutcome::Ack(ack) => {
+                if let Err(err) = write_ack(&mut stdout, ack) {
+                    let _ = write_error(&mut stdout, format!("failed to serialize ack: {}", err));
+                }
+            }
+            RequestOutcome::FrameAndAck(ack) => {
+                if let Err(err) = write_ack(&mut stdout, ack) {
+                    let _ = write_error(&mut stdout, format!("failed to serialize ack: {}", err));
+                    continue;
+                }
                 let frame = build_frame(&editor, &mode, &status_message, size);
                 if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
                     let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
@@ -138,7 +157,23 @@ enum RpcMode {
 #[serde(tag = "type", rename_all = "lowercase")]
 enum RpcResponse {
     Frame(Frame),
+    Ack(Ack),
     Error { message: String },
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+struct Ack {
+    kind: AckKind,
+    message: Option<String>,
+    file_path: Option<String>,
+}
+
+#[derive(Serialize, Debug, PartialEq)]
+#[serde(rename_all = "snake_case")]
+enum AckKind {
+    Open,
+    Save,
+    SaveAs,
 }
 
 #[derive(Serialize)]
@@ -159,6 +194,8 @@ struct Cursor {
 
 enum RequestOutcome {
     Frame,
+    Ack(Ack),
+    FrameAndAck(Ack),
     Skip,
     Quit,
     Error(String),
@@ -188,6 +225,7 @@ fn handle_request(
             }
         }
         RpcRequest::Open { path } => {
+            let previous_path = editor.file.path().cloned();
             let mut new_file = File::new(Some(path));
             if let Err(err) = new_file.read() {
                 return RequestOutcome::Error(format!("open failed: {}", err));
@@ -195,23 +233,45 @@ fn handle_request(
             *editor = Editor::new(new_file);
             *status = None;
             *mode = EditorMode::Normal;
-            RequestOutcome::Frame
+            let ack = Ack {
+                kind: AckKind::Open,
+                message: Some(String::from("opened")),
+                file_path: editor.file.path().cloned().or(previous_path),
+            };
+            RequestOutcome::FrameAndAck(ack)
         }
-        RpcRequest::Save => match editor.file_save(&mut None) {
-            Ok(msg) => {
-                *status = Some(msg);
-                RequestOutcome::Frame
+        RpcRequest::Save => {
+            let previous_path = editor.file.path().cloned();
+            match editor.file_save(&mut None) {
+                Ok(msg) => {
+                    *status = Some(msg.clone());
+                    let ack = Ack {
+                        kind: AckKind::Save,
+                        message: Some(msg),
+                        file_path: editor.file.path().cloned(),
+                    };
+                    if editor.file.path() != previous_path.as_ref() {
+                        RequestOutcome::FrameAndAck(ack)
+                    } else {
+                        RequestOutcome::Ack(ack)
+                    }
+                }
+                Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
             }
-            Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
-        },
+        }
         RpcRequest::SaveAs { path } => {
             let mut new_file = File::new(Some(path));
             new_file.file_lines = editor.file.file_lines.clone();
             match new_file.save() {
                 Ok(msg) => {
                     *editor = Editor::new(new_file);
-                    *status = Some(msg);
-                    RequestOutcome::Frame
+                    *status = Some(msg.clone());
+                    let ack = Ack {
+                        kind: AckKind::SaveAs,
+                        message: Some(msg),
+                        file_path: editor.file.path().cloned(),
+                    };
+                    RequestOutcome::FrameAndAck(ack)
                 }
                 Err(err) => RequestOutcome::Error(format!("save_as failed: {}", err)),
             }
@@ -335,6 +395,12 @@ fn write_error(stdout: &mut impl Write, message: String) -> io::Result<()> {
     stdout.flush()
 }
 
+fn write_ack(stdout: &mut impl Write, ack: Ack) -> io::Result<()> {
+    serde_json::to_writer(&mut *stdout, &RpcResponse::Ack(ack))?;
+    stdout.write_all(b"\n")?;
+    stdout.flush()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -443,12 +509,53 @@ mod tests {
             &mut status,
             &mut size,
         );
-        assert!(matches!(outcome, RequestOutcome::Frame));
+        if let RequestOutcome::FrameAndAck(ack) = outcome {
+            assert_eq!(ack.kind, AckKind::SaveAs);
+            assert_eq!(ack.message.as_deref(), Some("written"));
+            assert_eq!(
+                ack.file_path.as_deref(),
+                Some(path.to_string_lossy().as_ref())
+            );
+        } else {
+            panic!("expected frame and ack");
+        }
         assert_eq!(status.as_deref(), Some("written"));
-        assert_eq!(
-            fs::read_to_string(&path).unwrap_or_default(),
-            String::from("hello")
+        assert_eq!(fs::read_to_string(&path).unwrap_or_default(), "hello");
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn save_on_existing_path_emits_ack_without_frame() {
+        let path = std::env::temp_dir().join("vimrust_rpc_save_exists.txt");
+        let _ = fs::write(&path, "existing");
+
+        let mut editor = Editor::new(File::new(Some(
+            path.to_string_lossy().to_string(),
+        )));
+        editor.file.file_lines = vec![String::from("changed")];
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+
+        let outcome = handle_request(
+            RpcRequest::Save,
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
         );
+        if let RequestOutcome::Ack(ack) = outcome {
+            assert_eq!(ack.kind, AckKind::Save);
+            assert_eq!(ack.message.as_deref(), Some("written"));
+            assert_eq!(
+                ack.file_path.as_deref(),
+                Some(path.to_string_lossy().as_ref())
+            );
+        } else {
+            panic!("expected ack without frame");
+        }
+        assert_eq!(status.as_deref(), Some("written"));
+        assert_eq!(fs::read_to_string(&path).unwrap_or_default(), "changed");
         let _ = fs::remove_file(&path);
     }
 }

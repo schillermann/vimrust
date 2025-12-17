@@ -32,7 +32,7 @@ Send line-delimited JSON requests over stdin. Examples:
 - `{"type":"get_state"}`
 - `{"type":"quit"}`
 
-Responses include frames with mode, cursor, visible rows, status, file path, and size, or errors if a request fails.
+Responses include frames with mode, cursor, visible rows, status, file path, and size. Explicit acks confirm operations like open/save/save_as even when no frame is emitted. Errors are sent if a request fails.
 
 # Keymap
 
