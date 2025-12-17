@@ -21,6 +21,7 @@ pub struct Ui<'a> {
     status_line: StatusLine,
     updated: bool,
     command_focus_on_list: bool,
+    quit: bool,
     mode: EditorMode,
 }
 
@@ -39,6 +40,7 @@ impl<'a> Ui<'a> {
             status_line: StatusLine::new(),
             updated: false,
             command_focus_on_list: false,
+            quit: false,
             mode: EditorMode::Normal,
         }
     }
@@ -58,6 +60,10 @@ impl<'a> Ui<'a> {
 
     pub fn status_line(&mut self) -> &mut StatusLine {
         &mut self.status_line
+    }
+
+    pub fn quit(&self) -> bool {
+        self.quit
     }
 
     pub fn terminal_update_size(&mut self) -> io::Result<()> {
@@ -135,11 +141,21 @@ impl<'a> Ui<'a> {
             "s" | "save" => {
                 self.file_save(file_path);
             }
+            "sq" => {
+                self.file_save(file_path);
+                self.quit = true;
+                return Ok(());
+            }
+            "q" | "quit" => {
+                self.quit = true;
+                return Ok(());
+            }
             _ => {}
         }
 
         self.set_command_focus_on_list(false);
-        self.set_mode(EditorMode::Normal)
+        self.set_mode(EditorMode::Normal)?;
+        Ok(())
     }
 
     pub fn command_line_backspace(&mut self) {

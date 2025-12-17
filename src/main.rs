@@ -145,6 +145,10 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                     }
                     _ => {}
                 }
+
+                if ui.quit() {
+                    break;
+                }
             } else {
                 // periodic tasks / redraw can go here
             }
