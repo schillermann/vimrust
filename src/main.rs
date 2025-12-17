@@ -110,7 +110,7 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                                     ui.mode_command_exit()?;
                                 }
                                 KeyCode::Enter => {
-                                    ui.command_list_enter_select();
+                                    ui.command_enter(&mut file_path)?;
                                 }
                                 KeyCode::Backspace => {
                                     ui.command_line_backspace();

@@ -113,6 +113,35 @@ impl<'a> Ui<'a> {
         }
     }
 
+    pub fn command_enter(&mut self, file_path: &mut Option<String>) -> io::Result<()> {
+        let was_focused_on_list = self.command_focus_on_list;
+        self.command_list_enter_select();
+        if self.command_focus_on_list {
+            return Ok(());
+        }
+        if was_focused_on_list {
+            // Just moved selection from list into the command line; wait for next Enter to execute.
+            return Ok(());
+        }
+
+        let command = self
+            .command_line
+            .command_line()
+            .trim_start_matches(':')
+            .trim()
+            .to_lowercase();
+
+        match command.as_str() {
+            "s" | "save" => {
+                self.file_save(file_path);
+            }
+            _ => {}
+        }
+
+        self.set_command_focus_on_list(false);
+        self.set_mode(EditorMode::Normal)
+    }
+
     pub fn command_line_backspace(&mut self) {
         self.updated = true;
         self.command_line.backspace();
