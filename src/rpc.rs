@@ -57,7 +57,7 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
             &mut size,
         ) {
             RequestOutcome::Frame => {
-                let frame = build_frame(&editor, &mode, &status_message, size);
+                let frame = build_frame(&editor, &mode, &status_message, size, None);
                 if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
                     let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
                 } else {
@@ -75,7 +75,7 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
                     let _ = write_error(&mut stdout, format!("failed to serialize ack: {}", err));
                     continue;
                 }
-                let frame = build_frame(&editor, &mode, &status_message, size);
+                let frame = build_frame(&editor, &mode, &status_message, size, None);
                 if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
                     let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
                 } else {
@@ -178,18 +178,35 @@ pub enum AckKind {
 
 #[derive(Serialize)]
 pub struct Frame {
-    mode: &'static str,
-    cursor: Cursor,
-    rows: Vec<String>,
-    status: Option<String>,
-    file_path: Option<String>,
-    size: (u16, u16),
+    pub mode: &'static str,
+    pub cursor: Cursor,
+    pub rows: Vec<String>,
+    pub status: Option<String>,
+    pub file_path: Option<String>,
+    pub size: (u16, u16),
+    pub command_ui: Option<CommandUiFrame>,
 }
 
 #[derive(Serialize)]
-struct Cursor {
-    col: u16,
-    row: u16,
+pub struct Cursor {
+    pub col: u16,
+    pub row: u16,
+}
+
+#[derive(Serialize, Clone)]
+pub struct CommandUiFrame {
+    pub line: String,
+    pub cursor_x: u16,
+    pub focus_on_list: bool,
+    pub list_items: Vec<CommandListItemFrame>,
+    pub selected_index: Option<usize>,
+    pub scroll_offset: usize,
+}
+
+#[derive(Serialize, Clone)]
+pub struct CommandListItemFrame {
+    pub name: String,
+    pub description: String,
 }
 
 pub enum RequestOutcome {
@@ -340,11 +357,12 @@ pub fn handle_request(
     }
 }
 
-fn build_frame(
+pub fn build_frame(
     editor: &Editor,
     mode: &EditorMode,
     status: &Option<String>,
     size: (u16, u16),
+    command_ui: Option<CommandUiFrame>,
 ) -> Frame {
     let usable_rows = size.1.saturating_sub(2);
     let view = editor.view_with_scroll(size.0, usable_rows);
@@ -386,6 +404,7 @@ fn build_frame(
         status,
         file_path: view.file.path().cloned(),
         size,
+        command_ui,
     }
 }
 
@@ -424,7 +443,7 @@ mod tests {
         );
         assert!(matches!(outcome, RequestOutcome::Frame));
 
-        let frame = build_frame(&editor, &mode, &status, size);
+        let frame = build_frame(&editor, &mode, &status, size, None);
         assert_eq!(frame.rows.get(0).map(String::as_str), Some("hi"));
     }
 

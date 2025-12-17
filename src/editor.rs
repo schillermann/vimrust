@@ -36,16 +36,6 @@ impl Editor {
         }
     }
 
-    pub fn view(&self) -> EditorView<'_> {
-        EditorView {
-            file: &self.file,
-            cursor_x: self.cursor_x,
-            cursor_y: self.cursor_y,
-            columns_offset: self.columns_offset,
-            rows_offset: self.rows_offset,
-        }
-    }
-
     /// Returns a read-only view with scroll offsets adjusted for the viewport.
     pub fn view_with_scroll(&self, number_of_columns: u16, number_of_rows: u16) -> EditorView<'_> {
         let (columns_offset, rows_offset) =
@@ -67,13 +57,6 @@ impl Editor {
         let result = self.file.save()?;
         *file_path = self.file.path().cloned();
         Ok(result)
-    }
-
-    pub fn scroll(&mut self, number_of_columns: u16, number_of_rows: u16) {
-        let (columns_offset, rows_offset) =
-            self.scroll_offsets_compute(number_of_columns, number_of_rows);
-        self.columns_offset = columns_offset;
-        self.rows_offset = rows_offset;
     }
 
     fn scroll_offsets_compute(&self, number_of_columns: u16, number_of_rows: u16) -> (u16, u16) {

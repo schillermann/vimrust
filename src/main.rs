@@ -16,7 +16,9 @@ use command_line::CommandLine;
 use command_list::CommandList;
 use editor::Editor;
 use file::File;
-use rpc::{DeleteKind, MoveDir, RequestOutcome, RpcMode, RpcRequest, handle_request};
+use rpc::{
+    DeleteKind, MoveDir, RequestOutcome, RpcMode, RpcRequest, build_frame, handle_request,
+};
 use terminal::Terminal;
 use ui::Ui;
 
@@ -69,7 +71,13 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
         let mut size = ui.terminal_size();
 
         loop {
-            ui.render(&file_path)?;
+            let command_ui = if matches!(mode, EditorMode::Command) {
+                Some(ui.command_ui_snapshot())
+            } else {
+                None
+            };
+            let frame = build_frame(ui.editor_ref(), &mode, &status, size, command_ui);
+            ui.render_from_frame(&frame)?;
 
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
