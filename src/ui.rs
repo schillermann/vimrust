@@ -13,8 +13,7 @@ use crate::{
     EditorMode,
     command_line::CommandLine,
     command_list::CommandList,
-    editor::Editor,
-    rpc::{CommandListItemFrame, CommandUiFrame, Frame},
+    rpc::{CommandListItemFrame, CommandUiFrame, Frame, RpcMode, RpcRequest},
     status_line::StatusLine,
     terminal::Terminal,
 };
@@ -22,7 +21,6 @@ use crate::{
 /// Responsible for orchestrating the per-frame UI rendering.
 pub struct Ui<'a> {
     terminal: &'a mut Terminal,
-    editor: &'a mut Editor,
     command_line: &'a mut CommandLine,
     command_list: &'a mut CommandList,
     status_line: StatusLine,
@@ -35,13 +33,11 @@ pub struct Ui<'a> {
 impl<'a> Ui<'a> {
     pub fn new(
         terminal: &'a mut Terminal,
-        editor: &'a mut Editor,
         command_line: &'a mut CommandLine,
         command_list: &'a mut CommandList,
     ) -> Self {
         Self {
             terminal,
-            editor,
             command_line,
             command_list,
             status_line: StatusLine::new(),
@@ -50,15 +46,6 @@ impl<'a> Ui<'a> {
             quit: false,
             mode: EditorMode::Normal,
         }
-    }
-
-    pub fn editor(&mut self) -> &mut Editor {
-        self.updated = true;
-        self.editor
-    }
-
-    pub fn editor_ref(&self) -> &Editor {
-        self.editor
     }
 
     pub fn terminal_size(&self) -> (u16, u16) {
@@ -111,7 +98,6 @@ impl<'a> Ui<'a> {
     }
 
     pub fn mode_command_exit(&mut self) -> io::Result<()> {
-        self.set_mode(EditorMode::Normal)?;
         self.command_line.clear();
         self.command_list.reset_selection();
         self.set_command_focus_on_list(false);
@@ -144,15 +130,15 @@ impl<'a> Ui<'a> {
         }
     }
 
-    pub fn command_enter(&mut self, file_path: &mut Option<String>) -> io::Result<()> {
+    pub fn command_enter(&mut self) -> io::Result<Vec<RpcRequest>> {
         let was_focused_on_list = self.command_focus_on_list;
         self.command_list_enter_select();
         if self.command_focus_on_list {
-            return Ok(());
+            return Ok(Vec::new());
         }
         if was_focused_on_list {
             // Just moved selection from list into the command line; wait for next Enter to execute.
-            return Ok(());
+            return Ok(Vec::new());
         }
 
         let command = self
@@ -162,25 +148,26 @@ impl<'a> Ui<'a> {
             .trim()
             .to_lowercase();
 
+        let mut requests = Vec::new();
         match command.as_str() {
             "s" | "save" => {
-                self.file_save(file_path);
+                requests.push(RpcRequest::Save);
+                requests.push(RpcRequest::SetMode {
+                    mode: RpcMode::Normal,
+                });
             }
             "sq" => {
-                self.file_save(file_path);
-                self.quit = true;
-                return Ok(());
+                requests.push(RpcRequest::Save);
+                requests.push(RpcRequest::Quit);
             }
             "q" | "quit" => {
-                self.quit = true;
-                return Ok(());
+                requests.push(RpcRequest::Quit);
             }
             _ => {}
         }
 
         self.set_command_focus_on_list(false);
-        self.set_mode(EditorMode::Normal)?;
-        Ok(())
+        Ok(requests)
     }
 
     pub fn command_line_backspace(&mut self) {
@@ -304,19 +291,6 @@ impl<'a> Ui<'a> {
         self.mode = mode;
         self.updated = true;
         self.terminal.set_cursor_style(&self.mode)
-    }
-
-    pub fn mode(&self) -> &EditorMode {
-        &self.mode
-    }
-
-    pub fn file_save(&mut self, file_path: &mut Option<String>) {
-        let new_message = match self.editor.file_save(file_path) {
-            Ok(msg) => Some(msg),
-            Err(err) => Some(format!("Error saving: {}", err)),
-        };
-        self.status_line.message_update(new_message);
-        self.updated = true;
     }
 
     pub fn render_from_frame(&mut self, frame: &Frame) -> io::Result<()> {

@@ -5,6 +5,7 @@ use crossterm::event::{self, Event, KeyCode};
 mod buffer;
 mod command_line;
 mod command_list;
+mod core;
 mod editor;
 mod file;
 mod rpc;
@@ -14,11 +15,8 @@ mod ui;
 
 use command_line::CommandLine;
 use command_list::CommandList;
-use editor::Editor;
-use file::File;
-use rpc::{
-    DeleteKind, MoveDir, RequestOutcome, RpcMode, RpcRequest, build_frame, handle_request,
-};
+use core::CoreState;
+use rpc::{DeleteKind, MoveDir, RequestOutcome, RpcMode, RpcRequest};
 use terminal::Terminal;
 use ui::Ui;
 
@@ -55,28 +53,25 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()> {
-    let file = File::new(file_path.clone());
-    let mut editor = Editor::new(file);
+fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
+    let mut core = CoreState::new(file_path.clone());
     let mut command_list = CommandList::new();
     let mut command_line = CommandLine::new();
-    let mut status: Option<String> = None;
-    let mut mode = EditorMode::Normal;
 
     let result: io::Result<()> = {
-        let mut ui = Ui::new(terminal, &mut editor, &mut command_line, &mut command_list);
-        ui.set_mode(EditorMode::Normal)?;
-        ui.editor().file_read()?;
+        let mut ui = Ui::new(terminal, &mut command_line, &mut command_list);
+        core.read_file()?;
         ui.terminal_update_size()?;
-        let mut size = ui.terminal_size();
+        core.set_size(ui.terminal_size());
 
         loop {
-            let command_ui = if matches!(mode, EditorMode::Command) {
+            let command_ui = if matches!(core.mode(), EditorMode::Command) {
                 Some(ui.command_ui_snapshot())
             } else {
                 None
             };
-            let frame = build_frame(ui.editor_ref(), &mode, &status, size, command_ui);
+            let frame = core.frame(command_ui);
+            ui.set_mode_external(core.mode());
             ui.render_from_frame(&frame)?;
 
             if event::poll(Duration::from_millis(50))? {
@@ -85,126 +80,98 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                         if ui.status_line().message().is_some() {
                             ui.status_line().message_clear();
                         }
-                        match *ui.mode() {
+                        match core.mode() {
                             EditorMode::Normal => match key_event.code {
                                 KeyCode::Char('q') => break,
                                 KeyCode::Char('e') => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::SetMode {
                                             mode: RpcMode::Edit,
                                         },
                                     )?;
                                 }
                                 KeyCode::Char('s') => {
-                                    process_request(
-                                        &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
-                                        RpcRequest::Save,
-                                    )?;
+                                    handle_core_request(&mut core, &mut ui, RpcRequest::Save)?;
                                 }
                                 KeyCode::Char(':') => {
                                     ui.mode_command_enter()?;
-                                    mode = EditorMode::Command;
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::SetMode {
+                                            mode: RpcMode::Command,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::Char('h') => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::Left,
                                         },
                                     )?;
                                 }
                                 KeyCode::Char('l') => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::Right,
                                         },
                                     )?;
                                 }
                                 KeyCode::Char('k') => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::Up,
                                         },
                                     )?;
                                 }
                                 KeyCode::Char('j') => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::Down,
                                         },
                                     )?;
                                 }
                                 KeyCode::PageUp => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::PageUp,
                                         },
                                     )?;
                                 }
                                 KeyCode::PageDown => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::PageDown,
                                         },
                                     )?;
                                 }
                                 KeyCode::Home => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::Home,
                                         },
                                     )?;
                                 }
                                 KeyCode::End => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::MoveCursor {
                                             direction: MoveDir::End,
                                         },
@@ -214,48 +181,36 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                             },
                             EditorMode::Edit => match key_event.code {
                                 KeyCode::Esc => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::SetMode {
                                             mode: RpcMode::Normal,
                                         },
                                     )?;
                                 }
                                 KeyCode::Delete => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::Delete {
                                             kind: DeleteKind::Under,
                                         },
                                     )?;
                                 }
                                 KeyCode::Backspace => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::Delete {
                                             kind: DeleteKind::Backspace,
                                         },
                                     )?;
                                 }
                                 KeyCode::Char(ch) => {
-                                    process_request(
+                                    handle_core_request(
+                                        &mut core,
                                         &mut ui,
-                                        &mut file_path,
-                                        &mut status,
-                                        &mut size,
-                                        &mut mode,
                                         RpcRequest::Insert {
                                             text: ch.to_string(),
                                         },
@@ -266,11 +221,19 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                             EditorMode::Command => match key_event.code {
                                 KeyCode::Esc => {
                                     ui.mode_command_exit()?;
-                                    mode = EditorMode::Normal;
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::SetMode {
+                                            mode: RpcMode::Normal,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::Enter => {
-                                    ui.command_enter(&mut file_path)?;
-                                    mode = *ui.mode();
+                                    let requests = ui.command_enter()?;
+                                    for req in requests {
+                                        handle_core_request(&mut core, &mut ui, req)?;
+                                    }
                                 }
                                 KeyCode::Backspace => {
                                     ui.command_line_backspace();
@@ -302,18 +265,14 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                     }
                     Event::Resize(_, _) => {
                         ui.terminal_update_size()?;
-                        size = ui.terminal_size();
-                        let cols = size.0;
-                        let rows = size.1;
-                        process_request(
+                        let size = ui.terminal_size();
+                        core.set_size(size);
+                        handle_core_request(
+                            &mut core,
                             &mut ui,
-                            &mut file_path,
-                            &mut status,
-                            &mut size,
-                            &mut mode,
                             RpcRequest::Resize {
-                                cols,
-                                rows,
+                                cols: size.0,
+                                rows: size.1,
                                 suppress_frame: false,
                             },
                         )?;
@@ -334,42 +293,28 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
     result
 }
 
-fn process_request(
-    ui: &mut Ui,
-    file_path: &mut Option<String>,
-    status: &mut Option<String>,
-    size: &mut (u16, u16),
-    mode: &mut EditorMode,
-    request: RpcRequest,
-) -> io::Result<()> {
-    match handle_request(request, ui.editor(), mode, status, size) {
+fn handle_core_request(core: &mut CoreState, ui: &mut Ui, request: RpcRequest) -> io::Result<()> {
+    let outcome = core.handle(request);
+    match outcome {
         RequestOutcome::Frame => {
-            ui.set_status_message(status.clone());
+            ui.set_status_message(core.status().clone());
         }
         RequestOutcome::Ack(ack) => {
             ui.set_status_message(ack.message.clone());
-            if let Some(path) = ack.file_path {
-                *file_path = Some(path);
-            }
         }
         RequestOutcome::FrameAndAck(ack) => {
             ui.set_status_message(ack.message.clone());
-            if let Some(path) = ack.file_path {
-                *file_path = Some(path);
-            }
         }
         RequestOutcome::Skip => {}
         RequestOutcome::Quit => {
-            ui.set_status_message(status.clone());
+            ui.set_status_message(core.status().clone());
             ui.set_quit();
         }
         RequestOutcome::Error(message) => {
             ui.set_status_message(Some(message));
         }
     }
-
-    *file_path = ui.editor().file.path().cloned();
     ui.mark_dirty();
-    ui.set_mode_external(*mode);
+    ui.set_mode_external(core.mode());
     Ok(())
 }
