@@ -98,8 +98,17 @@ impl<'a> Ui<'a> {
                 .min(matches.len() - 1);
             if let Some(entry) = matches.get(index) {
                 self.command_line.set_content(format!(":{}", entry.name));
-                self.command_list.reset_selection();
                 self.set_command_focus_on_list(false);
+
+                let updated_matches = self.command_list.filter(self.command_line.command_line());
+                if let Some(updated_index) = updated_matches
+                    .iter()
+                    .position(|candidate| candidate.name == entry.name)
+                {
+                    self.command_list.set_selected_index(updated_index);
+                    let list_rows = self.editor_view_rows().saturating_sub(3) as usize;
+                    self.command_list.adjust_scroll_for_visible_rows(list_rows);
+                }
             }
         }
     }
