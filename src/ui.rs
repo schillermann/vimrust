@@ -92,22 +92,22 @@ impl<'a> Ui<'a> {
         self.updated = true;
         let matches = self.command_list.filter(self.command_line.command_line());
         if self.command_focus_on_list && !matches.is_empty() {
-            let index = self
-                .command_list
-                .command_selected_index()
-                .min(matches.len() - 1);
-            if let Some(entry) = matches.get(index) {
-                self.command_line.set_content(format!(":{}", entry.name));
-                self.set_command_focus_on_list(false);
+            if let Some(selected) = self.command_list.command_selected_index() {
+                let index = selected.min(matches.len() - 1);
+                if let Some(entry) = matches.get(index) {
+                    self.command_line.set_content(format!(":{}", entry.name));
+                    self.set_command_focus_on_list(false);
 
-                let updated_matches = self.command_list.filter(self.command_line.command_line());
-                if let Some(updated_index) = updated_matches
-                    .iter()
-                    .position(|candidate| candidate.name == entry.name)
-                {
-                    self.command_list.set_selected_index(updated_index);
-                    let list_rows = self.editor_view_rows().saturating_sub(3) as usize;
-                    self.command_list.adjust_scroll_for_visible_rows(list_rows);
+                    let updated_matches =
+                        self.command_list.filter(self.command_line.command_line());
+                    if let Some(updated_index) = updated_matches
+                        .iter()
+                        .position(|candidate| candidate.name == entry.name)
+                    {
+                        self.command_list.set_selected_index(updated_index);
+                        let list_rows = self.editor_view_rows().saturating_sub(3) as usize;
+                        self.command_list.adjust_scroll_for_visible_rows(list_rows);
+                    }
                 }
             }
         }
@@ -168,18 +168,28 @@ impl<'a> Ui<'a> {
         }
 
         self.set_command_focus_on_list(true);
-        let current_index = self.command_list.command_selected_index();
-        let max_index = matches.len().saturating_sub(1);
-        match direction {
-            KeyCode::Up if current_index > 0 => {
-                self.command_list
-                    .set_selected_index(current_index.saturating_sub(1));
+        match self.command_list.command_selected_index() {
+            None => match direction {
+                KeyCode::Down => self.command_list.set_selected_index(0),
+                KeyCode::Up => self
+                    .command_list
+                    .set_selected_index(matches.len().saturating_sub(1)),
+                _ => {}
+            },
+            Some(current_index) => {
+                let max_index = matches.len().saturating_sub(1);
+                match direction {
+                    KeyCode::Up if current_index > 0 => {
+                        self.command_list
+                            .set_selected_index(current_index.saturating_sub(1));
+                    }
+                    KeyCode::Down if current_index < max_index => {
+                        self.command_list
+                            .set_selected_index(current_index.saturating_add(1));
+                    }
+                    _ => {}
+                }
             }
-            KeyCode::Down if current_index < max_index => {
-                self.command_list
-                    .set_selected_index(current_index.saturating_add(1));
-            }
-            _ => {}
         }
         self.command_list.adjust_scroll_for_visible_rows(list_rows);
     }
@@ -279,18 +289,29 @@ impl<'a> Ui<'a> {
             }
 
             let (cursor_col, cursor_row) = match self.mode {
-                EditorMode::Command if self.command_focus_on_list => {
-                    let relative_row = self
-                        .command_list
-                        .command_selected_index()
-                        .saturating_sub(self.command_list.command_scroll_offset())
-                        as u16;
-                    let list_row = 1u16
-                        .saturating_add(1)
-                        .saturating_add(2)
-                        .saturating_add(relative_row)
-                        .min(number_of_rows.saturating_sub(1));
-                    (0, list_row)
+                EditorMode::Command
+                    if self.command_focus_on_list
+                        && self.command_list.command_selected_index().is_some() =>
+                {
+                    if let Some(selected_index) = self.command_list.command_selected_index() {
+                        let relative_row = selected_index
+                            .saturating_sub(self.command_list.command_scroll_offset())
+                            as u16;
+                        let list_row = 1u16
+                            .saturating_add(1)
+                            .saturating_add(2)
+                            .saturating_add(relative_row)
+                            .min(number_of_rows.saturating_sub(1));
+                        (0, list_row)
+                    } else {
+                        (
+                            self.command_line
+                                .command_cursor_x()
+                                .saturating_add(1)
+                                .min(number_of_columns.saturating_sub(1)),
+                            0,
+                        )
+                    }
                 }
                 EditorMode::Command => (
                     self.command_line

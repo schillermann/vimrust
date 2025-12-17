@@ -48,7 +48,7 @@ static COMMANDS: &[CommandEntry] = &[
 
 pub struct CommandList {
     commands: &'static [CommandEntry],
-    selected_index: usize,
+    selected_index: Option<usize>,
     scroll_offset: usize,
 }
 
@@ -56,7 +56,7 @@ impl CommandList {
     pub fn new() -> Self {
         Self {
             commands: COMMANDS,
-            selected_index: 0,
+            selected_index: None,
             scroll_offset: 0,
         }
     }
@@ -74,11 +74,11 @@ impl CommandList {
     }
 
     pub fn reset_selection(&mut self) {
-        self.selected_index = 0;
+        self.selected_index = None;
         self.scroll_offset = 0;
     }
 
-    pub fn command_selected_index(&self) -> usize {
+    pub fn command_selected_index(&self) -> Option<usize> {
         self.selected_index
     }
 
@@ -87,7 +87,7 @@ impl CommandList {
     }
 
     pub fn set_selected_index(&mut self, new_index: usize) {
-        self.selected_index = new_index;
+        self.selected_index = Some(new_index);
     }
 
     pub fn adjust_scroll_for_visible_rows(&mut self, visible_rows: usize) {
@@ -95,13 +95,14 @@ impl CommandList {
             self.scroll_offset = 0;
             return;
         }
-        if self.selected_index < self.scroll_offset {
-            self.scroll_offset = self.selected_index;
-        } else if self.selected_index >= self.scroll_offset.saturating_add(visible_rows) {
-            self.scroll_offset = self
-                .selected_index
-                .saturating_sub(visible_rows)
-                .saturating_add(1);
+        if let Some(selected_index) = self.selected_index {
+            if selected_index < self.scroll_offset {
+                self.scroll_offset = selected_index;
+            } else if selected_index >= self.scroll_offset.saturating_add(visible_rows) {
+                self.scroll_offset = selected_index
+                    .saturating_sub(visible_rows)
+                    .saturating_add(1);
+            }
         }
     }
 
@@ -169,8 +170,10 @@ impl CommandList {
             terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
 
             if let Some(entry) = matches.get(self.scroll_offset.saturating_add(row as usize)) {
-                let is_selected =
-                    self.selected_index == self.scroll_offset.saturating_add(row as usize);
+                let is_selected = self
+                    .selected_index
+                    .map(|idx| idx == self.scroll_offset.saturating_add(row as usize))
+                    .unwrap_or(false);
 
                 let mut name_display: String = entry
                     .name
