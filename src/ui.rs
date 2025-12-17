@@ -201,7 +201,7 @@ impl<'a> Ui<'a> {
     }
 
     pub fn file_save(&mut self, file_path: &mut Option<String>) {
-        let new_message = match self.editor.save(file_path) {
+        let new_message = match self.editor.file_save(file_path) {
             Ok(msg) => Some(msg),
             Err(err) => Some(format!("Error saving: {}", err)),
         };

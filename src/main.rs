@@ -19,6 +19,7 @@ use file::File;
 use terminal::Terminal;
 use ui::Ui;
 
+#[derive(Copy, Clone, PartialEq, Eq)]
 pub(crate) enum EditorMode {
     Normal,
     Edit,
@@ -94,13 +95,13 @@ fn run(terminal: &mut Terminal, mut file_path: Option<String>) -> io::Result<()>
                                     ui.mode_normal_enter()?;
                                 }
                                 KeyCode::Delete => {
-                                    ui.editor().delete_under_cursor();
+                                    ui.editor().under_cursor_delete();
                                 }
                                 KeyCode::Backspace => {
-                                    ui.editor().delete_backspace();
+                                    ui.editor().backspace_delete();
                                 }
                                 KeyCode::Char(ch) => {
-                                    ui.editor().insert_char(ch);
+                                    ui.editor().char_insert(ch);
                                 }
                                 _ => {}
                             },

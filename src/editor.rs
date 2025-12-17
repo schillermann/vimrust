@@ -49,7 +49,7 @@ impl Editor {
     /// Returns a read-only view with scroll offsets adjusted for the viewport.
     pub fn view_with_scroll(&self, number_of_columns: u16, number_of_rows: u16) -> EditorView<'_> {
         let (columns_offset, rows_offset) =
-            self.compute_scroll_offsets(number_of_columns, number_of_rows);
+            self.scroll_offsets_compute(number_of_columns, number_of_rows);
         EditorView {
             file: &self.file,
             cursor_x: self.cursor_x,
@@ -63,7 +63,7 @@ impl Editor {
         self.file.read()
     }
 
-    pub fn save(&mut self, file_path: &mut Option<String>) -> io::Result<String> {
+    pub fn file_save(&mut self, file_path: &mut Option<String>) -> io::Result<String> {
         let result = self.file.save()?;
         *file_path = self.file.path().cloned();
         Ok(result)
@@ -71,16 +71,12 @@ impl Editor {
 
     pub fn scroll(&mut self, number_of_columns: u16, number_of_rows: u16) {
         let (columns_offset, rows_offset) =
-            self.compute_scroll_offsets(number_of_columns, number_of_rows);
+            self.scroll_offsets_compute(number_of_columns, number_of_rows);
         self.columns_offset = columns_offset;
         self.rows_offset = rows_offset;
     }
 
-    fn compute_scroll_offsets(
-        &self,
-        number_of_columns: u16,
-        number_of_rows: u16,
-    ) -> (u16, u16) {
+    fn scroll_offsets_compute(&self, number_of_columns: u16, number_of_rows: u16) -> (u16, u16) {
         if number_of_rows == 0 {
             return (self.columns_offset, self.rows_offset);
         }
@@ -153,20 +149,26 @@ impl Editor {
         rows
     }
 
-    pub fn cursor_move(&mut self, key_code: KeyCode, usable_rows: u16) {
+    pub fn cursor_move(&mut self, key_code: KeyCode, usable_rows: u16) -> bool {
+        let before = (
+            self.cursor_x,
+            self.cursor_y,
+            self.columns_offset,
+            self.rows_offset,
+        );
         let file_lines_len = self.file.len().min(u16::MAX as usize) as u16;
 
         match key_code {
             KeyCode::Char('h') => {
                 if let Some(line) = self.file.line(self.cursor_y as usize) {
-                    self.cursor_x = self.previous_render_column(line, self.cursor_x);
+                    self.cursor_x = self.column_previous_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_sub(1);
                 }
             }
             KeyCode::Char('l') => {
                 if let Some(line) = self.file.line(self.cursor_y as usize) {
-                    self.cursor_x = self.next_render_column(line, self.cursor_x);
+                    self.cursor_x = self.column_next_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_add(1);
                 }
@@ -223,9 +225,16 @@ impl Editor {
         if let Some(line) = self.file.line(self.cursor_y as usize) {
             self.cursor_x = self.snap_cursor_to_render_character(line, self.cursor_x);
         }
+
+        (
+            self.cursor_x,
+            self.cursor_y,
+            self.columns_offset,
+            self.rows_offset,
+        ) != before
     }
 
-    pub fn insert_char(&mut self, ch: char) {
+    pub fn char_insert(&mut self, ch: char) -> bool {
         let target_line = self.cursor_y as usize;
         if target_line >= self.file.len() {
             self.file
@@ -234,26 +243,31 @@ impl Editor {
         }
 
         let insert_at = match self.file.line(target_line) {
-            Some(line) => self.render_column_to_char_index(line, self.cursor_x),
+            Some(line) => self.column_to_char_index_render(line, self.cursor_x),
             None => 0,
         };
         let advance = self.char_render_width(ch, self.cursor_x);
 
         if let Some(line) = self.file.file_lines.get_mut(target_line) {
+            let previous_len = line.len();
+            let previous_cursor_x = self.cursor_x;
             line.insert(insert_at, ch);
             self.cursor_x = self.cursor_x.saturating_add(advance);
+            return line.len() != previous_len || self.cursor_x != previous_cursor_x;
         }
+
+        false
     }
 
-    pub fn delete_backspace(&mut self) {
+    pub fn backspace_delete(&mut self) -> bool {
         if self.cursor_x == 0 && self.cursor_y == 0 {
-            return;
+            return false;
         }
 
         if self.cursor_x == 0 {
             let current_index = self.cursor_y as usize;
             if current_index == 0 || current_index >= self.file.len() {
-                return;
+                return false;
             }
             if let Some(current_line) = self.file.line(current_index).cloned() {
                 let new_cursor_x = match self.file.line(current_index.saturating_sub(1)) {
@@ -269,17 +283,18 @@ impl Editor {
                     self.file.file_lines.remove(current_index);
                     self.cursor_y = self.cursor_y.saturating_sub(1);
                     self.cursor_x = new_cursor_x;
+                    return true;
                 }
             }
-            return;
+            return false;
         }
 
         let (new_cursor_x, delete_idx) = match self.file.line(self.cursor_y as usize) {
             Some(line) => (
-                self.previous_render_column(line, self.cursor_x),
-                self.render_column_to_char_index(
+                self.column_previous_render(line, self.cursor_x),
+                self.column_to_char_index_render(
                     line,
-                    self.previous_render_column(line, self.cursor_x),
+                    self.column_previous_render(line, self.cursor_x),
                 ),
             ),
             None => (0, 0),
@@ -289,23 +304,26 @@ impl Editor {
             if delete_idx < line.len() {
                 line.remove(delete_idx);
                 self.cursor_x = new_cursor_x;
+                return true;
             }
         }
+
+        false
     }
 
-    pub fn delete_under_cursor(&mut self) {
+    pub fn under_cursor_delete(&mut self) -> bool {
         let delete_idx = match self.file.line(self.cursor_y as usize) {
-            Some(line) => self.render_column_to_char_index(line, self.cursor_x),
-            None => return,
+            Some(line) => self.column_to_char_index_render(line, self.cursor_x),
+            None => return false,
         };
 
         if let Some(line) = self.file.file_lines.get_mut(self.cursor_y as usize) {
             if delete_idx < line.len() {
                 line.remove(delete_idx);
-                return;
+                return true;
             }
         } else {
-            return;
+            return false;
         }
 
         let current_index = self.cursor_y as usize;
@@ -315,8 +333,11 @@ impl Editor {
                     current_line.push_str(&next_line);
                 }
                 self.file.file_lines.remove(current_index + 1);
+                return true;
             }
         }
+
+        false
     }
 
     pub fn snap_cursor_to_tab_start(&mut self) {
@@ -387,7 +408,7 @@ impl Editor {
         }
     }
 
-    fn render_segments(&self, line: &str) -> Vec<(u16, u16, char)> {
+    fn segments_render(&self, line: &str) -> Vec<(u16, u16, char)> {
         let mut segments = Vec::new();
         let mut column: u16 = 0;
 
@@ -402,8 +423,8 @@ impl Editor {
         segments
     }
 
-    fn next_render_column(&self, line: &str, cursor_x: u16) -> u16 {
-        let segments = self.render_segments(line);
+    fn column_next_render(&self, line: &str, cursor_x: u16) -> u16 {
+        let segments = self.segments_render(line);
         if segments.is_empty() {
             return 0;
         }
@@ -450,8 +471,8 @@ impl Editor {
         }
     }
 
-    fn previous_render_column(&self, line: &str, current_x: u16) -> u16 {
-        let segments = self.render_segments(line);
+    fn column_previous_render(&self, line: &str, current_x: u16) -> u16 {
+        let segments = self.segments_render(line);
         if segments.is_empty() {
             return 0;
         }
@@ -473,7 +494,7 @@ impl Editor {
     }
 
     fn snap_cursor_to_render_character(&self, line: &str, cursor_x: u16) -> u16 {
-        let segments = self.render_segments(line);
+        let segments = self.segments_render(line);
         if segments.is_empty() {
             return 0;
         }
@@ -510,7 +531,7 @@ impl Editor {
     }
 
     fn tab_segment_start(&self, line: &str, cursor_x: u16) -> Option<u16> {
-        for (start, end, ch) in self.render_segments(line) {
+        for (start, end, ch) in self.segments_render(line) {
             if cursor_x >= start && cursor_x < end && ch == '\t' {
                 return Some(start);
             }
@@ -518,7 +539,7 @@ impl Editor {
         None
     }
 
-    fn render_column_to_char_index(&self, line: &str, cursor_x: u16) -> usize {
+    fn column_to_char_index_render(&self, line: &str, cursor_x: u16) -> usize {
         let mut column: u16 = 0;
 
         for (idx, ch) in line.char_indices() {

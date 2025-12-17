@@ -3,7 +3,7 @@ use std::io::{self, BufRead, Write};
 use crossterm::event::KeyCode;
 use serde::{Deserialize, Serialize};
 
-use crate::{editor::Editor, file::File, EditorMode};
+use crate::{EditorMode, editor::Editor, file::File};
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
 ///
@@ -83,13 +83,25 @@ enum RpcRequest {
         rows: u16,
         suppress_frame: bool,
     },
-    Open { path: String },
+    Open {
+        path: String,
+    },
     Save,
-    SaveAs { path: String },
-    Insert { text: String },
-    Delete { kind: DeleteKind },
-    MoveCursor { direction: MoveDir },
-    SetMode { mode: RpcMode },
+    SaveAs {
+        path: String,
+    },
+    Insert {
+        text: String,
+    },
+    Delete {
+        kind: DeleteKind,
+    },
+    MoveCursor {
+        direction: MoveDir,
+    },
+    SetMode {
+        mode: RpcMode,
+    },
     GetState,
     Quit,
 }
@@ -167,7 +179,9 @@ fn handle_request(
         } => {
             let prev = *size;
             *size = (cols, rows);
-            if suppress_frame && *size == prev {
+            if suppress_frame {
+                RequestOutcome::Skip
+            } else if *size == prev {
                 RequestOutcome::Skip
             } else {
                 RequestOutcome::Frame
@@ -183,7 +197,7 @@ fn handle_request(
             *mode = EditorMode::Normal;
             RequestOutcome::Frame
         }
-        RpcRequest::Save => match editor.save(&mut None) {
+        RpcRequest::Save => match editor.file_save(&mut None) {
             Ok(msg) => {
                 *status = Some(msg);
                 RequestOutcome::Frame
@@ -203,21 +217,32 @@ fn handle_request(
             }
         }
         RpcRequest::Insert { text } => {
+            let mut changed = false;
             for ch in text.chars() {
-                editor.insert_char(ch);
+                if editor.char_insert(ch) {
+                    changed = true;
+                }
             }
-            RequestOutcome::Frame
+            if changed {
+                RequestOutcome::Frame
+            } else {
+                RequestOutcome::Skip
+            }
         }
         RpcRequest::Delete { kind } => {
-            match kind {
-                DeleteKind::Backspace => editor.delete_backspace(),
-                DeleteKind::Under => editor.delete_under_cursor(),
+            let changed = match kind {
+                DeleteKind::Backspace => editor.backspace_delete(),
+                DeleteKind::Under => editor.under_cursor_delete(),
+            };
+            if changed {
+                RequestOutcome::Frame
+            } else {
+                RequestOutcome::Skip
             }
-            RequestOutcome::Frame
         }
         RpcRequest::MoveCursor { direction } => {
             let usable_rows = size.1.saturating_sub(2);
-            match direction {
+            let moved = match direction {
                 MoveDir::Left => editor.cursor_move(KeyCode::Char('h'), usable_rows),
                 MoveDir::Right => editor.cursor_move(KeyCode::Char('l'), usable_rows),
                 MoveDir::Up => editor.cursor_move(KeyCode::Char('k'), usable_rows),
@@ -226,10 +251,16 @@ fn handle_request(
                 MoveDir::PageDown => editor.cursor_move(KeyCode::PageDown, usable_rows),
                 MoveDir::Home => editor.cursor_move(KeyCode::Home, usable_rows),
                 MoveDir::End => editor.cursor_move(KeyCode::End, usable_rows),
+            };
+            if moved {
+                RequestOutcome::Frame
+            } else {
+                RequestOutcome::Skip
             }
-            RequestOutcome::Frame
         }
         RpcRequest::SetMode { mode: new_mode } => {
+            let prev_mode = *mode;
+            let prev_cursor = (editor.cursor_x, editor.cursor_y);
             *mode = match new_mode {
                 RpcMode::Normal => EditorMode::Normal,
                 RpcMode::Edit => {
@@ -238,7 +269,11 @@ fn handle_request(
                 }
                 RpcMode::Command => EditorMode::Command,
             };
-            RequestOutcome::Frame
+            if *mode != prev_mode || (editor.cursor_x, editor.cursor_y) != prev_cursor {
+                RequestOutcome::Frame
+            } else {
+                RequestOutcome::Skip
+            }
         }
         RpcRequest::GetState => RequestOutcome::Frame,
         RpcRequest::Quit => RequestOutcome::Quit,
@@ -263,9 +298,7 @@ fn build_frame(
         .cursor_y
         .saturating_sub(view.rows_offset)
         .saturating_add(1);
-    let cursor_row = base_row
-        .max(1)
-        .min(size.1.saturating_sub(1).max(1));
+    let cursor_row = base_row.max(1).min(size.1.saturating_sub(1).max(1));
 
     let mut status_text = format!(
         "{} > {}",
@@ -327,6 +360,68 @@ mod tests {
 
         let frame = build_frame(&editor, &mode, &status, size);
         assert_eq!(frame.rows.get(0).map(String::as_str), Some("hi"));
+    }
+
+    #[test]
+    fn noop_cursor_move_skips_frame() {
+        let mut editor = Editor::new(File::new(None));
+        editor.file.file_lines = vec![String::new()];
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+
+        let outcome = handle_request(
+            RpcRequest::MoveCursor {
+                direction: MoveDir::Left,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
+    }
+
+    #[test]
+    fn resize_with_suppress_frame_skips() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+
+        let outcome = handle_request(
+            RpcRequest::Resize {
+                cols: 20,
+                rows: 40,
+                suppress_frame: true,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
+        assert_eq!(size, (20, 40));
+    }
+
+    #[test]
+    fn noop_delete_under_cursor_skips_frame() {
+        let mut editor = Editor::new(File::new(None));
+        editor.file.file_lines = vec![String::new()];
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+
+        let outcome = handle_request(
+            RpcRequest::Delete {
+                kind: DeleteKind::Under,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
     #[test]
