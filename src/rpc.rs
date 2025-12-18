@@ -3,7 +3,14 @@ use std::io::{self, BufRead, Write};
 use crossterm::event::KeyCode;
 use serde::{Deserialize, Serialize};
 
-use crate::{EditorMode, editor::Editor, file::File};
+use crate::{
+    EditorMode,
+    command_ui_state::{CommandUiAction, CommandUiState},
+    editor::Editor,
+    file::File,
+};
+
+pub use crate::command_ui_state::CommandUiFrame;
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
 ///
@@ -15,6 +22,7 @@ use crate::{EditorMode, editor::Editor, file::File};
 /// - insert: {"type":"insert","text":"hello"}
 /// - delete: {"type":"delete","kind":"backspace"|"under"}
 /// - move_cursor: {"type":"move_cursor","direction":"left"|"right"|"up"|"down"|"page_up"|"page_down"|"home"|"end"}
+/// - command_ui: {"type":"command_ui","action":"insert_char","ch":"a"} (for command-line editing/navigation)
 /// - set_mode: {"type":"set_mode","mode":"normal"|"edit"|"command"}
 /// - get_state: {"type":"get_state"}
 /// - quit: {"type":"quit"}
@@ -34,6 +42,7 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
     let mut mode = EditorMode::Normal;
     let mut status_message: Option<String> = None;
     let mut size: (u16, u16) = (80, 24);
+    let mut command_ui = CommandUiState::new();
 
     while let Some(line) = lines.next() {
         let line = line?;
@@ -55,9 +64,20 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
             &mut mode,
             &mut status_message,
             &mut size,
+            &mut command_ui,
         ) {
             RequestOutcome::Frame => {
-                let frame = build_frame(&editor, &mode, &status_message, size, None);
+                let frame = build_frame(
+                    &editor,
+                    &mode,
+                    &status_message,
+                    size,
+                    if matches!(mode, EditorMode::Command) {
+                        Some(command_ui.frame())
+                    } else {
+                        None
+                    },
+                );
                 if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
                     let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
                 } else {
@@ -75,7 +95,17 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
                     let _ = write_error(&mut stdout, format!("failed to serialize ack: {}", err));
                     continue;
                 }
-                let frame = build_frame(&editor, &mode, &status_message, size, None);
+                let frame = build_frame(
+                    &editor,
+                    &mode,
+                    &status_message,
+                    size,
+                    if matches!(mode, EditorMode::Command) {
+                        Some(command_ui.frame())
+                    } else {
+                        None
+                    },
+                );
                 if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
                     let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
                 } else {
@@ -117,6 +147,9 @@ pub enum RpcRequest {
     },
     MoveCursor {
         direction: MoveDir,
+    },
+    CommandUi {
+        action: CommandUiAction,
     },
     SetMode {
         mode: RpcMode,
@@ -193,22 +226,6 @@ pub struct Cursor {
     pub row: u16,
 }
 
-#[derive(Serialize, Clone)]
-pub struct CommandUiFrame {
-    pub line: String,
-    pub cursor_x: u16,
-    pub focus_on_list: bool,
-    pub list_items: Vec<CommandListItemFrame>,
-    pub selected_index: Option<usize>,
-    pub scroll_offset: usize,
-}
-
-#[derive(Serialize, Clone)]
-pub struct CommandListItemFrame {
-    pub name: String,
-    pub description: String,
-}
-
 pub enum RequestOutcome {
     Frame,
     Ack(Ack),
@@ -224,6 +241,7 @@ pub fn handle_request(
     mode: &mut EditorMode,
     status: &mut Option<String>,
     size: &mut (u16, u16),
+    command_ui: &mut CommandUiState,
 ) -> RequestOutcome {
     match request {
         RpcRequest::Resize {
@@ -233,6 +251,12 @@ pub fn handle_request(
         } => {
             let prev = *size;
             *size = (cols, rows);
+            if matches!(mode, EditorMode::Command) {
+                let list_rows = command_list_rows(*size);
+                command_ui
+                    .command_list
+                    .adjust_scroll_for_visible_rows(list_rows);
+            }
             if suppress_frame {
                 RequestOutcome::Skip
             } else if *size == prev {
@@ -335,6 +359,18 @@ pub fn handle_request(
                 RequestOutcome::Skip
             }
         }
+        RpcRequest::CommandUi { action } => {
+            if !matches!(mode, EditorMode::Command) {
+                return RequestOutcome::Skip;
+            }
+            let list_rows = command_list_rows(*size);
+            let changed = command_ui.apply_action(action, list_rows);
+            if changed {
+                RequestOutcome::Frame
+            } else {
+                RequestOutcome::Skip
+            }
+        }
         RpcRequest::SetMode { mode: new_mode } => {
             let prev_mode = *mode;
             let prev_cursor = (editor.cursor_x, editor.cursor_y);
@@ -346,6 +382,11 @@ pub fn handle_request(
                 }
                 RpcMode::Command => EditorMode::Command,
             };
+            if *mode == EditorMode::Command && prev_mode != EditorMode::Command {
+                command_ui.start_prompt();
+            } else if prev_mode == EditorMode::Command && *mode != EditorMode::Command {
+                command_ui.clear();
+            }
             if *mode != prev_mode || (editor.cursor_x, editor.cursor_y) != prev_cursor {
                 RequestOutcome::Frame
             } else {
@@ -414,6 +455,12 @@ fn write_error(stdout: &mut impl Write, message: String) -> io::Result<()> {
     stdout.flush()
 }
 
+fn command_list_rows(size: (u16, u16)) -> usize {
+    size.1
+        .saturating_sub(2) // command line + status line
+        .saturating_sub(3) as usize // blank + header + divider rows
+}
+
 fn write_ack(stdout: &mut impl Write, ack: Ack) -> io::Result<()> {
     serde_json::to_writer(&mut *stdout, &RpcResponse::Ack(ack))?;
     stdout.write_all(b"\n")?;
@@ -431,6 +478,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = None;
         let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
             RpcRequest::Insert {
@@ -440,6 +488,7 @@ mod tests {
             &mut mode,
             &mut status,
             &mut size,
+            &mut command_ui,
         );
         assert!(matches!(outcome, RequestOutcome::Frame));
 
@@ -454,6 +503,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = None;
         let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
             RpcRequest::MoveCursor {
@@ -463,6 +513,7 @@ mod tests {
             &mut mode,
             &mut status,
             &mut size,
+            &mut command_ui,
         );
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
@@ -473,6 +524,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = None;
         let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
             RpcRequest::Resize {
@@ -484,9 +536,54 @@ mod tests {
             &mut mode,
             &mut status,
             &mut size,
+            &mut command_ui,
         );
         assert!(matches!(outcome, RequestOutcome::Skip));
         assert_eq!(size, (20, 40));
+    }
+
+    #[test]
+    fn command_ui_request_updates_state_and_frame() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (20, 8);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::SetMode {
+                mode: RpcMode::Command,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Frame));
+
+        let outcome = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 'x' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Frame));
+
+        let frame = build_frame(
+            &editor,
+            &mode,
+            &status,
+            size,
+            Some(command_ui.frame()),
+        );
+        let command_ui_frame = frame.command_ui.unwrap();
+        assert_eq!(command_ui_frame.line, ":x");
+        assert_eq!(command_ui_frame.cursor_x, 2);
     }
 
     #[test]
@@ -496,6 +593,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = None;
         let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
             RpcRequest::Delete {
@@ -505,6 +603,7 @@ mod tests {
             &mut mode,
             &mut status,
             &mut size,
+            &mut command_ui,
         );
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
@@ -516,6 +615,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = None;
         let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
         let path = std::env::temp_dir().join("vimrust_rpc_test.txt");
         let _ = fs::remove_file(&path);
 
@@ -527,6 +627,7 @@ mod tests {
             &mut mode,
             &mut status,
             &mut size,
+            &mut command_ui,
         );
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind, AckKind::SaveAs);
@@ -555,6 +656,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = None;
         let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
             RpcRequest::Save,
@@ -562,6 +664,7 @@ mod tests {
             &mut mode,
             &mut status,
             &mut size,
+            &mut command_ui,
         );
         if let RequestOutcome::Ack(ack) = outcome {
             assert_eq!(ack.kind, AckKind::Save);

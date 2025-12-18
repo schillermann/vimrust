@@ -5,6 +5,7 @@ use crossterm::event::{self, Event, KeyCode};
 mod buffer;
 mod command_line;
 mod command_list;
+mod command_ui_state;
 mod core;
 mod editor;
 mod file;
@@ -13,10 +14,15 @@ mod status_line;
 mod terminal;
 mod ui;
 
-use command_line::CommandLine;
-use command_list::CommandList;
 use core::CoreState;
-use rpc::{DeleteKind, MoveDir, RequestOutcome, RpcMode, RpcRequest};
+use command_ui_state::CommandUiAction;
+use rpc::{
+    DeleteKind,
+    MoveDir,
+    RequestOutcome,
+    RpcMode,
+    RpcRequest,
+};
 use terminal::Terminal;
 use ui::Ui;
 
@@ -55,22 +61,15 @@ fn main() -> io::Result<()> {
 
 fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
     let mut core = CoreState::new(file_path.clone());
-    let mut command_list = CommandList::new();
-    let mut command_line = CommandLine::new();
 
     let result: io::Result<()> = {
-        let mut ui = Ui::new(terminal, &mut command_line, &mut command_list);
+        let mut ui = Ui::new(terminal);
         core.read_file()?;
         ui.terminal_update_size()?;
         core.set_size(ui.terminal_size());
 
         loop {
-            let command_ui = if matches!(core.mode(), EditorMode::Command) {
-                Some(ui.command_ui_snapshot())
-            } else {
-                None
-            };
-            let frame = core.frame(command_ui);
+            let frame = core.frame();
             ui.set_mode_external(core.mode());
             ui.render_from_frame(&frame)?;
 
@@ -96,7 +95,6 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(&mut core, &mut ui, RpcRequest::Save)?;
                                 }
                                 KeyCode::Char(':') => {
-                                    ui.mode_command_enter()?;
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
@@ -220,7 +218,6 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                             },
                             EditorMode::Command => match key_event.code {
                                 KeyCode::Esc => {
-                                    ui.mode_command_exit()?;
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
@@ -230,34 +227,137 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     )?;
                                 }
                                 KeyCode::Enter => {
-                                    let requests = ui.command_enter()?;
-                                    for req in requests {
-                                        handle_core_request(&mut core, &mut ui, req)?;
+                                    let was_focused_on_list = frame
+                                        .command_ui
+                                        .as_ref()
+                                        .map(|c| c.focus_on_list)
+                                        .unwrap_or(false);
+                                    if was_focused_on_list {
+                                        handle_core_request(
+                                            &mut core,
+                                            &mut ui,
+                                            RpcRequest::CommandUi {
+                                                action: CommandUiAction::SelectFromList,
+                                            },
+                                        )?;
+                                    } else if let Some(cmd_ui) = &frame.command_ui {
+                                        let command = cmd_ui
+                                            .line
+                                            .trim_start_matches(':')
+                                            .trim()
+                                            .to_lowercase();
+                                        match command.as_str() {
+                                            "s" | "save" => {
+                                                handle_core_request(
+                                                    &mut core,
+                                                    &mut ui,
+                                                    RpcRequest::Save,
+                                                )?;
+                                                handle_core_request(
+                                                    &mut core,
+                                                    &mut ui,
+                                                    RpcRequest::SetMode {
+                                                        mode: RpcMode::Normal,
+                                                    },
+                                                )?;
+                                            }
+                                            "sq" => {
+                                                handle_core_request(
+                                                    &mut core,
+                                                    &mut ui,
+                                                    RpcRequest::Save,
+                                                )?;
+                                                handle_core_request(
+                                                    &mut core,
+                                                    &mut ui,
+                                                    RpcRequest::Quit,
+                                                )?;
+                                            }
+                                            "q" | "quit" => {
+                                                handle_core_request(
+                                                    &mut core,
+                                                    &mut ui,
+                                                    RpcRequest::Quit,
+                                                )?;
+                                            }
+                                            _ => {}
+                                        }
                                     }
                                 }
                                 KeyCode::Backspace => {
-                                    ui.command_line_backspace();
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi {
+                                            action: CommandUiAction::Backspace,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::Delete => {
-                                    ui.command_line_delete();
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi {
+                                            action: CommandUiAction::Delete,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::Left => {
-                                    ui.command_line_move_left();
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi {
+                                            action: CommandUiAction::MoveLeft,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::Right => {
-                                    ui.command_line_move_right();
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi {
+                                            action: CommandUiAction::MoveRight,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::Home => {
-                                    ui.command_line_move_home();
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi {
+                                            action: CommandUiAction::MoveHome,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::End => {
-                                    ui.command_line_move_end();
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi {
+                                            action: CommandUiAction::MoveEnd,
+                                        },
+                                    )?;
                                 }
                                 KeyCode::Up | KeyCode::Down => {
-                                    ui.command_list_move_selection(key_event.code);
+                                    let action = match key_event.code {
+                                        KeyCode::Up => CommandUiAction::MoveSelectionUp,
+                                        KeyCode::Down => CommandUiAction::MoveSelectionDown,
+                                        _ => CommandUiAction::MoveSelectionUp,
+                                    };
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi { action },
+                                    )?;
                                 }
                                 KeyCode::Char(ch) => {
-                                    ui.command_line_insert_char(ch);
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandUi {
+                                            action: CommandUiAction::InsertChar { ch },
+                                        },
+                                    )?;
                                 }
                                 _ => {}
                             },

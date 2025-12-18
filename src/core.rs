@@ -2,9 +2,16 @@ use std::io;
 
 use crate::{
     EditorMode,
+    command_ui_state::CommandUiState,
     editor::Editor,
     file::File,
-    rpc::{build_frame, handle_request, CommandUiFrame, Frame, RequestOutcome, RpcRequest},
+    rpc::{
+        build_frame,
+        handle_request,
+        Frame,
+        RequestOutcome,
+        RpcRequest,
+    },
 };
 
 pub struct CoreState {
@@ -12,6 +19,7 @@ pub struct CoreState {
     mode: EditorMode,
     status: Option<String>,
     size: (u16, u16),
+    command_ui: CommandUiState,
 }
 
 impl CoreState {
@@ -22,6 +30,7 @@ impl CoreState {
             mode: EditorMode::Normal,
             status: None,
             size: (0, 0),
+            command_ui: CommandUiState::new(),
         }
     }
 
@@ -48,16 +57,16 @@ impl CoreState {
             &mut self.mode,
             &mut self.status,
             &mut self.size,
+            &mut self.command_ui,
         )
     }
 
-    pub fn frame(&self, command_ui: Option<CommandUiFrame>) -> Frame {
-        build_frame(
-            &self.editor,
-            &self.mode,
-            &self.status,
-            self.size,
-            command_ui,
-        )
+    pub fn frame(&self) -> Frame {
+        let command_ui = if matches!(self.mode, EditorMode::Command) {
+            Some(self.command_ui.frame())
+        } else {
+            None
+        };
+        build_frame(&self.editor, &self.mode, &self.status, self.size, command_ui)
     }
 }

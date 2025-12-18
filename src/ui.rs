@@ -2,7 +2,6 @@ use std::io;
 
 use crossterm::{
     cursor::{Hide, MoveTo, Show},
-    event::KeyCode,
     style::{
         Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
     },
@@ -12,8 +11,7 @@ use crossterm::{
 use crate::{
     EditorMode,
     command_line::CommandLine,
-    command_list::CommandList,
-    rpc::{CommandListItemFrame, CommandUiFrame, Frame, RpcMode, RpcRequest},
+    rpc::{CommandUiFrame, Frame},
     status_line::StatusLine,
     terminal::Terminal,
 };
@@ -21,28 +19,18 @@ use crate::{
 /// Responsible for orchestrating the per-frame UI rendering.
 pub struct Ui<'a> {
     terminal: &'a mut Terminal,
-    command_line: &'a mut CommandLine,
-    command_list: &'a mut CommandList,
     status_line: StatusLine,
     updated: bool,
-    command_focus_on_list: bool,
     quit: bool,
     mode: EditorMode,
 }
 
 impl<'a> Ui<'a> {
-    pub fn new(
-        terminal: &'a mut Terminal,
-        command_line: &'a mut CommandLine,
-        command_list: &'a mut CommandList,
-    ) -> Self {
+    pub fn new(terminal: &'a mut Terminal) -> Self {
         Self {
             terminal,
-            command_line,
-            command_list,
             status_line: StatusLine::new(),
             updated: false,
-            command_focus_on_list: false,
             quit: false,
             mode: EditorMode::Normal,
         }
@@ -50,10 +38,6 @@ impl<'a> Ui<'a> {
 
     pub fn terminal_size(&self) -> (u16, u16) {
         self.terminal.size()
-    }
-
-    pub fn editor_view_rows(&self) -> u16 {
-        self.terminal.size().1.saturating_sub(2)
     }
 
     pub fn status_line(&mut self) -> &mut StatusLine {
@@ -88,209 +72,6 @@ impl<'a> Ui<'a> {
         self.terminal.size_update()?;
         self.updated = true;
         Ok(())
-    }
-
-    pub fn mode_command_enter(&mut self) -> io::Result<()> {
-        self.command_line.start_prompt();
-        self.command_list.reset_selection();
-        self.set_command_focus_on_list(false);
-        self.enter_mode_command()
-    }
-
-    pub fn mode_command_exit(&mut self) -> io::Result<()> {
-        self.command_line.clear();
-        self.command_list.reset_selection();
-        self.set_command_focus_on_list(false);
-        self.status_line.message_clear();
-        Ok(())
-    }
-
-    pub fn command_list_enter_select(&mut self) {
-        self.updated = true;
-        let matches = self.command_list.filter(self.command_line.command_line());
-        if self.command_focus_on_list && !matches.is_empty() {
-            if let Some(selected) = self.command_list.command_selected_index() {
-                let index = selected.min(matches.len() - 1);
-                if let Some(entry) = matches.get(index) {
-                    self.command_line.set_content(format!(":{}", entry.name));
-                    self.set_command_focus_on_list(false);
-
-                    let updated_matches =
-                        self.command_list.filter(self.command_line.command_line());
-                    if let Some(updated_index) = updated_matches
-                        .iter()
-                        .position(|candidate| candidate.name == entry.name)
-                    {
-                        self.command_list.set_selected_index(updated_index);
-                        let list_rows = self.editor_view_rows().saturating_sub(3) as usize;
-                        self.command_list.adjust_scroll_for_visible_rows(list_rows);
-                    }
-                }
-            }
-        }
-    }
-
-    pub fn command_enter(&mut self) -> io::Result<Vec<RpcRequest>> {
-        let was_focused_on_list = self.command_focus_on_list;
-        self.command_list_enter_select();
-        if self.command_focus_on_list {
-            return Ok(Vec::new());
-        }
-        if was_focused_on_list {
-            // Just moved selection from list into the command line; wait for next Enter to execute.
-            return Ok(Vec::new());
-        }
-
-        let command = self
-            .command_line
-            .command_line()
-            .trim_start_matches(':')
-            .trim()
-            .to_lowercase();
-
-        let mut requests = Vec::new();
-        match command.as_str() {
-            "s" | "save" => {
-                requests.push(RpcRequest::Save);
-                requests.push(RpcRequest::SetMode {
-                    mode: RpcMode::Normal,
-                });
-            }
-            "sq" => {
-                requests.push(RpcRequest::Save);
-                requests.push(RpcRequest::Quit);
-            }
-            "q" | "quit" => {
-                requests.push(RpcRequest::Quit);
-            }
-            _ => {}
-        }
-
-        self.set_command_focus_on_list(false);
-        Ok(requests)
-    }
-
-    pub fn command_line_backspace(&mut self) {
-        self.updated = true;
-        self.command_line.backspace();
-        self.command_list.reset_selection();
-        self.set_command_focus_on_list(false);
-    }
-
-    pub fn command_line_delete(&mut self) {
-        self.updated = true;
-        self.command_line.delete();
-        self.command_list.reset_selection();
-        self.set_command_focus_on_list(false);
-    }
-
-    pub fn command_line_move_left(&mut self) {
-        self.updated = true;
-        self.command_line.move_left();
-        self.set_command_focus_on_list(false);
-    }
-
-    pub fn command_line_move_right(&mut self) {
-        self.updated = true;
-        self.command_line.move_right();
-        self.set_command_focus_on_list(false);
-    }
-
-    pub fn command_line_move_home(&mut self) {
-        self.updated = true;
-        self.command_line.move_home();
-        self.set_command_focus_on_list(false);
-    }
-
-    pub fn command_line_move_end(&mut self) {
-        self.updated = true;
-        self.command_line.move_end();
-        self.set_command_focus_on_list(false);
-    }
-
-    pub fn command_ui_snapshot(&self) -> CommandUiFrame {
-        let matches = self.command_list.filter(self.command_line.command_line());
-        let selected_index = self.command_list.command_selected_index().and_then(|idx| {
-            if matches.is_empty() {
-                None
-            } else {
-                Some(idx.min(matches.len().saturating_sub(1)))
-            }
-        });
-        let list_items = matches
-            .iter()
-            .map(|entry| CommandListItemFrame {
-                name: entry.name.to_string(),
-                description: entry.description.to_string(),
-            })
-            .collect();
-
-        CommandUiFrame {
-            line: self.command_line.command_line().to_string(),
-            cursor_x: self.command_line.command_cursor_x(),
-            focus_on_list: self.command_focus_on_list,
-            list_items,
-            selected_index,
-            scroll_offset: self.command_list.command_scroll_offset(),
-        }
-    }
-
-    pub fn command_line_insert_char(&mut self, ch: char) {
-        self.updated = true;
-        self.command_line.insert_char(ch);
-        self.command_list.reset_selection();
-        self.set_command_focus_on_list(false);
-    }
-    pub fn command_list_move_selection(&mut self, direction: KeyCode) {
-        self.updated = true;
-        let list_rows = self.editor_view_rows().saturating_sub(3) as usize;
-        let matches = self.command_list.filter(self.command_line.command_line());
-        if matches.is_empty() {
-            self.command_list.reset_selection();
-            self.set_command_focus_on_list(false);
-            return;
-        }
-
-        self.set_command_focus_on_list(true);
-        match self.command_list.command_selected_index() {
-            None => match direction {
-                KeyCode::Down => self.command_list.set_selected_index(0),
-                KeyCode::Up => self
-                    .command_list
-                    .set_selected_index(matches.len().saturating_sub(1)),
-                _ => {}
-            },
-            Some(current_index) => {
-                let max_index = matches.len().saturating_sub(1);
-                match direction {
-                    KeyCode::Up if current_index > 0 => {
-                        self.command_list
-                            .set_selected_index(current_index.saturating_sub(1));
-                    }
-                    KeyCode::Down if current_index < max_index => {
-                        self.command_list
-                            .set_selected_index(current_index.saturating_add(1));
-                    }
-                    _ => {}
-                }
-            }
-        }
-        self.command_list.adjust_scroll_for_visible_rows(list_rows);
-    }
-
-    pub fn set_command_focus_on_list(&mut self, focus: bool) {
-        self.command_focus_on_list = focus;
-    }
-
-    pub fn enter_mode_command(&mut self) -> io::Result<()> {
-        self.updated = true;
-        self.set_mode(EditorMode::Command)
-    }
-
-    pub fn set_mode(&mut self, mode: EditorMode) -> io::Result<()> {
-        self.mode = mode;
-        self.updated = true;
-        self.terminal.set_cursor_style(&self.mode)
     }
 
     pub fn render_from_frame(&mut self, frame: &Frame) -> io::Result<()> {
