@@ -70,8 +70,11 @@ impl Terminal {
     }
 
     pub fn queue_execute(&mut self) -> io::Result<()> {
-        self.out.write_all(self.buffer.as_slice())?;
-        self.out.flush()?;
+        if self.buffer.changed() {
+            self.out.write_all(self.buffer.slice())?;
+            self.out.flush()?;
+            self.buffer.clear();
+        }
         Ok(())
     }
 }

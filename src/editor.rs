@@ -59,6 +59,10 @@ impl Editor {
         Ok(result)
     }
 
+    pub fn file_changed(&self) -> bool {
+        self.file.changed()
+    }
+
     fn scroll_offsets_compute(&self, number_of_columns: u16, number_of_rows: u16) -> (u16, u16) {
         if number_of_rows == 0 {
             return (self.columns_offset, self.rows_offset);
@@ -236,7 +240,11 @@ impl Editor {
             let previous_cursor_x = self.cursor_x;
             line.insert(insert_at, ch);
             self.cursor_x = self.cursor_x.saturating_add(advance);
-            return line.len() != previous_len || self.cursor_x != previous_cursor_x;
+            let changed = line.len() != previous_len || self.cursor_x != previous_cursor_x;
+            if changed {
+                self.file.touch();
+            }
+            return changed;
         }
 
         false
@@ -266,6 +274,7 @@ impl Editor {
                     self.file.file_lines.remove(current_index);
                     self.cursor_y = self.cursor_y.saturating_sub(1);
                     self.cursor_x = new_cursor_x;
+                    self.file.touch();
                     return true;
                 }
             }
@@ -288,6 +297,7 @@ impl Editor {
         {
             line.remove(delete_idx);
             self.cursor_x = new_cursor_x;
+            self.file.touch();
             return true;
         }
 
@@ -304,6 +314,7 @@ impl Editor {
             && delete_idx < line.len()
         {
             line.remove(delete_idx);
+            self.file.touch();
             return true;
         }
 
@@ -314,6 +325,7 @@ impl Editor {
         {
             current_line.push_str(&next_line);
             self.file.file_lines.remove(current_index + 1);
+            self.file.touch();
             return true;
         }
 

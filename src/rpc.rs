@@ -327,6 +327,7 @@ pub fn handle_request(
                 }
             }
             if changed {
+                *status = Some(String::from("modified"));
                 RequestOutcome::Frame
             } else {
                 RequestOutcome::Skip
@@ -338,6 +339,7 @@ pub fn handle_request(
                 DeleteKind::Under => editor.under_cursor_delete(),
             };
             if changed {
+                *status = Some(String::from("modified"));
                 RequestOutcome::Frame
             } else {
                 RequestOutcome::Skip
@@ -379,33 +381,29 @@ pub fn handle_request(
             }
             let command = line.trim_start_matches(':').trim().to_lowercase();
             match command.as_str() {
-                "s" | "save" => {
-                    match editor.file_save(&mut None) {
-                        Ok(msg) => {
-                            *status = Some(msg.clone());
-                            if matches!(mode, EditorMode::Command) {
-                                command_ui.clear();
-                            }
-                            *mode = EditorMode::Normal;
-                            let ack = Ack {
-                                kind: AckKind::Save,
-                                message: Some(msg),
-                                file_path: editor.file.path().cloned(),
-                            };
-                            RequestOutcome::FrameAndAck(ack)
+                "s" | "save" => match editor.file_save(&mut None) {
+                    Ok(msg) => {
+                        *status = Some(msg.clone());
+                        if matches!(mode, EditorMode::Command) {
+                            command_ui.clear();
                         }
-                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                        *mode = EditorMode::Normal;
+                        let ack = Ack {
+                            kind: AckKind::Save,
+                            message: Some(msg),
+                            file_path: editor.file.path().cloned(),
+                        };
+                        RequestOutcome::FrameAndAck(ack)
                     }
-                }
-                "sq" => {
-                    match editor.file_save(&mut None) {
-                        Ok(msg) => {
-                            *status = Some(msg.clone());
-                            RequestOutcome::Quit
-                        }
-                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                    Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                },
+                "sq" => match editor.file_save(&mut None) {
+                    Ok(msg) => {
+                        *status = Some(msg.clone());
+                        RequestOutcome::Quit
                     }
-                }
+                    Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                },
                 "q" | "quit" => RequestOutcome::Quit,
                 _ => RequestOutcome::Skip,
             }
@@ -458,21 +456,11 @@ pub fn build_frame(
         .saturating_add(1);
     let cursor_row = base_row.max(1).min(size.1.saturating_sub(1).max(1));
 
-    let mut status_text = format!(
-        "{} > {}",
-        mode.label(),
-        view.file
-            .path()
-            .cloned()
-            .unwrap_or_else(|| "[No Filename]".into())
-    );
-    if let Some(msg) = status
-        && !msg.is_empty()
-    {
-        status_text.push_str(" > ");
-        status_text.push_str(msg);
-    }
-    let status = Some(status_text);
+    let status = if editor.file_changed() {
+        Some(String::from("modified"))
+    } else {
+        status.clone()
+    };
 
     Frame {
         mode: mode.label(),
@@ -613,13 +601,7 @@ mod tests {
         );
         assert!(matches!(outcome, RequestOutcome::Frame));
 
-        let frame = build_frame(
-            &editor,
-            &mode,
-            &status,
-            size,
-            Some(command_ui.frame()),
-        );
+        let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
         let command_ui_frame = frame.command_ui.unwrap();
         assert_eq!(command_ui_frame.line, ":x");
         assert_eq!(command_ui_frame.cursor_x, 2);
@@ -688,9 +670,7 @@ mod tests {
         let path = std::env::temp_dir().join("vimrust_rpc_command_save.txt");
         let _ = fs::remove_file(&path);
 
-        let mut editor = Editor::new(File::new(Some(
-            path.to_string_lossy().to_string(),
-        )));
+        let mut editor = Editor::new(File::new(Some(path.to_string_lossy().to_string())));
         editor.file.file_lines = vec![String::from("changed")];
         let mut mode = EditorMode::Normal;
         let mut status = None;
@@ -754,9 +734,7 @@ mod tests {
         let path = std::env::temp_dir().join("vimrust_rpc_save_exists.txt");
         let _ = fs::write(&path, "existing");
 
-        let mut editor = Editor::new(File::new(Some(
-            path.to_string_lossy().to_string(),
-        )));
+        let mut editor = Editor::new(File::new(Some(path.to_string_lossy().to_string())));
         editor.file.file_lines = vec![String::from("changed")];
         let mut mode = EditorMode::Normal;
         let mut status = None;

@@ -127,6 +127,7 @@ impl<'a> Ui<'a> {
             }
 
             if number_of_rows > 1 {
+                self.status_line.file_message_update(frame.status.clone());
                 self.status_line.draw(
                     self.terminal,
                     &self.mode,

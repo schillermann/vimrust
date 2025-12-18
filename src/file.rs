@@ -3,6 +3,7 @@ use std::{fs, io};
 pub struct File {
     path: Option<String>,
     pub file_lines: Vec<String>,
+    changed: bool,
 }
 
 impl File {
@@ -10,6 +11,7 @@ impl File {
         Self {
             path: file_path,
             file_lines: Vec::new(),
+            changed: false,
         }
     }
 
@@ -29,6 +31,7 @@ impl File {
             self.file_lines.push(String::new());
         }
 
+        self.changed = false;
         Ok(())
     }
 
@@ -36,6 +39,7 @@ impl File {
         self.path = None;
         self.file_lines.clear();
         self.file_lines.push(String::new());
+        self.changed = false;
     }
 
     pub fn read(&mut self) -> io::Result<()> {
@@ -55,6 +59,7 @@ impl File {
             .clone();
         let contents = self.file_lines.join("\n");
         fs::write(&path, contents)?;
+        self.changed = false;
         Ok(String::from("written"))
     }
 
@@ -64,5 +69,13 @@ impl File {
 
     pub fn len(&self) -> usize {
         self.file_lines.len()
+    }
+
+    pub fn touch(&mut self) {
+        self.changed = true;
+    }
+
+    pub fn changed(&self) -> bool {
+        self.changed
     }
 }

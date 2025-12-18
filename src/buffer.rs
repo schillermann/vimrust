@@ -17,7 +17,11 @@ impl Buffer {
     }
 
     /// Returns the buffered bytes for flushing to stdout.
-    pub fn as_slice(&self) -> &[u8] {
+    pub fn slice(&self) -> &[u8] {
         &self.data
+    }
+
+    pub fn changed(&self) -> bool {
+        !self.data.is_empty()
     }
 }
