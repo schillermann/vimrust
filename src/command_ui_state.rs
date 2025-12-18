@@ -147,24 +147,25 @@ impl CommandUiState {
             }
             CommandUiAction::SelectFromList => {
                 let matches = self.command_list.filter(self.command_line.command_line());
-                if self.focus_on_list && !matches.is_empty() {
-                    if let Some(selected) = self.command_list.command_selected_index() {
-                        let index = selected.min(matches.len().saturating_sub(1));
-                        if let Some(entry) = matches.get(index) {
-                            self.command_line.set_content(format!(":{}", entry.name));
-                            self.focus_on_list = false;
+                if self.focus_on_list
+                    && !matches.is_empty()
+                    && let Some(selected) = self.command_list.command_selected_index()
+                {
+                    let index = selected.min(matches.len().saturating_sub(1));
+                    if let Some(entry) = matches.get(index) {
+                        self.command_line.set_content(format!(":{}", entry.name));
+                        self.focus_on_list = false;
 
-                            let updated_matches =
-                                self.command_list.filter(self.command_line.command_line());
-                            if let Some(updated_index) = updated_matches
-                                .iter()
-                                .position(|candidate| candidate.name == entry.name)
-                            {
-                                self.command_list.set_selected_index(updated_index);
-                                self.command_list.adjust_scroll_for_visible_rows(list_rows);
-                            }
-                            return true;
+                        let updated_matches =
+                            self.command_list.filter(self.command_line.command_line());
+                        if let Some(updated_index) = updated_matches
+                            .iter()
+                            .position(|candidate| candidate.name == entry.name)
+                        {
+                            self.command_list.set_selected_index(updated_index);
+                            self.command_list.adjust_scroll_for_visible_rows(list_rows);
                         }
+                        return true;
                     }
                 }
 

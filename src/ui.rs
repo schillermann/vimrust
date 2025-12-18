@@ -45,7 +45,7 @@ impl<'a> Ui<'a> {
     }
 
     pub fn set_status_message(&mut self, message: Option<String>) {
-        self.status_line.message_update(message);
+        self.status_line.file_message_update(message);
         self.updated = true;
     }
 
@@ -141,17 +141,16 @@ impl<'a> Ui<'a> {
                     .command_ui
                     .as_ref()
                     .map(|cmd_ui| {
-                        if cmd_ui.focus_on_list {
-                            if let Some(selected) = cmd_ui.selected_index {
-                                let relative_row =
-                                    selected.saturating_sub(cmd_ui.scroll_offset) as u16;
-                                let list_row = 1u16
-                                    .saturating_add(1)
-                                    .saturating_add(2)
-                                    .saturating_add(relative_row)
-                                    .min(number_of_rows.saturating_sub(1));
-                                return (0, list_row);
-                            }
+                        if cmd_ui.focus_on_list
+                            && let Some(selected) = cmd_ui.selected_index
+                        {
+                            let relative_row = selected.saturating_sub(cmd_ui.scroll_offset) as u16;
+                            let list_row = 1u16
+                                .saturating_add(1)
+                                .saturating_add(2)
+                                .saturating_add(relative_row)
+                                .min(number_of_rows.saturating_sub(1));
+                            return (0, list_row);
                         }
                         (
                             cmd_ui
@@ -363,7 +362,7 @@ impl<'a> Ui<'a> {
         let mut q_index = 0usize;
         for (idx, ch) in candidate.chars().enumerate() {
             if let Some(&qch) = q_iter.peek() {
-                if ch.to_ascii_lowercase() == qch.to_ascii_lowercase() {
+                if ch.eq_ignore_ascii_case(&qch) {
                     positions.push(idx);
                     q_iter.next();
                     q_index += 1;
@@ -394,18 +393,18 @@ impl<'a> Ui<'a> {
         }
 
         for (idx, ch) in text.chars().enumerate() {
-            if let Some(target) = next_match {
-                if idx == target {
-                    terminal.queue_add_command(SetForegroundColor(highlight_fg))?;
-                    terminal.queue_add_command(Print(ch))?;
-                    if let Some(color) = default_fg {
-                        terminal.queue_add_command(SetForegroundColor(color))?;
-                    } else if !keep_background {
-                        terminal.queue_add_command(ResetColor)?;
-                    }
-                    next_match = match_iter.next();
-                    continue;
+            if let Some(target) = next_match
+                && idx == target
+            {
+                terminal.queue_add_command(SetForegroundColor(highlight_fg))?;
+                terminal.queue_add_command(Print(ch))?;
+                if let Some(color) = default_fg {
+                    terminal.queue_add_command(SetForegroundColor(color))?;
+                } else if !keep_background {
+                    terminal.queue_add_command(ResetColor)?;
                 }
+                next_match = match_iter.next();
+                continue;
             }
             terminal.queue_add_command(Print(ch))?;
         }

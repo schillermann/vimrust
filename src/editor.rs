@@ -283,12 +283,12 @@ impl Editor {
             None => (0, 0),
         };
 
-        if let Some(line) = self.file.file_lines.get_mut(self.cursor_y as usize) {
-            if delete_idx < line.len() {
-                line.remove(delete_idx);
-                self.cursor_x = new_cursor_x;
-                return true;
-            }
+        if let Some(line) = self.file.file_lines.get_mut(self.cursor_y as usize)
+            && delete_idx < line.len()
+        {
+            line.remove(delete_idx);
+            self.cursor_x = new_cursor_x;
+            return true;
         }
 
         false
@@ -300,34 +300,31 @@ impl Editor {
             None => return false,
         };
 
-        if let Some(line) = self.file.file_lines.get_mut(self.cursor_y as usize) {
-            if delete_idx < line.len() {
-                line.remove(delete_idx);
-                return true;
-            }
-        } else {
-            return false;
+        if let Some(line) = self.file.file_lines.get_mut(self.cursor_y as usize)
+            && delete_idx < line.len()
+        {
+            line.remove(delete_idx);
+            return true;
         }
 
         let current_index = self.cursor_y as usize;
-        if current_index + 1 < self.file.len() {
-            if let Some(next_line) = self.file.line(current_index + 1).cloned() {
-                if let Some(current_line) = self.file.file_lines.get_mut(current_index) {
-                    current_line.push_str(&next_line);
-                }
-                self.file.file_lines.remove(current_index + 1);
-                return true;
-            }
+        if current_index + 1 < self.file.len()
+            && let Some(next_line) = self.file.line(current_index + 1).cloned()
+            && let Some(current_line) = self.file.file_lines.get_mut(current_index)
+        {
+            current_line.push_str(&next_line);
+            self.file.file_lines.remove(current_index + 1);
+            return true;
         }
 
         false
     }
 
     pub fn snap_cursor_to_tab_start(&mut self) {
-        if let Some(line) = self.file.line(self.cursor_y as usize) {
-            if let Some(start) = self.tab_segment_start(line, self.cursor_x) {
-                self.cursor_x = start;
-            }
+        if let Some(line) = self.file.line(self.cursor_y as usize)
+            && let Some(start) = self.tab_segment_start(line, self.cursor_x)
+        {
+            self.cursor_x = start;
         }
     }
 
@@ -437,10 +434,10 @@ impl Editor {
                     return *end;
                 }
 
-                if let Some((_, next_end, next_char)) = next_segment {
-                    if *next_char == '\t' {
-                        return next_end.saturating_sub(1);
-                    }
+                if let Some((_, next_end, next_char)) = next_segment
+                    && *next_char == '\t'
+                {
+                    return next_end.saturating_sub(1);
                 }
 
                 return *end;

@@ -35,7 +35,7 @@ pub use crate::command_ui_state::CommandUiFrame;
 pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
     let stdin = io::stdin();
     let mut stdout = io::stdout();
-    let mut lines = stdin.lock().lines();
+    let lines = stdin.lock().lines();
 
     let file = File::new(file_path.clone());
     let mut editor = Editor::new(file);
@@ -45,7 +45,7 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
     let mut size: (u16, u16) = (80, 24);
     let mut command_ui = CommandUiState::new();
 
-    while let Some(line) = lines.next() {
+    for line in lines {
         let line = line?;
         if line.trim().is_empty() {
             continue;
@@ -261,9 +261,7 @@ pub fn handle_request(
                     .command_list
                     .adjust_scroll_for_visible_rows(list_rows);
             }
-            if suppress_frame {
-                RequestOutcome::Skip
-            } else if *size == prev {
+            if suppress_frame || *size == prev {
                 RequestOutcome::Skip
             } else {
                 RequestOutcome::Frame
@@ -382,7 +380,6 @@ pub fn handle_request(
             let command = line.trim_start_matches(':').trim().to_lowercase();
             match command.as_str() {
                 "s" | "save" => {
-                    let previous_path = editor.file.path().cloned();
                     match editor.file_save(&mut None) {
                         Ok(msg) => {
                             *status = Some(msg.clone());
@@ -395,21 +392,15 @@ pub fn handle_request(
                                 message: Some(msg),
                                 file_path: editor.file.path().cloned(),
                             };
-                            if editor.file.path() != previous_path.as_ref() {
-                                RequestOutcome::FrameAndAck(ack)
-                            } else {
-                                RequestOutcome::FrameAndAck(ack)
-                            }
+                            RequestOutcome::FrameAndAck(ack)
                         }
                         Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
                     }
                 }
                 "sq" => {
-                    let previous_path = editor.file.path().cloned();
                     match editor.file_save(&mut None) {
                         Ok(msg) => {
                             *status = Some(msg.clone());
-                            let _ = previous_path;
                             RequestOutcome::Quit
                         }
                         Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
@@ -475,11 +466,11 @@ pub fn build_frame(
             .cloned()
             .unwrap_or_else(|| "[No Filename]".into())
     );
-    if let Some(msg) = status {
-        if !msg.is_empty() {
-            status_text.push_str(" > ");
-            status_text.push_str(msg);
-        }
+    if let Some(msg) = status
+        && !msg.is_empty()
+    {
+        status_text.push_str(" > ");
+        status_text.push_str(msg);
     }
     let status = Some(status_text);
 

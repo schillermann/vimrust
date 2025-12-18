@@ -14,15 +14,9 @@ mod status_line;
 mod terminal;
 mod ui;
 
-use core::CoreState;
 use command_ui_state::CommandUiAction;
-use rpc::{
-    DeleteKind,
-    MoveDir,
-    RequestOutcome,
-    RpcMode,
-    RpcRequest,
-};
+use core::CoreState;
+use rpc::{DeleteKind, MoveDir, RequestOutcome, RpcMode, RpcRequest};
 use terminal::Terminal;
 use ui::Ui;
 
@@ -76,8 +70,8 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
             if event::poll(Duration::from_millis(50))? {
                 match event::read()? {
                     Event::Key(key_event) => {
-                        if ui.status_line().message().is_some() {
-                            ui.status_line().message_clear();
+                        if ui.status_line().file_message().is_some() {
+                            ui.status_line().file_message_clear();
                         }
                         match core.mode() {
                             EditorMode::Normal => match key_event.code {
@@ -92,11 +86,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     )?;
                                 }
                                 KeyCode::Char('s') => {
-                                    handle_core_request(
-                                        &mut core,
-                                        &mut ui,
-                                        RpcRequest::FileSave,
-                                    )?;
+                                    handle_core_request(&mut core, &mut ui, RpcRequest::FileSave)?;
                                 }
                                 KeyCode::Char(':') => {
                                     handle_core_request(
