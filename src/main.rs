@@ -245,47 +245,13 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                             },
                                         )?;
                                     } else if let Some(cmd_ui) = &frame.command_ui {
-                                        let command = cmd_ui
-                                            .line
-                                            .trim_start_matches(':')
-                                            .trim()
-                                            .to_lowercase();
-                                        match command.as_str() {
-                                            "s" | "save" => {
-                                                handle_core_request(
-                                                    &mut core,
-                                                    &mut ui,
-                                                    RpcRequest::FileSave,
-                                                )?;
-                                                handle_core_request(
-                                                    &mut core,
-                                                    &mut ui,
-                                                    RpcRequest::ModeSet {
-                                                        mode: RpcMode::Normal,
-                                                    },
-                                                )?;
-                                            }
-                                            "sq" => {
-                                                handle_core_request(
-                                                    &mut core,
-                                                    &mut ui,
-                                                    RpcRequest::FileSave,
-                                                )?;
-                                                handle_core_request(
-                                                    &mut core,
-                                                    &mut ui,
-                                                    RpcRequest::EditorQuit,
-                                                )?;
-                                            }
-                                            "q" | "quit" => {
-                                                handle_core_request(
-                                                    &mut core,
-                                                    &mut ui,
-                                                    RpcRequest::EditorQuit,
-                                                )?;
-                                            }
-                                            _ => {}
-                                        }
+                                        handle_core_request(
+                                            &mut core,
+                                            &mut ui,
+                                            RpcRequest::CommandExecute {
+                                                line: cmd_ui.line.clone(),
+                                            },
+                                        )?;
                                     }
                                 }
                                 KeyCode::Backspace => {

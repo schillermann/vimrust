@@ -26,6 +26,7 @@ pub use crate::command_ui_state::CommandUiFrame;
 /// - mode_set: {"type":"mode_set","mode":"normal"|"edit"|"command"}
 /// - state_get: {"type":"state_get"}
 /// - editor_quit: {"type":"editor_quit"}
+/// - command_execute: {"type":"command_execute","line":":s"} (execute entered command text)
 ///
 /// Responses:
 /// - frame: {"type":"frame", ...} for state snapshots (emitted after state changes and on get_state)
@@ -156,6 +157,9 @@ pub enum RpcRequest {
     },
     StateGet,
     EditorQuit,
+    CommandExecute {
+        line: String,
+    },
 }
 
 #[derive(Deserialize)]
@@ -369,6 +373,50 @@ pub fn handle_request(
                 RequestOutcome::Frame
             } else {
                 RequestOutcome::Skip
+            }
+        }
+        RpcRequest::CommandExecute { line } => {
+            if !matches!(mode, EditorMode::Command) {
+                return RequestOutcome::Skip;
+            }
+            let command = line.trim_start_matches(':').trim().to_lowercase();
+            match command.as_str() {
+                "s" | "save" => {
+                    let previous_path = editor.file.path().cloned();
+                    match editor.file_save(&mut None) {
+                        Ok(msg) => {
+                            *status = Some(msg.clone());
+                            if matches!(mode, EditorMode::Command) {
+                                command_ui.clear();
+                            }
+                            *mode = EditorMode::Normal;
+                            let ack = Ack {
+                                kind: AckKind::Save,
+                                message: Some(msg),
+                                file_path: editor.file.path().cloned(),
+                            };
+                            if editor.file.path() != previous_path.as_ref() {
+                                RequestOutcome::FrameAndAck(ack)
+                            } else {
+                                RequestOutcome::FrameAndAck(ack)
+                            }
+                        }
+                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                    }
+                }
+                "sq" => {
+                    let previous_path = editor.file.path().cloned();
+                    match editor.file_save(&mut None) {
+                        Ok(msg) => {
+                            *status = Some(msg.clone());
+                            let _ = previous_path;
+                            RequestOutcome::Quit
+                        }
+                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                    }
+                }
+                "q" | "quit" => RequestOutcome::Quit,
+                _ => RequestOutcome::Skip,
             }
         }
         RpcRequest::ModeSet { mode: new_mode } => {
@@ -642,6 +690,72 @@ mod tests {
         assert_eq!(status.as_deref(), Some("written"));
         assert_eq!(fs::read_to_string(&path).unwrap_or_default(), "hello");
         let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn command_execute_save_exits_command_and_emits_ack() {
+        let path = std::env::temp_dir().join("vimrust_rpc_command_save.txt");
+        let _ = fs::remove_file(&path);
+
+        let mut editor = Editor::new(File::new(Some(
+            path.to_string_lossy().to_string(),
+        )));
+        editor.file.file_lines = vec![String::from("changed")];
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let _ = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Command,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute {
+                line: ":s".to_string(),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        if let RequestOutcome::FrameAndAck(ack) = outcome {
+            assert_eq!(ack.kind, AckKind::Save);
+            assert!(matches!(mode, EditorMode::Normal));
+            assert_eq!(status.as_deref(), Some("written"));
+        } else {
+            panic!("expected frame and ack");
+        }
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn command_execute_quit_requests_quit_outcome() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Command;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute {
+                line: ":q".to_string(),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Quit));
     }
 
     #[test]
