@@ -22,15 +22,19 @@ cargo run -- --rpc file.txt
 ```
 
 Send line-delimited JSON requests over stdin. Examples:
-- `{"type":"resize","cols":120,"rows":30}`
-- `{"type":"resize","cols":120,"rows":30,"suppress_frame":true}` (avoid a frame response)
-- `{"type":"open","path":"/tmp/foo.txt"}`
-- `{"type":"insert","text":"hello"}`
-- `{"type":"move_cursor","direction":"left"}`
-- `{"type":"delete","kind":"backspace"}`
-- `{"type":"save_as","path":"/tmp/bar.txt"}`
-- `{"type":"get_state"}`
-- `{"type":"quit"}`
+1. `{"type":"editor_resize","cols":120,"rows":30}`
+2. `{"type":"editor_resize","cols":120,"rows":30,"suppress_frame":true}` (avoid a frame response)
+3. `{"type":"file_open","path":"/tmp/foo.txt"}`
+4. `{"type":"file_save"}`
+5. `{"type":"file_save_as","path":"/tmp/bar.txt"}`
+6. `{"type":"text_insert","text":"hello"}`
+7. `{"type":"text_delete","kind":"backspace"}`
+8. `{"type":"cursor_move","direction":"left"}`
+9. `{"type":"command_ui","action":"insert_char","ch":"a"}`
+10. `{"type":"mode_set","mode":"command"}`
+11. `{"type":"command_execute","line":":s"}`
+12. `{"type":"state_get"}`
+13. `{"type":"editor_quit"}`
 
 Responses include frames with mode, cursor, visible rows, status, file path, and size. Explicit acks confirm operations like open/save/save_as even when no frame is emitted. Errors are sent if a request fails.
 
