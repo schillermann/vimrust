@@ -86,19 +86,23 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::SetMode {
+                                        RpcRequest::ModeSet {
                                             mode: RpcMode::Edit,
                                         },
                                     )?;
                                 }
                                 KeyCode::Char('s') => {
-                                    handle_core_request(&mut core, &mut ui, RpcRequest::Save)?;
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::FileSave,
+                                    )?;
                                 }
                                 KeyCode::Char(':') => {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::SetMode {
+                                        RpcRequest::ModeSet {
                                             mode: RpcMode::Command,
                                         },
                                     )?;
@@ -107,7 +111,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::Left,
                                         },
                                     )?;
@@ -116,7 +120,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::Right,
                                         },
                                     )?;
@@ -125,7 +129,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::Up,
                                         },
                                     )?;
@@ -134,7 +138,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::Down,
                                         },
                                     )?;
@@ -143,7 +147,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::PageUp,
                                         },
                                     )?;
@@ -152,7 +156,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::PageDown,
                                         },
                                     )?;
@@ -161,7 +165,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::Home,
                                         },
                                     )?;
@@ -170,7 +174,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::MoveCursor {
+                                        RpcRequest::CursorMove {
                                             direction: MoveDir::End,
                                         },
                                     )?;
@@ -182,7 +186,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::SetMode {
+                                        RpcRequest::ModeSet {
                                             mode: RpcMode::Normal,
                                         },
                                     )?;
@@ -191,7 +195,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::Delete {
+                                        RpcRequest::TextDelete {
                                             kind: DeleteKind::Under,
                                         },
                                     )?;
@@ -200,7 +204,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::Delete {
+                                        RpcRequest::TextDelete {
                                             kind: DeleteKind::Backspace,
                                         },
                                     )?;
@@ -209,7 +213,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::Insert {
+                                        RpcRequest::TextInsert {
                                             text: ch.to_string(),
                                         },
                                     )?;
@@ -221,7 +225,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     handle_core_request(
                                         &mut core,
                                         &mut ui,
-                                        RpcRequest::SetMode {
+                                        RpcRequest::ModeSet {
                                             mode: RpcMode::Normal,
                                         },
                                     )?;
@@ -251,12 +255,12 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                                 handle_core_request(
                                                     &mut core,
                                                     &mut ui,
-                                                    RpcRequest::Save,
+                                                    RpcRequest::FileSave,
                                                 )?;
                                                 handle_core_request(
                                                     &mut core,
                                                     &mut ui,
-                                                    RpcRequest::SetMode {
+                                                    RpcRequest::ModeSet {
                                                         mode: RpcMode::Normal,
                                                     },
                                                 )?;
@@ -265,19 +269,19 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                                 handle_core_request(
                                                     &mut core,
                                                     &mut ui,
-                                                    RpcRequest::Save,
+                                                    RpcRequest::FileSave,
                                                 )?;
                                                 handle_core_request(
                                                     &mut core,
                                                     &mut ui,
-                                                    RpcRequest::Quit,
+                                                    RpcRequest::EditorQuit,
                                                 )?;
                                             }
                                             "q" | "quit" => {
                                                 handle_core_request(
                                                     &mut core,
                                                     &mut ui,
-                                                    RpcRequest::Quit,
+                                                    RpcRequest::EditorQuit,
                                                 )?;
                                             }
                                             _ => {}
@@ -370,7 +374,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                         handle_core_request(
                             &mut core,
                             &mut ui,
-                            RpcRequest::Resize {
+                            RpcRequest::EditorResize {
                                 cols: size.0,
                                 rows: size.1,
                                 suppress_frame: false,

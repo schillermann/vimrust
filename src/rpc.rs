@@ -15,17 +15,17 @@ pub use crate::command_ui_state::CommandUiFrame;
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
 ///
 /// Requests (`"type"` field):
-/// - resize: {"type":"resize","cols":80,"rows":24}
-/// - open: {"type":"open","path":"/tmp/file.txt"}
-/// - save: {"type":"save"}
-/// - save_as: {"type":"save_as","path":"/tmp/new.txt"}
-/// - insert: {"type":"insert","text":"hello"}
-/// - delete: {"type":"delete","kind":"backspace"|"under"}
-/// - move_cursor: {"type":"move_cursor","direction":"left"|"right"|"up"|"down"|"page_up"|"page_down"|"home"|"end"}
+/// - editor_resize: {"type":"editor_resize","cols":80,"rows":24}
+/// - file_open: {"type":"file_open","path":"/tmp/file.txt"}
+/// - file_save: {"type":"file_save"}
+/// - file_save_as: {"type":"file_save_as","path":"/tmp/new.txt"}
+/// - text_insert: {"type":"text_insert","text":"hello"}
+/// - text_delete: {"type":"text_delete","kind":"backspace"|"under"}
+/// - cursor_move: {"type":"cursor_move","direction":"left"|"right"|"up"|"down"|"page_up"|"page_down"|"home"|"end"}
 /// - command_ui: {"type":"command_ui","action":"insert_char","ch":"a"} (for command-line editing/navigation)
-/// - set_mode: {"type":"set_mode","mode":"normal"|"edit"|"command"}
-/// - get_state: {"type":"get_state"}
-/// - quit: {"type":"quit"}
+/// - mode_set: {"type":"mode_set","mode":"normal"|"edit"|"command"}
+/// - state_get: {"type":"state_get"}
+/// - editor_quit: {"type":"editor_quit"}
 ///
 /// Responses:
 /// - frame: {"type":"frame", ...} for state snapshots (emitted after state changes and on get_state)
@@ -127,35 +127,35 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
 #[derive(Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RpcRequest {
-    Resize {
+    EditorResize {
         cols: u16,
         rows: u16,
         suppress_frame: bool,
     },
-    Open {
+    FileOpen {
         path: String,
     },
-    Save,
-    SaveAs {
+    FileSave,
+    FileSaveAs {
         path: String,
     },
-    Insert {
+    TextInsert {
         text: String,
     },
-    Delete {
+    TextDelete {
         kind: DeleteKind,
     },
-    MoveCursor {
+    CursorMove {
         direction: MoveDir,
     },
     CommandUi {
         action: CommandUiAction,
     },
-    SetMode {
+    ModeSet {
         mode: RpcMode,
     },
-    GetState,
-    Quit,
+    StateGet,
+    EditorQuit,
 }
 
 #[derive(Deserialize)]
@@ -244,7 +244,7 @@ pub fn handle_request(
     command_ui: &mut CommandUiState,
 ) -> RequestOutcome {
     match request {
-        RpcRequest::Resize {
+        RpcRequest::EditorResize {
             cols,
             rows,
             suppress_frame,
@@ -265,7 +265,7 @@ pub fn handle_request(
                 RequestOutcome::Frame
             }
         }
-        RpcRequest::Open { path } => {
+        RpcRequest::FileOpen { path } => {
             let previous_path = editor.file.path().cloned();
             let mut new_file = File::new(Some(path));
             if let Err(err) = new_file.read() {
@@ -281,7 +281,7 @@ pub fn handle_request(
             };
             RequestOutcome::FrameAndAck(ack)
         }
-        RpcRequest::Save => {
+        RpcRequest::FileSave => {
             let previous_path = editor.file.path().cloned();
             match editor.file_save(&mut None) {
                 Ok(msg) => {
@@ -300,7 +300,7 @@ pub fn handle_request(
                 Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
             }
         }
-        RpcRequest::SaveAs { path } => {
+        RpcRequest::FileSaveAs { path } => {
             let mut new_file = File::new(Some(path));
             new_file.file_lines = editor.file.file_lines.clone();
             match new_file.save() {
@@ -317,7 +317,7 @@ pub fn handle_request(
                 Err(err) => RequestOutcome::Error(format!("save_as failed: {}", err)),
             }
         }
-        RpcRequest::Insert { text } => {
+        RpcRequest::TextInsert { text } => {
             let mut changed = false;
             for ch in text.chars() {
                 if editor.char_insert(ch) {
@@ -330,7 +330,7 @@ pub fn handle_request(
                 RequestOutcome::Skip
             }
         }
-        RpcRequest::Delete { kind } => {
+        RpcRequest::TextDelete { kind } => {
             let changed = match kind {
                 DeleteKind::Backspace => editor.backspace_delete(),
                 DeleteKind::Under => editor.under_cursor_delete(),
@@ -341,7 +341,7 @@ pub fn handle_request(
                 RequestOutcome::Skip
             }
         }
-        RpcRequest::MoveCursor { direction } => {
+        RpcRequest::CursorMove { direction } => {
             let usable_rows = size.1.saturating_sub(2);
             let moved = match direction {
                 MoveDir::Left => editor.cursor_move(KeyCode::Char('h'), usable_rows),
@@ -371,7 +371,7 @@ pub fn handle_request(
                 RequestOutcome::Skip
             }
         }
-        RpcRequest::SetMode { mode: new_mode } => {
+        RpcRequest::ModeSet { mode: new_mode } => {
             let prev_mode = *mode;
             let prev_cursor = (editor.cursor_x, editor.cursor_y);
             *mode = match new_mode {
@@ -393,8 +393,8 @@ pub fn handle_request(
                 RequestOutcome::Skip
             }
         }
-        RpcRequest::GetState => RequestOutcome::Frame,
-        RpcRequest::Quit => RequestOutcome::Quit,
+        RpcRequest::StateGet => RequestOutcome::Frame,
+        RpcRequest::EditorQuit => RequestOutcome::Quit,
     }
 }
 
@@ -481,7 +481,7 @@ mod tests {
         let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
-            RpcRequest::Insert {
+            RpcRequest::TextInsert {
                 text: "hi".to_string(),
             },
             &mut editor,
@@ -506,7 +506,7 @@ mod tests {
         let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
-            RpcRequest::MoveCursor {
+            RpcRequest::CursorMove {
                 direction: MoveDir::Left,
             },
             &mut editor,
@@ -527,7 +527,7 @@ mod tests {
         let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
-            RpcRequest::Resize {
+            RpcRequest::EditorResize {
                 cols: 20,
                 rows: 40,
                 suppress_frame: true,
@@ -551,7 +551,7 @@ mod tests {
         let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
-            RpcRequest::SetMode {
+            RpcRequest::ModeSet {
                 mode: RpcMode::Command,
             },
             &mut editor,
@@ -596,7 +596,7 @@ mod tests {
         let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
-            RpcRequest::Delete {
+            RpcRequest::TextDelete {
                 kind: DeleteKind::Under,
             },
             &mut editor,
@@ -620,7 +620,7 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         let outcome = handle_request(
-            RpcRequest::SaveAs {
+            RpcRequest::FileSaveAs {
                 path: path.to_string_lossy().to_string(),
             },
             &mut editor,
@@ -659,7 +659,7 @@ mod tests {
         let mut command_ui = CommandUiState::new();
 
         let outcome = handle_request(
-            RpcRequest::Save,
+            RpcRequest::FileSave,
             &mut editor,
             &mut mode,
             &mut status,
