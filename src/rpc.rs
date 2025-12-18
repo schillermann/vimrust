@@ -652,7 +652,7 @@ mod tests {
         );
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind, AckKind::SaveAs);
-            assert_eq!(ack.message.as_deref(), Some("written"));
+            assert_eq!(ack.message.as_deref(), Some("saved"));
             assert_eq!(
                 ack.file_path.as_deref(),
                 Some(path.to_string_lossy().as_ref())
@@ -660,7 +660,7 @@ mod tests {
         } else {
             panic!("expected frame and ack");
         }
-        assert_eq!(status.as_deref(), Some("written"));
+        assert_eq!(status.as_deref(), Some("saved"));
         assert_eq!(fs::read_to_string(&path).unwrap_or_default(), "hello");
         let _ = fs::remove_file(&path);
     }
@@ -701,7 +701,7 @@ mod tests {
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind, AckKind::Save);
             assert!(matches!(mode, EditorMode::Normal));
-            assert_eq!(status.as_deref(), Some("written"));
+            assert_eq!(status.as_deref(), Some("saved"));
         } else {
             panic!("expected frame and ack");
         }
@@ -751,7 +751,7 @@ mod tests {
         );
         if let RequestOutcome::Ack(ack) = outcome {
             assert_eq!(ack.kind, AckKind::Save);
-            assert_eq!(ack.message.as_deref(), Some("written"));
+            assert_eq!(ack.message.as_deref(), Some("saved"));
             assert_eq!(
                 ack.file_path.as_deref(),
                 Some(path.to_string_lossy().as_ref())
@@ -759,7 +759,7 @@ mod tests {
         } else {
             panic!("expected ack without frame");
         }
-        assert_eq!(status.as_deref(), Some("written"));
+        assert_eq!(status.as_deref(), Some("saved"));
         assert_eq!(fs::read_to_string(&path).unwrap_or_default(), "changed");
         let _ = fs::remove_file(&path);
     }

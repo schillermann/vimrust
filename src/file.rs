@@ -60,7 +60,7 @@ impl File {
         let contents = self.file_lines.join("\n");
         fs::write(&path, contents)?;
         self.changed = false;
-        Ok(String::from("written"))
+        Ok(String::from("saved"))
     }
 
     pub fn line(&self, index: usize) -> Option<&String> {
