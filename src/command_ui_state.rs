@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{command_line::CommandLine, command_list::CommandList};
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CommandUiFrame {
     pub line: String,
     pub cursor_x: u16,
@@ -12,13 +12,13 @@ pub struct CommandUiFrame {
     pub scroll_offset: usize,
 }
 
-#[derive(Serialize, Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CommandListItemFrame {
     pub name: String,
     pub description: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum CommandUiAction {
     StartPrompt,

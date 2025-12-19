@@ -126,7 +126,7 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
     Ok(())
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RpcRequest {
     EditorResize {
@@ -163,14 +163,14 @@ pub enum RpcRequest {
     },
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeleteKind {
     Backspace,
     Under,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MoveDir {
     Left,
@@ -183,7 +183,7 @@ pub enum MoveDir {
     End,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum RpcMode {
     Normal,
@@ -191,22 +191,22 @@ pub enum RpcMode {
     Command,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
-enum RpcResponse {
+pub enum RpcResponse {
     Frame(Frame),
     Ack(Ack),
     Error { message: String },
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Ack {
     pub kind: AckKind,
     pub message: Option<String>,
     pub file_path: Option<String>,
 }
 
-#[derive(Serialize, Debug, PartialEq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(rename_all = "snake_case")]
 pub enum AckKind {
     Open,
@@ -214,9 +214,9 @@ pub enum AckKind {
     SaveAs,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Frame {
-    pub mode: &'static str,
+    pub mode: String,
     pub cursor: Cursor,
     pub rows: Vec<String>,
     pub status: Option<String>,
@@ -225,7 +225,7 @@ pub struct Frame {
     pub command_ui: Option<CommandUiFrame>,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Cursor {
     pub col: u16,
     pub row: u16,
@@ -486,7 +486,7 @@ pub fn build_frame(
     };
 
     Frame {
-        mode: mode.label(),
+        mode: mode.label().to_string(),
         cursor: Cursor {
             col: cursor_col,
             row: cursor_row,
