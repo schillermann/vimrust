@@ -858,6 +858,112 @@ mod tests {
     }
 
     #[test]
+    fn command_ui_frame_includes_line_and_selection() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (20, 10);
+        let mut command_ui = CommandUiState::new();
+
+        let _ = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Command,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 's' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::MoveSelectionDown,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
+        let command_ui_frame = frame.command_ui.expect("expected command ui frame");
+        assert_eq!(command_ui_frame.line, ":s");
+        assert_eq!(command_ui_frame.cursor_x, 2);
+        assert!(command_ui_frame.focus_on_list);
+        assert!(command_ui_frame.selected_index.is_some());
+        assert!(!command_ui_frame.list_items.is_empty());
+    }
+
+    #[test]
+    fn frame_cursor_positions_respect_offsets() {
+        let mut editor = Editor::new(File::new(None));
+        editor.file.file_lines = vec![
+            String::from("aaa"),
+            String::from("bbb"),
+            String::from("ccc"),
+            String::from("ddd"),
+        ];
+        editor.cursor_x = 5;
+        editor.cursor_y = 3;
+
+        let mode = EditorMode::Normal;
+        let status = None;
+        let size = (10, 6);
+
+        let frame = build_frame(&editor, &mode, &status, size, None);
+        assert_eq!(frame.cursor.col, 5);
+        assert_eq!(frame.cursor.row, 4);
+    }
+
+    #[test]
+    fn mode_transitions_toggle_command_ui_frame() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let _ = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Command,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let frame_command = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
+        assert_eq!(frame_command.mode, "COMMAND");
+        assert!(frame_command.command_ui.is_some());
+
+        let _ = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Normal,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let frame_normal = build_frame(&editor, &mode, &status, size, None);
+        assert_eq!(frame_normal.mode, "NORMAL");
+        assert!(frame_normal.command_ui.is_none());
+    }
+
+    #[test]
     fn save_on_existing_path_emits_ack_without_frame() {
         let path = std::env::temp_dir().join("vimrust_rpc_save_exists.txt");
         let _ = fs::write(&path, "existing");
