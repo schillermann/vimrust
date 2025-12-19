@@ -234,13 +234,11 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                                 action: CommandUiAction::SelectFromList,
                                             },
                                         )?;
-                                    } else if let Some(cmd_ui) = &frame.command_ui {
+                                    } else if frame.command_ui.is_some() {
                                         handle_core_request(
                                             &mut core,
                                             &mut ui,
-                                            RpcRequest::CommandExecute {
-                                                line: cmd_ui.line.clone(),
-                                            },
+                                            RpcRequest::CommandExecute { line: None },
                                         )?;
                                     }
                                 }

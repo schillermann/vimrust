@@ -26,7 +26,8 @@ pub use crate::command_ui_state::CommandUiFrame;
 /// - mode_set: {"type":"mode_set","mode":"normal"|"edit"|"command"}
 /// - state_get: {"type":"state_get"}
 /// - editor_quit: {"type":"editor_quit"}
-/// - command_execute: {"type":"command_execute","line":":s"} (execute entered command text)
+/// - command_execute: {"type":"command_execute","line":":s"} (execute entered command text; if
+///   omitted, the current command line stored in the core is used)
 ///
 /// Responses:
 /// - frame: {"type":"frame", ...} for state snapshots (emitted after state changes and on get_state)
@@ -158,7 +159,7 @@ pub enum RpcRequest {
     StateGet,
     EditorQuit,
     CommandExecute {
-        line: String,
+        line: Option<String>,
     },
 }
 
@@ -379,7 +380,11 @@ pub fn handle_request(
             if !matches!(mode, EditorMode::Command) {
                 return RequestOutcome::Skip;
             }
-            let command = line.trim_start_matches(':').trim().to_lowercase();
+            let source_line = line.unwrap_or_else(|| command_ui.current_line().to_string());
+            let command = source_line
+                .trim_start_matches(':')
+                .trim()
+                .to_lowercase();
             match command.as_str() {
                 "s" | "save" => match editor.file_save(&mut None) {
                     Ok(msg) => {
@@ -690,7 +695,7 @@ mod tests {
 
         let outcome = handle_request(
             RpcRequest::CommandExecute {
-                line: ":s".to_string(),
+                line: Some(":s".to_string()),
             },
             &mut editor,
             &mut mode,
@@ -709,6 +714,58 @@ mod tests {
     }
 
     #[test]
+    fn command_execute_without_line_uses_internal_command_ui_state() {
+        let path = std::env::temp_dir().join("vimrust_rpc_command_save_no_line.txt");
+        let _ = fs::remove_file(&path);
+
+        let mut editor = Editor::new(File::new(Some(path.to_string_lossy().to_string())));
+        editor.file.file_lines = vec![String::from("changed")];
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let _ = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Command,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 's' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute { line: None },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        if let RequestOutcome::FrameAndAck(ack) = outcome {
+            assert_eq!(ack.kind, AckKind::Save);
+            assert!(matches!(mode, EditorMode::Normal));
+            assert_eq!(status.as_deref(), Some("saved"));
+        } else {
+            panic!("expected frame and ack");
+        }
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
     fn command_execute_quit_requests_quit_outcome() {
         let mut editor = Editor::new(File::new(None));
         let mut mode = EditorMode::Command;
@@ -718,7 +775,7 @@ mod tests {
 
         let outcome = handle_request(
             RpcRequest::CommandExecute {
-                line: ":q".to_string(),
+                line: Some(":q".to_string()),
             },
             &mut editor,
             &mut mode,

@@ -56,6 +56,10 @@ impl CommandUiState {
         self.focus_on_list = false;
     }
 
+    pub fn current_line(&self) -> &str {
+        self.command_line.command_line()
+    }
+
     pub fn clear(&mut self) {
         self.command_line.clear();
         self.command_list.reset_selection();

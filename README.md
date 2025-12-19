@@ -32,7 +32,7 @@ Send line-delimited JSON requests over stdin. Examples:
 8. `{"type":"cursor_move","direction":"left"}`
 9. `{"type":"command_ui","action":"insert_char","ch":"a"}`
 10. `{"type":"mode_set","mode":"command"}`
-11. `{"type":"command_execute","line":":s"}`
+11. `{"type":"command_execute","line":":s"}` (line is optional; without line, the core uses whatever is currently in its command buffer)
 12. `{"type":"state_get"}`
 13. `{"type":"editor_quit"}`
 
