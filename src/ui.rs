@@ -64,10 +64,6 @@ impl<'a> Ui<'a> {
         let _ = self.terminal.set_cursor_style(&self.mode);
     }
 
-    pub fn mark_dirty(&mut self) {
-        self.updated = true;
-    }
-
     pub fn terminal_update_size(&mut self) -> io::Result<()> {
         self.terminal.size_update()?;
         self.updated = true;

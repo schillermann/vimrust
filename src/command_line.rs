@@ -41,15 +41,7 @@ impl CommandLine {
     }
 
     pub fn command_line(&self) -> &str {
-        self.content()
-    }
-
-    pub fn content(&self) -> &str {
         &self.content
-    }
-
-    pub fn command_cursor_x(&self) -> u16 {
-        self.cursor_x()
     }
 
     pub fn cursor_x(&self) -> u16 {
@@ -75,28 +67,28 @@ impl CommandLine {
         }
     }
 
-    pub fn move_left(&mut self) {
+    pub fn cursor_move_left(&mut self) {
         if self.cursor_x > 0 {
             self.cursor_x = self.cursor_x.saturating_sub(1);
         }
     }
 
-    pub fn move_right(&mut self) {
+    pub fn cursor_move_right(&mut self) {
         let limit = self.content.len() as u16;
         if self.cursor_x < limit {
             self.cursor_x = self.cursor_x.saturating_add(1);
         }
     }
 
-    pub fn move_home(&mut self) {
+    pub fn cursor_move_home(&mut self) {
         self.cursor_x = 0;
     }
 
-    pub fn move_end(&mut self) {
+    pub fn cursor_move_end(&mut self) {
         self.cursor_x = self.content.len() as u16;
     }
 
-    pub fn insert_char(&mut self, ch: char) {
+    pub fn char_insert(&mut self, ch: char) {
         let insert_at = self.cursor_x as usize;
         if insert_at <= self.content.len() {
             self.content.insert(insert_at, ch);

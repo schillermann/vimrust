@@ -85,7 +85,7 @@ impl CommandUiState {
                 true
             }
             CommandUiAction::InsertChar { ch } => {
-                self.command_line.insert_char(ch);
+                self.command_line.char_insert(ch);
                 self.command_list.reset_selection();
                 self.focus_on_list = false;
                 true
@@ -103,22 +103,22 @@ impl CommandUiState {
                 true
             }
             CommandUiAction::MoveLeft => {
-                self.command_line.move_left();
+                self.command_line.cursor_move_left();
                 self.focus_on_list = false;
                 true
             }
             CommandUiAction::MoveRight => {
-                self.command_line.move_right();
+                self.command_line.cursor_move_right();
                 self.focus_on_list = false;
                 true
             }
             CommandUiAction::MoveHome => {
-                self.command_line.move_home();
+                self.command_line.cursor_move_home();
                 self.focus_on_list = false;
                 true
             }
             CommandUiAction::MoveEnd => {
-                self.command_line.move_end();
+                self.command_line.cursor_move_end();
                 self.focus_on_list = false;
                 true
             }
@@ -133,7 +133,9 @@ impl CommandUiState {
                 self.focus_on_list = true;
                 match self.command_list.command_selected_index() {
                     None => match action {
-                        CommandUiAction::MoveSelectionDown => self.command_list.set_selected_index(0),
+                        CommandUiAction::MoveSelectionDown => {
+                            self.command_list.set_selected_index(0)
+                        }
                         CommandUiAction::MoveSelectionUp => self
                             .command_list
                             .set_selected_index(matches.len().saturating_sub(1)),
@@ -205,7 +207,7 @@ impl CommandUiState {
 
         CommandUiFrame {
             line: self.command_line.command_line().to_string(),
-            cursor_x: self.command_line.command_cursor_x(),
+            cursor_x: self.command_line.cursor_x(),
             focus_on_list: self.focus_on_list,
             list_items,
             selected_index,

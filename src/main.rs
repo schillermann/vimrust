@@ -357,7 +357,6 @@ fn handle_core_request(core: &mut CoreState, ui: &mut Ui, request: RpcRequest) -
             ui.set_status_message(Some(message));
         }
     }
-    ui.mark_dirty();
     ui.set_mode_external(core.mode());
     Ok(())
 }
