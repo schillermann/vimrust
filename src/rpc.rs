@@ -380,7 +380,19 @@ pub fn handle_request(
             if !matches!(mode, EditorMode::Command) {
                 return RequestOutcome::Skip;
             }
-            let source_line = line.unwrap_or_else(|| command_ui.current_line().to_string());
+            let list_rows = command_list_rows(*size);
+            let mut selection_applied = false;
+            if line.is_none() {
+                selection_applied =
+                    command_ui.apply_action(CommandUiAction::SelectFromList, list_rows);
+            }
+            let source_line = match line {
+                Some(line) => {
+                    let _ = command_ui.set_line(line.clone());
+                    line
+                }
+                None => command_ui.current_line().to_string(),
+            };
             let command = source_line
                 .trim_start_matches(':')
                 .trim()
@@ -410,7 +422,13 @@ pub fn handle_request(
                     Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
                 },
                 "q" | "quit" => RequestOutcome::Quit,
-                _ => RequestOutcome::Skip,
+                _ => {
+                    if selection_applied {
+                        RequestOutcome::Frame
+                    } else {
+                        RequestOutcome::Skip
+                    }
+                }
             }
         }
         RpcRequest::ModeSet { mode: new_mode } => {
@@ -758,6 +776,59 @@ mod tests {
             assert_eq!(ack.kind, AckKind::Save);
             assert!(matches!(mode, EditorMode::Normal));
             assert_eq!(status.as_deref(), Some("saved"));
+        } else {
+            panic!("expected frame and ack");
+        }
+
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn command_execute_selects_list_entry_and_runs_command() {
+        let path = std::env::temp_dir().join("vimrust_rpc_command_save_from_list.txt");
+        let _ = fs::remove_file(&path);
+
+        let mut editor = Editor::new(File::new(Some(path.to_string_lossy().to_string())));
+        editor.file.file_lines = vec![String::from("changed")];
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let _ = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Command,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::MoveSelectionDown,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute { line: None },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        if let RequestOutcome::FrameAndAck(ack) = outcome {
+            assert_eq!(ack.kind, AckKind::Save);
+            assert_eq!(status.as_deref(), Some("saved"));
+            assert!(matches!(mode, EditorMode::Normal));
         } else {
             panic!("expected frame and ack");
         }

@@ -56,6 +56,14 @@ impl CommandUiState {
         self.focus_on_list = false;
     }
 
+    pub fn set_line(&mut self, new_content: String) -> bool {
+        let changed = self.command_line.command_line() != new_content;
+        self.command_line.set_content(new_content);
+        self.command_list.reset_selection();
+        self.focus_on_list = false;
+        changed
+    }
+
     pub fn current_line(&self) -> &str {
         self.command_line.command_line()
     }

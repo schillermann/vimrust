@@ -221,26 +221,11 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                     )?;
                                 }
                                 KeyCode::Enter => {
-                                    let was_focused_on_list = frame
-                                        .command_ui
-                                        .as_ref()
-                                        .map(|c| c.focus_on_list)
-                                        .unwrap_or(false);
-                                    if was_focused_on_list {
-                                        handle_core_request(
-                                            &mut core,
-                                            &mut ui,
-                                            RpcRequest::CommandUi {
-                                                action: CommandUiAction::SelectFromList,
-                                            },
-                                        )?;
-                                    } else if frame.command_ui.is_some() {
-                                        handle_core_request(
-                                            &mut core,
-                                            &mut ui,
-                                            RpcRequest::CommandExecute { line: None },
-                                        )?;
-                                    }
+                                    handle_core_request(
+                                        &mut core,
+                                        &mut ui,
+                                        RpcRequest::CommandExecute { line: None },
+                                    )?;
                                 }
                                 KeyCode::Backspace => {
                                     handle_core_request(
