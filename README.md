@@ -9,9 +9,14 @@ Start program.
 cargo run
 ```
 
-Read file.
+Read file (RPC client UI by default).
 ```sh
 cargo run my_file.txt
+```
+
+Run the legacy in-process UI.
+```sh
+cargo run -- --local my_file.txt
 ```
 
 # RPC protocol
