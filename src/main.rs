@@ -44,7 +44,8 @@ fn main() -> io::Result<()> {
     let first_arg = args.next();
     let rpc_mode = first_arg.as_deref() == Some("--rpc");
     let rpc_client_mode = first_arg.as_deref() == Some("--rpc-client");
-    let file_path = if rpc_mode || rpc_client_mode {
+    let local_mode = first_arg.as_deref() == Some("--local");
+    let file_path = if rpc_mode || rpc_client_mode || local_mode {
         args.next()
     } else {
         first_arg
@@ -55,10 +56,10 @@ fn main() -> io::Result<()> {
     }
 
     let mut terminal = Terminal::new()?;
-    let result = if rpc_client_mode {
-        run_rpc_client(&mut terminal, file_path)
-    } else {
+    let result = if local_mode {
         run(&mut terminal, file_path)
+    } else {
+        run_rpc_client(&mut terminal, file_path)
     };
     terminal.cleanup();
     result
