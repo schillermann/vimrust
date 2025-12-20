@@ -43,9 +43,8 @@ fn main() -> io::Result<()> {
     let mut args = env::args().skip(1);
     let first_arg = args.next();
     let rpc_mode = first_arg.as_deref() == Some("--rpc");
-    let rpc_client_mode = first_arg.as_deref() == Some("--rpc-client");
     let local_mode = first_arg.as_deref() == Some("--local");
-    let file_path = if rpc_mode || rpc_client_mode || local_mode {
+    let file_path = if rpc_mode || local_mode {
         args.next()
     } else {
         first_arg
