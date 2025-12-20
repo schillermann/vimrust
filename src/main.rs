@@ -62,6 +62,10 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
                                     "protocol mismatch: core {} ui {}",
                                     frame.protocol_version, PROTOCOL_VERSION
                                 ));
+                                let message =
+                                    protocol_mismatch.clone().unwrap_or_else(String::new);
+                                eprintln!("vimrust: {}", message);
+                                return Err(io::Error::new(io::ErrorKind::Other, message));
                             } else {
                                 protocol_mismatch = None;
                             }
