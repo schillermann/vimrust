@@ -414,6 +414,7 @@ fn write_ack(stdout: &mut impl Write, ack: Ack) -> io::Result<()> {
 mod tests {
     use super::*;
     use std::fs;
+    use vimrust_protocol::MoveDirection;
 
     #[test]
     fn insert_request_updates_rows() {
@@ -486,6 +487,30 @@ mod tests {
     }
 
     #[test]
+    fn resize_same_size_without_suppress_skips() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::EditorResize {
+                cols: 10,
+                rows: 5,
+                suppress_frame: false,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
+        assert_eq!(size, (10, 5));
+    }
+
+    #[test]
     fn command_ui_request_updates_state_and_frame() {
         let mut editor = Editor::new(File::new(None));
         let mut mode = EditorMode::Normal;
@@ -524,6 +549,27 @@ mod tests {
     }
 
     #[test]
+    fn command_ui_outside_command_mode_skips() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 'x' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
+    }
+
+    #[test]
     fn noop_delete_under_cursor_skips_frame() {
         let mut editor = Editor::new(File::new(None));
         editor.file.file_lines = vec![String::new()];
@@ -543,6 +589,34 @@ mod tests {
             &mut command_ui,
         );
         assert!(matches!(outcome, RequestOutcome::Skip));
+    }
+
+    #[test]
+    fn file_open_missing_path_returns_error() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+        let path = std::env::temp_dir().join("vimrust_missing_file.txt");
+        let _ = fs::remove_file(&path);
+
+        let outcome = handle_request(
+            RpcRequest::FileOpen {
+                path: path.to_string_lossy().to_string(),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        match outcome {
+            RequestOutcome::Error(message) => {
+                assert!(message.starts_with("open failed:"));
+            }
+            _ => panic!("expected error outcome"),
+        }
     }
 
     #[test]
@@ -748,6 +822,70 @@ mod tests {
             &mut command_ui,
         );
         assert!(matches!(outcome, RequestOutcome::Quit));
+    }
+
+    #[test]
+    fn command_execute_unknown_command_skips() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Command;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute {
+                line: Some(":unknown".to_string()),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
+        assert!(matches!(mode, EditorMode::Command));
+    }
+
+    #[test]
+    fn command_execute_outside_command_mode_skips() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute {
+                line: Some(":q".to_string()),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
+    }
+
+    #[test]
+    fn mode_set_same_mode_skips() {
+        let mut editor = Editor::new(File::new(None));
+        let mut mode = EditorMode::Normal;
+        let mut status = None;
+        let mut size = (10, 5);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Normal,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
     #[test]
