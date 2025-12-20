@@ -17,7 +17,7 @@ mod terminal;
 mod ui;
 
 use core::CoreState;
-use protocol::{CommandUiAction, DeleteKind, MoveDir, RpcMode, RpcRequest, RpcResponse};
+use protocol::{CommandUiAction, DeleteKind, MoveDirection, RpcMode, RpcRequest, RpcResponse};
 use rpc::RequestOutcome;
 use rpc_client::{ClientEvent, RpcClient};
 use terminal::Terminal;
@@ -114,7 +114,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::Left,
+                                            direction: MoveDirection::Left,
                                         },
                                     )?;
                                 }
@@ -123,7 +123,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::Right,
+                                            direction: MoveDirection::Right,
                                         },
                                     )?;
                                 }
@@ -132,7 +132,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::Up,
+                                            direction: MoveDirection::Up,
                                         },
                                     )?;
                                 }
@@ -141,7 +141,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::Down,
+                                            direction: MoveDirection::Down,
                                         },
                                     )?;
                                 }
@@ -150,7 +150,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::PageUp,
+                                            direction: MoveDirection::PageUp,
                                         },
                                     )?;
                                 }
@@ -159,7 +159,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::PageDown,
+                                            direction: MoveDirection::PageDown,
                                         },
                                     )?;
                                 }
@@ -168,7 +168,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::Home,
+                                            direction: MoveDirection::Home,
                                         },
                                     )?;
                                 }
@@ -177,7 +177,7 @@ fn run(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
                                         &mut core,
                                         &mut ui,
                                         RpcRequest::CursorMove {
-                                            direction: MoveDir::End,
+                                            direction: MoveDirection::End,
                                         },
                                     )?;
                                 }
@@ -459,28 +459,28 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
                                     })?;
                                 }
                                 KeyCode::Char('h') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::Left,
+                                    direction: MoveDirection::Left,
                                 })?,
                                 KeyCode::Char('l') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::Right,
+                                    direction: MoveDirection::Right,
                                 })?,
                                 KeyCode::Char('k') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::Up,
+                                    direction: MoveDirection::Up,
                                 })?,
                                 KeyCode::Char('j') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::Down,
+                                    direction: MoveDirection::Down,
                                 })?,
                                 KeyCode::PageUp => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::PageUp,
+                                    direction: MoveDirection::PageUp,
                                 })?,
                                 KeyCode::PageDown => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::PageDown,
+                                    direction: MoveDirection::PageDown,
                                 })?,
                                 KeyCode::Home => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::Home,
+                                    direction: MoveDirection::Home,
                                 })?,
                                 KeyCode::End => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDir::End,
+                                    direction: MoveDirection::End,
                                 })?,
                                 _ => {}
                             },

@@ -1,8 +1,7 @@
 use std::io;
 
-use crossterm::event::KeyCode;
-
 use crate::file::File;
+use crate::protocol::MoveDirection;
 
 const DEFAULT_TAB_STOP: u16 = 4;
 const VERSION: &str = "0.1.0";
@@ -136,7 +135,7 @@ impl Editor {
         rows
     }
 
-    pub fn cursor_move(&mut self, key_code: KeyCode, usable_rows: u16) -> bool {
+    pub fn cursor_move(&mut self, direction: MoveDirection, usable_rows: u16) -> bool {
         let before = (
             self.cursor_x,
             self.cursor_y,
@@ -145,34 +144,34 @@ impl Editor {
         );
         let file_lines_len = self.file.len().min(u16::MAX as usize) as u16;
 
-        match key_code {
-            KeyCode::Char('h') => {
+        match direction {
+            MoveDirection::Left => {
                 if let Some(line) = self.file.line(self.cursor_y as usize) {
                     self.cursor_x = self.column_previous_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_sub(1);
                 }
             }
-            KeyCode::Char('l') => {
+            MoveDirection::Right => {
                 if let Some(line) = self.file.line(self.cursor_y as usize) {
                     self.cursor_x = self.column_next_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_add(1);
                 }
             }
-            KeyCode::Home => {
+            MoveDirection::Home => {
                 self.cursor_x = 0;
             }
-            KeyCode::End => {
+            MoveDirection::End => {
                 self.cursor_x = self.file_line_length(self.cursor_y);
             }
-            KeyCode::Char('k') => {
+            MoveDirection::Up => {
                 self.cursor_y = self.cursor_y.saturating_sub(1);
             }
-            KeyCode::Char('j') => {
+            MoveDirection::Down => {
                 self.cursor_y = self.cursor_y.saturating_add(1);
             }
-            KeyCode::PageUp => {
+            MoveDirection::PageUp => {
                 if usable_rows == 0 {
                     self.cursor_y = 0;
                     self.rows_offset = 0;
@@ -184,7 +183,7 @@ impl Editor {
                     self.rows_offset = new_offset;
                 }
             }
-            KeyCode::PageDown => {
+            MoveDirection::PageDown => {
                 if usable_rows == 0 {
                     self.cursor_y = file_lines_len;
                 } else {

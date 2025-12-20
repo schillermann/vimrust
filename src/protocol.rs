@@ -22,7 +22,7 @@ pub enum RpcRequest {
         kind: DeleteKind,
     },
     CursorMove {
-        direction: MoveDir,
+        direction: MoveDirection,
     },
     CommandUi {
         action: CommandUiAction,
@@ -46,7 +46,7 @@ pub enum DeleteKind {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum MoveDir {
+pub enum MoveDirection {
     Left,
     Right,
     Up,

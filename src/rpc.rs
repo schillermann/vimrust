@@ -1,6 +1,5 @@
 use std::io::{self, BufRead, Write};
 
-use crossterm::event::KeyCode;
 use crate::{
     EditorMode,
     command_ui_state::CommandUiState,
@@ -14,7 +13,7 @@ use crate::{
         Cursor,
         DeleteKind,
         Frame,
-        MoveDir,
+        MoveDirection,
         RpcMode,
         RpcRequest,
         RpcResponse,
@@ -252,16 +251,7 @@ pub fn handle_request(
         }
         RpcRequest::CursorMove { direction } => {
             let usable_rows = size.1.saturating_sub(2);
-            let moved = match direction {
-                MoveDir::Left => editor.cursor_move(KeyCode::Char('h'), usable_rows),
-                MoveDir::Right => editor.cursor_move(KeyCode::Char('l'), usable_rows),
-                MoveDir::Up => editor.cursor_move(KeyCode::Char('k'), usable_rows),
-                MoveDir::Down => editor.cursor_move(KeyCode::Char('j'), usable_rows),
-                MoveDir::PageUp => editor.cursor_move(KeyCode::PageUp, usable_rows),
-                MoveDir::PageDown => editor.cursor_move(KeyCode::PageDown, usable_rows),
-                MoveDir::Home => editor.cursor_move(KeyCode::Home, usable_rows),
-                MoveDir::End => editor.cursor_move(KeyCode::End, usable_rows),
-            };
+            let moved = editor.cursor_move(direction, usable_rows);
             if moved {
                 RequestOutcome::Frame
             } else {
@@ -461,7 +451,7 @@ mod tests {
 
         let outcome = handle_request(
             RpcRequest::CursorMove {
-                direction: MoveDir::Left,
+                direction: MoveDirection::Left,
             },
             &mut editor,
             &mut mode,
