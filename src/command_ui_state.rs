@@ -1,39 +1,8 @@
-use serde::{Deserialize, Serialize};
-
-use crate::{command_line::CommandLine, command_list::CommandList};
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CommandUiFrame {
-    pub line: String,
-    pub cursor_x: u16,
-    pub focus_on_list: bool,
-    pub list_items: Vec<CommandListItemFrame>,
-    pub selected_index: Option<usize>,
-    pub scroll_offset: usize,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct CommandListItemFrame {
-    pub name: String,
-    pub description: String,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "action", rename_all = "snake_case")]
-pub enum CommandUiAction {
-    StartPrompt,
-    Clear,
-    InsertChar { ch: char },
-    Backspace,
-    Delete,
-    MoveLeft,
-    MoveRight,
-    MoveHome,
-    MoveEnd,
-    MoveSelectionUp,
-    MoveSelectionDown,
-    SelectFromList,
-}
+use crate::{
+    command_line::CommandLine,
+    command_list::CommandList,
+    protocol::{CommandListItemFrame, CommandUiAction, CommandUiFrame},
+};
 
 pub struct CommandUiState {
     pub(crate) command_line: CommandLine,

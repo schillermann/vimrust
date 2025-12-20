@@ -5,7 +5,7 @@ use std::{
     thread,
 };
 
-use crate::rpc::{RpcRequest, RpcResponse};
+use crate::protocol::{RpcRequest, RpcResponse};
 
 pub enum ClientEvent {
     Response(RpcResponse),

@@ -5,13 +5,8 @@ use crate::{
     command_ui_state::CommandUiState,
     editor::Editor,
     file::File,
-    rpc::{
-        build_frame,
-        handle_request,
-        Frame,
-        RequestOutcome,
-        RpcRequest,
-    },
+    protocol::{Frame, RpcRequest},
+    rpc::{build_frame, handle_request, RequestOutcome},
 };
 
 pub struct CoreState {

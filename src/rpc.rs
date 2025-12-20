@@ -1,16 +1,25 @@
 use std::io::{self, BufRead, Write};
 
 use crossterm::event::KeyCode;
-use serde::{Deserialize, Serialize};
-
 use crate::{
     EditorMode,
-    command_ui_state::{CommandUiAction, CommandUiState},
+    command_ui_state::CommandUiState,
     editor::Editor,
     file::File,
+    protocol::{
+        Ack,
+        AckKind,
+        CommandUiAction,
+        CommandUiFrame,
+        Cursor,
+        DeleteKind,
+        Frame,
+        MoveDir,
+        RpcMode,
+        RpcRequest,
+        RpcResponse,
+    },
 };
-
-pub use crate::command_ui_state::CommandUiFrame;
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
 ///
@@ -124,111 +133,6 @@ pub fn serve_stdio(file_path: Option<String>) -> io::Result<()> {
     }
 
     Ok(())
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum RpcRequest {
-    EditorResize {
-        cols: u16,
-        rows: u16,
-        suppress_frame: bool,
-    },
-    FileOpen {
-        path: String,
-    },
-    FileSave,
-    FileSaveAs {
-        path: String,
-    },
-    TextInsert {
-        text: String,
-    },
-    TextDelete {
-        kind: DeleteKind,
-    },
-    CursorMove {
-        direction: MoveDir,
-    },
-    CommandUi {
-        action: CommandUiAction,
-    },
-    ModeSet {
-        mode: RpcMode,
-    },
-    StateGet,
-    EditorQuit,
-    CommandExecute {
-        line: Option<String>,
-    },
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum DeleteKind {
-    Backspace,
-    Under,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MoveDir {
-    Left,
-    Right,
-    Up,
-    Down,
-    PageUp,
-    PageDown,
-    Home,
-    End,
-}
-
-#[derive(Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RpcMode {
-    Normal,
-    Edit,
-    Command,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "lowercase")]
-pub enum RpcResponse {
-    Frame(Frame),
-    Ack(Ack),
-    Error { message: String },
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub struct Ack {
-    pub kind: AckKind,
-    pub message: Option<String>,
-    pub file_path: Option<String>,
-}
-
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-#[serde(rename_all = "snake_case")]
-pub enum AckKind {
-    Open,
-    Save,
-    SaveAs,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Frame {
-    pub mode: String,
-    pub cursor: Cursor,
-    pub rows: Vec<String>,
-    pub status: Option<String>,
-    pub file_path: Option<String>,
-    pub size: (u16, u16),
-    pub command_ui: Option<CommandUiFrame>,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
-pub struct Cursor {
-    pub col: u16,
-    pub row: u16,
 }
 
 pub enum RequestOutcome {

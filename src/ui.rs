@@ -11,7 +11,7 @@ use crossterm::{
 use crate::{
     EditorMode,
     command_line::CommandLine,
-    rpc::{CommandUiFrame, Frame},
+    protocol::{CommandUiFrame, Frame},
     status_line::StatusLine,
     terminal::Terminal,
 };

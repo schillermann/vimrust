@@ -9,15 +9,16 @@ mod command_ui_state;
 mod core;
 mod editor;
 mod file;
+mod protocol;
 mod rpc;
 mod rpc_client;
 mod status_line;
 mod terminal;
 mod ui;
 
-use command_ui_state::CommandUiAction;
 use core::CoreState;
-use rpc::{DeleteKind, MoveDir, RequestOutcome, RpcMode, RpcRequest, RpcResponse};
+use protocol::{CommandUiAction, DeleteKind, MoveDir, RpcMode, RpcRequest, RpcResponse};
+use rpc::RequestOutcome;
 use rpc_client::{ClientEvent, RpcClient};
 use terminal::Terminal;
 use ui::Ui;
