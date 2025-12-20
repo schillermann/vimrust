@@ -21,6 +21,8 @@ cargo run -- --local my_file.txt
 
 # RPC protocol
 
+The default UI spawns a headless core using `--rpc` and speaks JSON over stdio. It does not attach to an existing `--rpc` process yet.
+
 Headless mode (stdio JSON):
 ```sh
 cargo run -- --rpc file.txt
