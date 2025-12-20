@@ -10,7 +10,7 @@ use crossterm::{
     },
 };
 
-use crate::{EditorMode, buffer::Buffer};
+use crate::{buffer::Buffer, mode::EditorMode};
 
 pub struct Terminal {
     size: (u16, u16),

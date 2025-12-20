@@ -5,7 +5,7 @@ use std::{
     thread,
 };
 
-use crate::protocol::{RpcRequest, RpcResponse};
+use vimrust_protocol::{RpcRequest, RpcResponse};
 
 pub enum ClientEvent {
     Response(RpcResponse),
@@ -21,8 +21,11 @@ pub struct RpcClient {
 impl RpcClient {
     pub fn spawn(file_path: Option<String>) -> io::Result<Self> {
         let current_exe = std::env::current_exe()?;
-        let mut cmd = Command::new(current_exe);
-        cmd.arg("--rpc");
+        let core_exe = current_exe.with_file_name(format!(
+            "vimrust-core{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        let mut cmd = Command::new(core_exe);
         if let Some(path) = file_path {
             cmd.arg(path);
         }

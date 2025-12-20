@@ -14,18 +14,13 @@ Read file (RPC client UI by default).
 cargo run my_file.txt
 ```
 
-Run the legacy in-process UI.
-```sh
-cargo run -- --local my_file.txt
-```
-
 # RPC protocol
 
-The default UI spawns a headless core using `--rpc` and speaks JSON over stdio. It does not attach to an existing `--rpc` process yet.
+The default UI spawns a headless core (`vimrust-core`) and speaks JSON over stdio. It does not attach to an existing core process yet.
 
-Headless mode (stdio JSON):
+Headless core (stdio JSON):
 ```sh
-cargo run -- --rpc file.txt
+cargo run -p vimrust-core -- file.txt
 ```
 
 Send line-delimited JSON requests over stdin. Examples:

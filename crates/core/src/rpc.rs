@@ -5,19 +5,18 @@ use crate::{
     command_ui_state::CommandUiState,
     editor::Editor,
     file::File,
-    protocol::{
-        Ack,
-        AckKind,
-        CommandUiAction,
-        CommandUiFrame,
-        Cursor,
-        DeleteKind,
-        Frame,
-        MoveDirection,
-        RpcMode,
-        RpcRequest,
-        RpcResponse,
-    },
+};
+use vimrust_protocol::{
+    Ack,
+    AckKind,
+    CommandUiAction,
+    CommandUiFrame,
+    Cursor,
+    DeleteKind,
+    Frame,
+    RpcMode,
+    RpcRequest,
+    RpcResponse,
 };
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.

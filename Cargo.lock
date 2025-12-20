@@ -247,8 +247,23 @@ name = "vimrust"
 version = "0.1.0"
 dependencies = [
  "crossterm",
- "serde",
  "serde_json",
+ "vimrust-protocol",
+]
+
+[[package]]
+name = "vimrust-core"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "vimrust-protocol",
+]
+
+[[package]]
+name = "vimrust-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]

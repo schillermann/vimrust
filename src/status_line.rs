@@ -6,7 +6,7 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 
-use crate::{EditorMode, terminal::Terminal};
+use crate::{mode::EditorMode, terminal::Terminal};
 
 /// Renders the status line on the last row of the screen.
 pub struct StatusLine {

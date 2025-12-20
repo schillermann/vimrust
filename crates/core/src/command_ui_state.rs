@@ -1,8 +1,8 @@
 use crate::{
     command_line::CommandLine,
     command_list::CommandList,
-    protocol::{CommandListItemFrame, CommandUiAction, CommandUiFrame},
 };
+use vimrust_protocol::{CommandListItemFrame, CommandUiAction, CommandUiFrame};
 
 pub struct CommandUiState {
     pub(crate) command_line: CommandLine,

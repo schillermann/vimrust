@@ -9,12 +9,11 @@ use crossterm::{
 };
 
 use crate::{
-    EditorMode,
-    command_line::CommandLine,
-    protocol::{CommandUiFrame, Frame},
+    mode::EditorMode,
     status_line::StatusLine,
     terminal::Terminal,
 };
+use vimrust_protocol::{CommandUiFrame, Frame};
 
 /// Responsible for orchestrating the per-frame UI rendering.
 pub struct Ui<'a> {
@@ -46,6 +45,10 @@ impl<'a> Ui<'a> {
 
     pub fn set_status_message(&mut self, message: Option<String>) {
         self.status_line.file_message_update(message);
+        self.updated = true;
+    }
+
+    pub fn mark_dirty(&mut self) {
         self.updated = true;
     }
 
@@ -88,7 +91,7 @@ impl<'a> Ui<'a> {
         {
             self.terminal.queue_add_command(Hide)?;
 
-            CommandLine::draw(
+            draw_command_line(
                 self.terminal,
                 number_of_columns,
                 frame
@@ -408,4 +411,48 @@ impl<'a> Ui<'a> {
 
         Ok(())
     }
+}
+
+const COMMAND_LINE_PLACEHOLDER: &str = "Press : for commands";
+
+fn draw_command_line(
+    terminal: &mut Terminal,
+    number_of_columns: u16,
+    content: &str,
+) -> io::Result<()> {
+    terminal.queue_add_command(MoveTo(0, 0))?;
+    terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
+    let is_placeholder = content.is_empty();
+    let display_content = if is_placeholder {
+        COMMAND_LINE_PLACEHOLDER
+    } else {
+        content
+    };
+
+    // Leave one column of padding on both sides of the command line.
+    let inner_width = number_of_columns.saturating_sub(2) as usize;
+    let mut visible: String = display_content.chars().take(inner_width).collect();
+    if visible.len() < inner_width {
+        visible.push_str(&" ".repeat(inner_width - visible.len()));
+    }
+    let mut visible = format!(" {} ", visible);
+    let target_width = number_of_columns as usize;
+    if visible.len() < target_width {
+        visible.push_str(&" ".repeat(target_width - visible.len()));
+    } else if visible.len() > target_width {
+        visible.truncate(target_width);
+    }
+    terminal.queue_add_command(SetBackgroundColor(Color::Rgb {
+        r: 27,
+        g: 27,
+        b: 27,
+    }))?;
+    terminal.queue_add_command(SetForegroundColor(if is_placeholder {
+        Color::DarkGrey
+    } else {
+        Color::Grey
+    }))?;
+    terminal.queue_add_command(Print(visible))?;
+    terminal.queue_add_command(ResetColor)?;
+    Ok(())
 }

@@ -1,7 +1,7 @@
 use std::io;
 
 use crate::file::File;
-use crate::protocol::MoveDirection;
+use vimrust_protocol::MoveDirection;
 
 const DEFAULT_TAB_STOP: u16 = 4;
 const VERSION: &str = "0.1.0";
@@ -197,7 +197,6 @@ impl Editor {
                     self.rows_offset = new_offset;
                 }
             }
-            _ => {}
         }
 
         if self.cursor_y > file_lines_len {
