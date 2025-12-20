@@ -17,6 +17,7 @@ use vimrust_protocol::{
     CommandUiAction,
     DeleteKind,
     MoveDirection,
+    PROTOCOL_VERSION,
     RpcMode,
     RpcRequest,
     RpcResponse,
@@ -46,6 +47,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
 
     let mut latest_frame = None;
     let mut status_override: Option<String> = None;
+    let mut protocol_mismatch: Option<String> = None;
 
     loop {
         while let Ok(event) = client.receiver.try_recv() {
@@ -54,14 +56,28 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
                     RpcResponse::Frame(frame) => {
                         latest_frame = Some(frame);
                         status_override = None;
+                        if let Some(frame) = &latest_frame {
+                            if frame.protocol_version != PROTOCOL_VERSION {
+                                protocol_mismatch = Some(format!(
+                                    "protocol mismatch: core {} ui {}",
+                                    frame.protocol_version, PROTOCOL_VERSION
+                                ));
+                            } else {
+                                protocol_mismatch = None;
+                            }
+                        }
                         ui.mark_dirty();
                     }
                     RpcResponse::Ack(ack) => {
-                        status_override = ack.message.clone();
+                        if protocol_mismatch.is_none() {
+                            status_override = ack.message.clone();
+                        }
                         ui.set_status_message(status_override.clone());
                     }
                     RpcResponse::Error { message } => {
-                        status_override = Some(message);
+                        if protocol_mismatch.is_none() {
+                            status_override = Some(message);
+                        }
                         ui.set_status_message(status_override.clone());
                     }
                 },
@@ -83,7 +99,9 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
             ui.set_mode_external(mode);
             // Prefer explicit status message if set by ack/error.
             let mut frame_to_render = frame.clone();
-            if status_override.is_some() {
+            if protocol_mismatch.is_some() {
+                frame_to_render.status = protocol_mismatch.clone();
+            } else if status_override.is_some() {
                 frame_to_render.status = status_override.clone();
             }
             ui.render_from_frame(&frame_to_render)?;

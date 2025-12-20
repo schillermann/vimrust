@@ -14,6 +14,7 @@ use vimrust_protocol::{
     Cursor,
     DeleteKind,
     Frame,
+    PROTOCOL_VERSION,
     RpcMode,
     RpcRequest,
     RpcResponse,
@@ -389,6 +390,7 @@ pub fn build_frame(
         file_path: view.file.path().cloned(),
         size,
         command_ui,
+        protocol_version: PROTOCOL_VERSION,
     }
 }
 

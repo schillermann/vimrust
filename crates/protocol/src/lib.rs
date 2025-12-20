@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub const PROTOCOL_VERSION: u32 = 1;
+
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RpcRequest {
@@ -97,6 +99,8 @@ pub struct Frame {
     pub file_path: Option<String>,
     pub size: (u16, u16),
     pub command_ui: Option<CommandUiFrame>,
+    #[serde(default)]
+    pub protocol_version: u32,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
