@@ -1,6 +1,7 @@
 use std::io;
 
 use crate::file::File;
+use vimrust_protocol::FilePath;
 use vimrust_protocol::MoveDirection;
 
 const DEFAULT_TAB_STOP: u16 = 4;
@@ -52,9 +53,9 @@ impl Editor {
         self.file.read()
     }
 
-    pub fn file_save(&mut self, file_path: &mut Option<String>) -> io::Result<String> {
+    pub fn file_save(&mut self, file_path: &mut FilePath) -> io::Result<String> {
         let result = self.file.save()?;
-        *file_path = self.file.path().cloned();
+        *file_path = self.file.location();
         Ok(result)
     }
 

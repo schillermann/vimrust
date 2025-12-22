@@ -8,12 +8,8 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 
-use crate::{
-    mode::EditorMode,
-    status_line::StatusLine,
-    terminal::Terminal,
-};
-use vimrust_protocol::{CommandUiFrame, Frame};
+use crate::{mode::EditorMode, status_line::StatusLine, terminal::Terminal};
+use vimrust_protocol::{CommandUiFrame, Frame, StatusMessage};
 
 /// Responsible for orchestrating the per-frame UI rendering.
 pub struct Ui<'a> {
@@ -43,8 +39,8 @@ impl<'a> Ui<'a> {
         &mut self.status_line
     }
 
-    pub fn set_status_message(&mut self, message: Option<String>) {
-        self.status_line.file_message_update(message);
+    pub fn set_status_message(&mut self, message: StatusMessage) {
+        self.status_line.message_update(message);
         self.updated = true;
     }
 
@@ -126,7 +122,7 @@ impl<'a> Ui<'a> {
             }
 
             if number_of_rows > 1 {
-                self.status_line.file_message_update(frame.status.clone());
+                self.status_line.message_update(frame.status.clone());
                 self.status_line.draw(
                     self.terminal,
                     &self.mode,

@@ -1,6 +1,44 @@
+use std::fmt;
+
 use serde::{Deserialize, Serialize};
 
 pub const PROTOCOL_VERSION: u32 = 1;
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum StatusMessage {
+    Empty,
+    Text { text: String },
+}
+
+impl StatusMessage {
+    pub fn is_empty(&self) -> bool {
+        matches!(self, StatusMessage::Empty)
+    }
+
+    pub fn append_to(&self, target: &mut String) {
+        match self {
+            StatusMessage::Empty => {}
+            StatusMessage::Text { text } => target.push_str(text),
+        }
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum FilePath {
+    Missing,
+    Provided { path: String },
+}
+
+impl fmt::Display for FilePath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            FilePath::Missing => write!(f, "[No Filename]"),
+            FilePath::Provided { path } => write!(f, "{}", path),
+        }
+    }
+}
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -78,8 +116,8 @@ pub enum RpcResponse {
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Ack {
     pub kind: AckKind,
-    pub message: Option<String>,
-    pub file_path: Option<String>,
+    pub message: StatusMessage,
+    pub file_path: FilePath,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -95,8 +133,8 @@ pub struct Frame {
     pub mode: String,
     pub cursor: Cursor,
     pub rows: Vec<String>,
-    pub status: Option<String>,
-    pub file_path: Option<String>,
+    pub status: StatusMessage,
+    pub file_path: FilePath,
     pub size: (u16, u16),
     pub command_ui: Option<CommandUiFrame>,
     #[serde(default)]

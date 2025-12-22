@@ -1,13 +1,15 @@
 use std::{fs, io};
 
+use vimrust_protocol::FilePath;
+
 pub struct File {
-    path: Option<String>,
+    path: FilePath,
     pub file_lines: Vec<String>,
     changed: bool,
 }
 
 impl File {
-    pub fn new(file_path: Option<String>) -> Self {
+    pub fn new(file_path: FilePath) -> Self {
         Self {
             path: file_path,
             file_lines: Vec::new(),
@@ -15,17 +17,26 @@ impl File {
         }
     }
 
-    pub fn path(&self) -> Option<&String> {
-        self.path.as_ref()
+    pub fn location(&self) -> FilePath {
+        self.path.clone()
     }
 
     pub fn open(&mut self) -> io::Result<()> {
-        let path = self
-            .path
-            .clone()
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "no file path set"))?;
+        let path = match &self.path {
+            FilePath::Provided { path } => path.clone(),
+            FilePath::Missing => {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "no file path set",
+                ))
+            }
+        };
         let contents = fs::read_to_string(&path)?;
-        self.file_lines = contents.lines().map(|line| line.to_string()).collect();
+        let mut lines = Vec::new();
+        for line in contents.lines() {
+            lines.push(line.to_string());
+        }
+        self.file_lines = lines;
 
         if self.file_lines.is_empty() {
             self.file_lines.push(String::new());
@@ -36,7 +47,7 @@ impl File {
     }
 
     pub fn create(&mut self) {
-        self.path = None;
+        self.path = FilePath::Missing;
         self.file_lines.clear();
         self.file_lines.push(String::new());
         self.changed = false;
@@ -44,8 +55,8 @@ impl File {
 
     pub fn read(&mut self) -> io::Result<()> {
         match self.path {
-            Some(_) => self.open(),
-            None => {
+            FilePath::Provided { .. } => self.open(),
+            FilePath::Missing => {
                 self.create();
                 Ok(())
             }
@@ -53,12 +64,15 @@ impl File {
     }
 
     pub fn save(&mut self) -> io::Result<String> {
-        let path = self
-            .path
-            .get_or_insert_with(|| String::from("untitled.txt"))
-            .clone();
+        let path = match &self.path {
+            FilePath::Provided { path } => path.clone(),
+            FilePath::Missing => String::from("untitled.txt"),
+        };
         let contents = self.file_lines.join("\n");
         fs::write(&path, contents)?;
+        if matches!(self.path, FilePath::Missing) {
+            self.path = FilePath::Provided { path };
+        }
         self.changed = false;
         Ok(String::from("saved"))
     }

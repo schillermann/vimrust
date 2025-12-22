@@ -7,28 +7,29 @@ use crossterm::{
 };
 
 use crate::{mode::EditorMode, terminal::Terminal};
+use vimrust_protocol::{FilePath, StatusMessage};
 
 /// Renders the status line on the last row of the screen.
 pub struct StatusLine {
-    file_message: Option<String>,
+    message: StatusMessage,
 }
 
 impl StatusLine {
     pub fn new() -> Self {
-        Self { file_message: None }
+        Self {
+            message: StatusMessage::Empty,
+        }
     }
 
-    pub fn file_message(&self) -> Option<&String> {
-        self.file_message.as_ref()
+    pub fn message_clear(&mut self) {
+        if !self.message.is_empty() {
+            self.message = StatusMessage::Empty;
+        }
     }
 
-    pub fn file_message_clear(&mut self) {
-        self.file_message = None;
-    }
-
-    pub fn file_message_update(&mut self, new_message: Option<String>) {
-        if self.file_message != new_message {
-            self.file_message = new_message;
+    pub fn message_update(&mut self, new_message: StatusMessage) {
+        if self.message != new_message {
+            self.message = new_message;
         }
     }
 
@@ -36,19 +37,16 @@ impl StatusLine {
         &self,
         terminal: &mut Terminal,
         mode: &EditorMode,
-        file_path: &Option<String>,
+        file_path: &FilePath,
         number_of_columns: u16,
         number_of_rows: u16,
     ) -> io::Result<()> {
-        let filename = file_path.as_deref().unwrap_or("[No Filename]");
         // Leave one column of padding on both sides of the status line.
         let inner_width = number_of_columns.saturating_sub(2);
-        let mut status = format!("{} > {}", mode.label(), filename);
-        if let Some(message) = &self.file_message
-            && !message.is_empty()
-        {
+        let mut status = format!("{} > {}", mode.label(), file_path);
+        if !self.message.is_empty() {
             status.push_str(" > ");
-            status.push_str(message);
+            self.message.append_to(&mut status);
         }
         if status.len() < inner_width as usize {
             status.push_str(&" ".repeat(inner_width as usize - status.len()));
