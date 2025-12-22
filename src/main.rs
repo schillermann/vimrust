@@ -10,7 +10,7 @@ mod terminal;
 mod ui;
 
 use mode::EditorMode;
-use rpc_client::{ClientEvent, RpcClient};
+use rpc_client::{ClientEvent, ClientFilePath, ClientPoll};
 use terminal::Terminal;
 use ui::Ui;
 use vimrust_protocol::{
@@ -24,7 +24,10 @@ use vimrust_protocol::{
 };
 
 fn main() -> io::Result<()> {
-    let file_path = env::args().skip(1).next();
+    let file_path = ArgFilePath {
+        args: env::args(),
+    }
+    .read();
 
     let mut terminal = Terminal::new()?;
     let result = run_rpc_client(&mut terminal, file_path);
@@ -32,8 +35,9 @@ fn main() -> io::Result<()> {
     result
 }
 
-fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Result<()> {
-    let mut client = RpcClient::spawn(file_path)?;
+fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Result<()> {
+    let launcher = file_path.launcher();
+    let mut client = launcher.launch()?;
     let mut ui = Ui::new(terminal);
 
     ui.terminal_update_size()?;
@@ -50,9 +54,11 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
     let mut protocol_mismatch: Option<String> = None;
 
     loop {
-        while let Ok(event) = client.receiver.try_recv() {
-            match event {
-                ClientEvent::Response(resp) => match resp {
+        loop {
+            let poll = client.poll_event()?;
+            match poll {
+                ClientPoll::Event(event) => match event {
+                    ClientEvent::Response(resp) => match resp {
                     RpcResponse::Frame(frame) => {
                         latest_frame = Some(frame);
                         status_override = None;
@@ -62,8 +68,10 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
                                     "protocol mismatch: core {} ui {}",
                                     frame.protocol_version, PROTOCOL_VERSION
                                 ));
-                                let message =
-                                    protocol_mismatch.clone().unwrap_or_else(String::new);
+                                let message = match protocol_mismatch.clone() {
+                                    Some(message) => message,
+                                    None => String::new(),
+                                };
                                 eprintln!("vimrust: {}", message);
                                 return Err(io::Error::new(io::ErrorKind::Other, message));
                             } else {
@@ -85,11 +93,13 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
                         ui.set_status_message(status_override.clone());
                     }
                 },
-                ClientEvent::Exited => {
-                    ui.set_status_message(Some(String::from("core exited")));
-                    ui.set_quit();
-                    break;
-                }
+                    ClientEvent::Exited => {
+                        ui.set_status_message(Some(String::from("core exited")));
+                        ui.set_quit();
+                        break;
+                    }
+                },
+                ClientPoll::Empty => break,
             }
         }
 
@@ -241,4 +251,18 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: Option<String>) -> io::Res
 
     client.kill();
     Ok(())
+}
+
+struct ArgFilePath {
+    args: env::Args,
+}
+
+impl ArgFilePath {
+    fn read(mut self) -> ClientFilePath {
+        let _ = self.args.next();
+        match self.args.next() {
+            Some(path) => ClientFilePath::Provided(path),
+            None => ClientFilePath::Missing,
+        }
+    }
 }
