@@ -56,11 +56,12 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 - Returns a value.
 - Has **no observable side effects**.
 - Does **not** change object state.
-- Method names describe **what the object is**, not *how it is computed*.
+- Returns **objects**, not primitives.
+- Method names describe **what the object provides**, not *how it is computed*.
 - Examples:
-  - `client()`
-  - `connection()`
-  - `total()`
+  - `message() -> Message`
+  - `client() -> Client`
+  - `total() -> Money`
 
 #### Command
 - Performs an action.
@@ -70,32 +71,36 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 - Examples:
   - `connect()`
   - `open()`
-  - `start()`
+  - `receive()`
 
 #### Forbidden
 - Methods that return a value **and** mutate state.
 - Methods that return booleans or status codes.
-- Methods named `run()`, `execute()`, `launch()`, `doWork()`, or similar procedural verbs unless they clearly represent a domain action.
+- Predicate-style methods such as:
+  - `hasX()`
+  - `isY()`
+  - `canZ()`
+- Methods that expose internal state for external branching.
 
 ---
 
 ### 8) Method naming rules (message-oriented)
 
-- Methods are **messages sent to objects**, not instructions.
-- Method names must express **intent**, not mechanism.
+- Methods are **messages sent to objects**, not questions asked about them.
+- Avoid interrogative or predicate naming.
 - Avoid orchestration nouns such as:
   - `*Launcher`
   - `*Runner`
   - `*Executor`
   - `*Manager`
 - If such a class exists (infrastructure boundary only):
-  - Prefer **query methods** that *return an object*:
+  - Prefer **query methods** that return objects:
     - `client()`
-    - `connection()`
+    - `message()`
   - Or **command methods** with clear domain verbs:
     - `connect()`
-    - `open()`
-  - Never combine construction + side effects + return values.
+    - `receive()`
+  - Never combine construction, side effects, and return values.
 
 ---
 
@@ -122,5 +127,5 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 - New code must follow these rules even if legacy code does not.
 - When touching legacy code, improve adherence opportunistically:
   - remove setters and move behavior into the object,
-  - replace `null` with explicit objects,
+  - replace booleans with polymorphic objects,
   - eliminate static helpers by introducing objects.
