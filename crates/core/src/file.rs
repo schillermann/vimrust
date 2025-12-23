@@ -4,7 +4,7 @@ use vimrust_protocol::FilePath;
 
 pub struct File {
     path: FilePath,
-    pub file_lines: Vec<String>,
+    file_lines: Vec<String>,
     changed: bool,
 }
 
@@ -81,8 +81,38 @@ impl File {
         self.file_lines.get(index)
     }
 
-    pub fn len(&self) -> usize {
+    pub fn line_total(&self) -> usize {
         self.file_lines.len()
+    }
+
+    pub fn line_at_mut(&mut self, index: usize) -> Option<&mut String> {
+        self.file_lines.get_mut(index)
+    }
+
+    pub fn line_ensure(&mut self, index: usize) {
+        if self.file_lines.len() <= index {
+            self.file_lines
+                .resize_with(index.saturating_add(1), String::new);
+        }
+    }
+
+    pub fn line_remove(&mut self, index: usize) -> Option<String> {
+        if index < self.file_lines.len() {
+            Some(self.file_lines.remove(index))
+        } else {
+            None
+        }
+    }
+
+    pub fn lines_clone(&self) -> Vec<String> {
+        self.file_lines.clone()
+    }
+
+    pub fn lines_replace(&mut self, lines: Vec<String>) {
+        self.file_lines = lines;
+        if self.file_lines.is_empty() {
+            self.file_lines.push(String::new());
+        }
     }
 
     pub fn touch(&mut self) {

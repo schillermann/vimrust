@@ -12,15 +12,36 @@ pub enum StatusMessage {
 }
 
 impl StatusMessage {
-    pub fn is_empty(&self) -> bool {
-        matches!(self, StatusMessage::Empty)
-    }
-
     pub fn append_to(&self, target: &mut String) {
         match self {
             StatusMessage::Empty => {}
             StatusMessage::Text { text } => target.push_str(text),
         }
+    }
+
+    pub fn append_to_status_line(&self, target: &mut String) {
+        match self {
+            StatusMessage::Empty => {}
+            StatusMessage::Text { text } => {
+                target.push_str(" > ");
+                target.push_str(text);
+            }
+        }
+    }
+
+    pub fn or(self, fallback: StatusMessage) -> StatusMessage {
+        match self {
+            StatusMessage::Empty => fallback,
+            StatusMessage::Text { .. } => self,
+        }
+    }
+
+    pub fn store(&mut self, message: StatusMessage) {
+        *self = message;
+    }
+
+    pub fn clear(&mut self) {
+        *self = StatusMessage::Empty;
     }
 }
 
@@ -115,9 +136,9 @@ pub enum RpcResponse {
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 pub struct Ack {
-    pub kind: AckKind,
-    pub message: StatusMessage,
-    pub file_path: FilePath,
+    kind: AckKind,
+    message: StatusMessage,
+    file_path: FilePath,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
@@ -128,39 +149,193 @@ pub enum AckKind {
     SaveAs,
 }
 
+impl Ack {
+    pub fn new(kind: AckKind, message: StatusMessage, file_path: FilePath) -> Self {
+        Self {
+            kind,
+            message,
+            file_path,
+        }
+    }
+
+    pub fn kind(&self) -> AckKind {
+        self.kind.clone()
+    }
+
+    pub fn message(&self) -> StatusMessage {
+        self.message.clone()
+    }
+
+    pub fn file_path(&self) -> FilePath {
+        self.file_path.clone()
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Frame {
-    pub mode: String,
-    pub cursor: Cursor,
-    pub rows: Vec<String>,
-    pub status: StatusMessage,
-    pub file_path: FilePath,
-    pub size: (u16, u16),
-    pub command_ui: Option<CommandUiFrame>,
+    mode: String,
+    cursor: Cursor,
+    rows: Vec<String>,
+    status: StatusMessage,
+    file_path: FilePath,
+    size: (u16, u16),
+    command_ui: Option<CommandUiFrame>,
     #[serde(default)]
-    pub protocol_version: u32,
+    protocol_version: u32,
+}
+
+impl Frame {
+    pub fn new(
+        mode: String,
+        cursor: Cursor,
+        rows: Vec<String>,
+        status: StatusMessage,
+        file_path: FilePath,
+        size: (u16, u16),
+        command_ui: Option<CommandUiFrame>,
+        protocol_version: u32,
+    ) -> Self {
+        Self {
+            mode,
+            cursor,
+            rows,
+            status,
+            file_path,
+            size,
+            command_ui,
+            protocol_version,
+        }
+    }
+
+    pub fn mode(&self) -> &str {
+        &self.mode
+    }
+
+    pub fn cursor(&self) -> Cursor {
+        self.cursor.clone()
+    }
+
+    pub fn rows(&self) -> &[String] {
+        &self.rows
+    }
+
+    pub fn status(&self) -> StatusMessage {
+        self.status.clone()
+    }
+
+    pub fn file_path(&self) -> FilePath {
+        self.file_path.clone()
+    }
+
+    pub fn size(&self) -> (u16, u16) {
+        self.size
+    }
+
+    pub fn command_ui(&self) -> Option<&CommandUiFrame> {
+        self.command_ui.as_ref()
+    }
+
+    pub fn protocol_version(&self) -> u32 {
+        self.protocol_version
+    }
+
+    pub fn status_store(&mut self, status: StatusMessage) {
+        self.status = status;
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Cursor {
-    pub col: u16,
-    pub row: u16,
+    col: u16,
+    row: u16,
+}
+
+impl Cursor {
+    pub fn new(col: u16, row: u16) -> Self {
+        Self { col, row }
+    }
+
+    pub fn column(&self) -> u16 {
+        self.col
+    }
+
+    pub fn row(&self) -> u16 {
+        self.row
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CommandUiFrame {
-    pub line: String,
-    pub cursor_x: u16,
-    pub focus_on_list: bool,
-    pub list_items: Vec<CommandListItemFrame>,
-    pub selected_index: Option<usize>,
-    pub scroll_offset: usize,
+    line: String,
+    cursor_x: u16,
+    focus_on_list: bool,
+    list_items: Vec<CommandListItemFrame>,
+    selected_index: Option<usize>,
+    scroll_offset: usize,
+}
+
+impl CommandUiFrame {
+    pub fn new(
+        line: String,
+        cursor_x: u16,
+        focus_on_list: bool,
+        list_items: Vec<CommandListItemFrame>,
+        selected_index: Option<usize>,
+        scroll_offset: usize,
+    ) -> Self {
+        Self {
+            line,
+            cursor_x,
+            focus_on_list,
+            list_items,
+            selected_index,
+            scroll_offset,
+        }
+    }
+
+    pub fn line(&self) -> &str {
+        &self.line
+    }
+
+    pub fn cursor_x(&self) -> u16 {
+        self.cursor_x
+    }
+
+    pub fn focus_on_list(&self) -> bool {
+        self.focus_on_list
+    }
+
+    pub fn list_items(&self) -> &[CommandListItemFrame] {
+        &self.list_items
+    }
+
+    pub fn selected_index(&self) -> Option<usize> {
+        self.selected_index
+    }
+
+    pub fn scroll_offset(&self) -> usize {
+        self.scroll_offset
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct CommandListItemFrame {
-    pub name: String,
-    pub description: String,
+    name: String,
+    description: String,
+}
+
+impl CommandListItemFrame {
+    pub fn new(name: String, description: String) -> Self {
+        Self { name, description }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
 }
 
 #[derive(Deserialize, Serialize)]

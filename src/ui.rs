@@ -35,12 +35,13 @@ impl<'a> Ui<'a> {
         self.terminal.size()
     }
 
-    pub fn status_line(&mut self) -> &mut StatusLine {
-        &mut self.status_line
+    pub fn status_update(&mut self, message: StatusMessage) {
+        self.status_line.file_status_update(message);
+        self.updated = true;
     }
 
-    pub fn set_status_message(&mut self, message: StatusMessage) {
-        self.status_line.message_update(message);
+    pub fn status_clear(&mut self) {
+        self.status_line.file_status_clear();
         self.updated = true;
     }
 
@@ -52,12 +53,12 @@ impl<'a> Ui<'a> {
         self.quit
     }
 
-    pub fn set_quit(&mut self) {
+    pub fn quit_request(&mut self) {
         self.quit = true;
         self.updated = true;
     }
 
-    pub fn set_mode_external(&mut self, mode: EditorMode) {
+    pub fn mode_apply(&mut self, mode: EditorMode) {
         self.mode = mode;
         self.updated = true;
         let _ = self.terminal.set_cursor_style(&self.mode);
@@ -76,7 +77,7 @@ impl<'a> Ui<'a> {
 
         self.updated = false;
 
-        let (number_of_columns, number_of_rows) = frame.size;
+        let (number_of_columns, number_of_rows) = frame.size();
         if number_of_rows == 0 {
             return Ok(());
         }
@@ -91,15 +92,14 @@ impl<'a> Ui<'a> {
                 self.terminal,
                 number_of_columns,
                 frame
-                    .command_ui
-                    .as_ref()
-                    .map(|c| c.line.as_str())
+                    .command_ui()
+                    .map(|command_ui| command_ui.line())
                     .unwrap_or(""),
             )?;
 
             if usable_rows > 0 {
                 if matches!(self.mode, EditorMode::Command) {
-                    if let Some(cmd_ui) = &frame.command_ui {
+                    if let Some(cmd_ui) = frame.command_ui() {
                         self.draw_command_list_from_frame(
                             cmd_ui,
                             number_of_columns,
@@ -108,7 +108,7 @@ impl<'a> Ui<'a> {
                         )?;
                     }
                 } else {
-                    for (idx, row) in frame.rows.iter().enumerate() {
+                    for (idx, row) in frame.rows().iter().enumerate() {
                         if idx as u16 >= usable_rows {
                             break;
                         }
@@ -122,11 +122,11 @@ impl<'a> Ui<'a> {
             }
 
             if number_of_rows > 1 {
-                self.status_line.message_update(frame.status.clone());
+                self.status_line.file_status_update(frame.status());
                 self.status_line.draw(
                     self.terminal,
                     &self.mode,
-                    &frame.file_path,
+                    &frame.file_path(),
                     number_of_columns,
                     number_of_rows,
                 )?;
@@ -134,13 +134,13 @@ impl<'a> Ui<'a> {
 
             let (cursor_col, cursor_row) = match self.mode {
                 EditorMode::Command => frame
-                    .command_ui
-                    .as_ref()
+                    .command_ui()
                     .map(|cmd_ui| {
-                        if cmd_ui.focus_on_list
-                            && let Some(selected) = cmd_ui.selected_index
+                        if cmd_ui.focus_on_list()
+                            && let Some(selected) = cmd_ui.selected_index()
                         {
-                            let relative_row = selected.saturating_sub(cmd_ui.scroll_offset) as u16;
+                            let relative_row =
+                                selected.saturating_sub(cmd_ui.scroll_offset()) as u16;
                             let list_row = 1u16
                                 .saturating_add(1)
                                 .saturating_add(2)
@@ -150,7 +150,7 @@ impl<'a> Ui<'a> {
                         }
                         (
                             cmd_ui
-                                .cursor_x
+                                .cursor_x()
                                 .saturating_add(1)
                                 .min(number_of_columns.saturating_sub(1)),
                             0,
@@ -158,8 +158,9 @@ impl<'a> Ui<'a> {
                     })
                     .unwrap_or((0, 0)),
                 _ => {
-                    let cursor_col = frame.cursor.col.min(number_of_columns.saturating_sub(1));
-                    let base_row = frame.cursor.row;
+                    let cursor = frame.cursor();
+                    let cursor_col = cursor.column().min(number_of_columns.saturating_sub(1));
+                    let base_row = cursor.row();
                     // Keep the edit cursor off the command-line row (row 0).
                     let min_editor_row = 1;
                     let max_editor_row = number_of_rows.saturating_sub(1).max(min_editor_row);
@@ -186,13 +187,13 @@ impl<'a> Ui<'a> {
             return Ok(());
         }
 
-        let matches = &cmd_ui.list_items;
+        let matches = cmd_ui.list_items();
         let available_rows = number_of_rows.saturating_sub(3); // blank + header + divider
         let inner_width = number_of_columns.saturating_sub(2); // left/right padding
-        let query = Self::command_query_from_input(&cmd_ui.line);
+        let query = Self::command_query_from_input(cmd_ui.line());
         let name_width = matches
             .iter()
-            .map(|c| c.name.len() as u16)
+            .map(|c| c.name().len() as u16)
             .max()
             .unwrap_or(0)
             .min(inner_width);
@@ -246,14 +247,16 @@ impl<'a> Ui<'a> {
             self.terminal
                 .queue_add_command(Clear(ClearType::CurrentLine))?;
 
-            if let Some(entry) = matches.get(cmd_ui.scroll_offset.saturating_add(row as usize)) {
+            if let Some(entry) =
+                matches.get(cmd_ui.scroll_offset().saturating_add(row as usize))
+            {
                 let is_selected = cmd_ui
-                    .selected_index
-                    .map(|idx| idx == cmd_ui.scroll_offset.saturating_add(row as usize))
+                    .selected_index()
+                    .map(|idx| idx == cmd_ui.scroll_offset().saturating_add(row as usize))
                     .unwrap_or(false);
 
                 let mut name_display: String = entry
-                    .name
+                    .name()
                     .chars()
                     .take(command_col_width as usize)
                     .collect();
@@ -264,7 +267,7 @@ impl<'a> Ui<'a> {
                 let mut desc_display = String::new();
                 if desc_col_width > 0 {
                     desc_display = entry
-                        .description
+                        .description()
                         .chars()
                         .take(desc_col_width as usize)
                         .collect();
@@ -274,14 +277,14 @@ impl<'a> Ui<'a> {
                     }
                 }
 
-                let name_matches: Vec<usize> = Self::matched_indices(&query, &entry.name)
+                let name_matches: Vec<usize> = Self::matched_indices(&query, entry.name())
                     .into_iter()
                     .filter(|idx| *idx < name_display.chars().count())
                     .collect();
                 let desc_matches: Vec<usize> = if desc_display.is_empty() {
                     Vec::new()
                 } else {
-                    Self::matched_indices(&query, &entry.description)
+                    Self::matched_indices(&query, entry.description())
                         .into_iter()
                         .filter(|idx| *idx < desc_display.chars().count())
                         .collect()

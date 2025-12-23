@@ -5,9 +5,9 @@ use crate::{
 use vimrust_protocol::{CommandListItemFrame, CommandUiAction, CommandUiFrame};
 
 pub struct CommandUiState {
-    pub(crate) command_line: CommandLine,
-    pub(crate) command_list: CommandList,
-    pub(crate) focus_on_list: bool,
+    command_line: CommandLine,
+    command_list: CommandList,
+    focus_on_list: bool,
 }
 
 impl CommandUiState {
@@ -25,15 +25,13 @@ impl CommandUiState {
         self.focus_on_list = false;
     }
 
-    pub fn set_line(&mut self, new_content: String) -> bool {
-        let changed = self.command_line.command_line() != new_content;
+    pub fn line_overwrite(&mut self, new_content: String) {
         self.command_line.set_content(new_content);
         self.command_list.reset_selection();
         self.focus_on_list = false;
-        changed
     }
 
-    pub fn current_line(&self) -> &str {
+    pub fn line(&self) -> &str {
         self.command_line.command_line()
     }
 
@@ -41,6 +39,10 @@ impl CommandUiState {
         self.command_line.clear();
         self.command_list.reset_selection();
         self.focus_on_list = false;
+    }
+
+    pub fn list_scroll_adjust(&mut self, visible_rows: usize) {
+        self.command_list.adjust_scroll_for_visible_rows(visible_rows);
     }
 
     pub fn apply_action(&mut self, action: CommandUiAction, list_rows: usize) -> bool {
@@ -129,10 +131,10 @@ impl CommandUiState {
                 true
             }
             CommandUiAction::SelectFromList => {
-                let matches = self.command_list.filter(self.command_line.command_line());
-                if self.focus_on_list
-                    && !matches.is_empty()
-                    && let Some(selected) = self.command_list.command_selected_index()
+                    let matches = self.command_list.filter(self.command_line.command_line());
+                    if self.focus_on_list
+                        && !matches.is_empty()
+                        && let Some(selected) = self.command_list.command_selected_index()
                 {
                     let index = selected.min(matches.len().saturating_sub(1));
                     if let Some(entry) = matches.get(index) {
@@ -166,21 +168,21 @@ impl CommandUiState {
                 Some(idx.min(matches.len().saturating_sub(1)))
             }
         });
-        let list_items = matches
-            .iter()
-            .map(|entry| CommandListItemFrame {
-                name: entry.name.to_string(),
-                description: entry.description.to_string(),
-            })
-            .collect();
+        let mut list_items = Vec::with_capacity(matches.len());
+        for entry in matches {
+            list_items.push(CommandListItemFrame::new(
+                entry.name.to_string(),
+                entry.description.to_string(),
+            ));
+        }
 
-        CommandUiFrame {
-            line: self.command_line.command_line().to_string(),
-            cursor_x: self.command_line.cursor_x(),
-            focus_on_list: self.focus_on_list,
+        CommandUiFrame::new(
+            self.command_line.command_line().to_string(),
+            self.command_line.cursor_x(),
+            self.focus_on_list,
             list_items,
             selected_index,
-            scroll_offset: self.command_list.command_scroll_offset(),
-        }
+            self.command_list.command_scroll_offset(),
+        )
     }
 }

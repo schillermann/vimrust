@@ -4,12 +4,14 @@ use crossterm::event::{self, Event, KeyCode};
 
 mod buffer;
 mod mode;
+mod protocol_guard;
 mod rpc_client;
 mod status_line;
 mod terminal;
 mod ui;
 
 use mode::EditorMode;
+use protocol_guard::ProtocolGate;
 use rpc_client::{ClientEvent, ClientFilePath, ClientPoll};
 use terminal::Terminal;
 use ui::Ui;
@@ -43,7 +45,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
 
     let mut latest_frame = None;
     let mut status_override = StatusMessage::Empty;
-    let mut protocol_mismatch = StatusMessage::Empty;
+    let mut protocol_gate = ProtocolGate::new(PROTOCOL_VERSION);
 
     loop {
         loop {
@@ -55,41 +57,28 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
                             latest_frame = Some(frame);
                             status_override = StatusMessage::Empty;
                             if let Some(frame) = &latest_frame {
-                                if frame.protocol_version != PROTOCOL_VERSION {
-                                    protocol_mismatch = StatusMessage::Text {
-                                        text: format!(
-                                            "protocol mismatch: core {} ui {}",
-                                            frame.protocol_version, PROTOCOL_VERSION
-                                        ),
-                                    };
-                                    let mut message = String::new();
-                                    protocol_mismatch.append_to(&mut message);
-                                    eprintln!("vimrust: {}", message);
-                                    return Err(io::Error::new(io::ErrorKind::Other, message));
-                                } else {
-                                    protocol_mismatch = StatusMessage::Empty;
-                                }
+                                protocol_gate.observe(frame.protocol_version());
+                                protocol_gate.report();
+                                protocol_gate.result()?;
                             }
                             ui.mark_dirty();
                         }
                         RpcResponse::Ack(ack) => {
-                            if protocol_mismatch.is_empty() {
-                                status_override = ack.message.clone();
-                            }
-                            ui.set_status_message(status_override.clone());
+                            status_override = protocol_gate.status().or(ack.message());
+                            ui.status_update(status_override.clone());
                         }
                         RpcResponse::Error { message } => {
-                            if protocol_mismatch.is_empty() {
-                                status_override = StatusMessage::Text { text: message };
-                            }
-                            ui.set_status_message(status_override.clone());
+                            status_override = protocol_gate
+                                .status()
+                                .or(StatusMessage::Text { text: message });
+                            ui.status_update(status_override.clone());
                         }
                     },
                     ClientEvent::Exited => {
-                        ui.set_status_message(StatusMessage::Text {
+                        ui.status_update(StatusMessage::Text {
                             text: String::from("core exited"),
                         });
-                        ui.set_quit();
+                        ui.quit_request();
                         break;
                     }
                 },
@@ -98,20 +87,20 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
         }
 
         if let Some(frame) = &latest_frame {
-            let mode = match frame.mode.as_str() {
+            let mode = match frame.mode() {
                 "NORMAL" => EditorMode::Normal,
                 "EDIT" => EditorMode::Edit,
                 "COMMAND" => EditorMode::Command,
                 _ => EditorMode::Normal,
             };
-            ui.set_mode_external(mode);
-            // Prefer explicit status message if set by ack/error.
             let mut frame_to_render = frame.clone();
-            if !protocol_mismatch.is_empty() {
-                frame_to_render.status = protocol_mismatch.clone();
-            } else if !status_override.is_empty() {
-                frame_to_render.status = status_override.clone();
-            }
+            ui.mode_apply(mode);
+            // Prefer explicit status message if set by ack/error.
+            let status = protocol_gate
+                .status()
+                .or(status_override.clone())
+                .or(frame.status());
+            frame_to_render.status_store(status);
             ui.render_from_frame(&frame_to_render)?;
         }
 
@@ -123,8 +112,8 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
             match event::read()? {
                 Event::Key(key_event) => {
                     if let Some(ref mut frame) = latest_frame {
-                        ui.status_line().message_clear();
-                        match frame.mode.as_str() {
+                        ui.status_clear();
+                        match frame.mode() {
                             "NORMAL" => match key_event.code {
                                 KeyCode::Char('q') => {
                                     client.send(&RpcRequest::EditorQuit)?;

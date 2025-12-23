@@ -11,25 +11,23 @@ use vimrust_protocol::{FilePath, StatusMessage};
 
 /// Renders the status line on the last row of the screen.
 pub struct StatusLine {
-    message: StatusMessage,
+    file_status: StatusMessage,
 }
 
 impl StatusLine {
     pub fn new() -> Self {
         Self {
-            message: StatusMessage::Empty,
+            file_status: StatusMessage::Empty,
         }
     }
 
-    pub fn message_clear(&mut self) {
-        if !self.message.is_empty() {
-            self.message = StatusMessage::Empty;
-        }
+    pub fn file_status_clear(&mut self) {
+        self.file_status.clear();
     }
 
-    pub fn message_update(&mut self, new_message: StatusMessage) {
-        if self.message != new_message {
-            self.message = new_message;
+    pub fn file_status_update(&mut self, new_message: StatusMessage) {
+        if self.file_status != new_message {
+            self.file_status = new_message;
         }
     }
 
@@ -44,10 +42,7 @@ impl StatusLine {
         // Leave one column of padding on both sides of the status line.
         let inner_width = number_of_columns.saturating_sub(2);
         let mut status = format!("{} > {}", mode.label(), file_path);
-        if !self.message.is_empty() {
-            status.push_str(" > ");
-            self.message.append_to(&mut status);
-        }
+        self.file_status.append_to_status_line(&mut status);
         if status.len() < inner_width as usize {
             status.push_str(&" ".repeat(inner_width as usize - status.len()));
         } else {

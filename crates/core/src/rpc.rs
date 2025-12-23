@@ -163,9 +163,7 @@ pub fn handle_request(
             *size = (cols, rows);
             if matches!(mode, EditorMode::Command) {
                 let list_rows = command_list_rows(*size);
-                command_ui
-                    .command_list
-                    .adjust_scroll_for_visible_rows(list_rows);
+                command_ui.list_scroll_adjust(list_rows);
             }
             if suppress_frame || *size == prev {
                 RequestOutcome::Skip
@@ -181,27 +179,27 @@ pub fn handle_request(
             *editor = Editor::new(new_file);
             *status = StatusMessage::Empty;
             *mode = EditorMode::Normal;
-            let ack = Ack {
-                kind: AckKind::Open,
-                message: StatusMessage::Text {
+            let ack = Ack::new(
+                AckKind::Open,
+                StatusMessage::Text {
                     text: String::from("opened"),
                 },
-                file_path: editor.file.location(),
-            };
+                editor.file_location(),
+            );
             RequestOutcome::FrameAndAck(ack)
         }
         RpcRequest::FileSave => {
-            let previous_path = editor.file.location();
+            let previous_path = editor.file_location();
             let mut saved_path = FilePath::Missing;
             match editor.file_save(&mut saved_path) {
                 Ok(msg) => {
                     *status = StatusMessage::Text { text: msg.clone() };
-                    let ack = Ack {
-                        kind: AckKind::Save,
-                        message: StatusMessage::Text { text: msg },
-                        file_path: saved_path,
-                    };
-                    if editor.file.location() != previous_path {
+                    let ack = Ack::new(
+                        AckKind::Save,
+                        StatusMessage::Text { text: msg },
+                        saved_path,
+                    );
+                    if editor.file_location() != previous_path {
                         RequestOutcome::FrameAndAck(ack)
                     } else {
                         RequestOutcome::Ack(ack)
@@ -212,16 +210,16 @@ pub fn handle_request(
         }
         RpcRequest::FileSaveAs { path } => {
             let mut new_file = File::new(FilePath::Provided { path });
-            new_file.file_lines = editor.file.file_lines.clone();
+            new_file.lines_replace(editor.file_lines_clone());
             match new_file.save() {
                 Ok(msg) => {
                     *editor = Editor::new(new_file);
                     *status = StatusMessage::Text { text: msg.clone() };
-                    let ack = Ack {
-                        kind: AckKind::SaveAs,
-                        message: StatusMessage::Text { text: msg },
-                        file_path: editor.file.location(),
-                    };
+                    let ack = Ack::new(
+                        AckKind::SaveAs,
+                        StatusMessage::Text { text: msg },
+                        editor.file_location(),
+                    );
                     RequestOutcome::FrameAndAck(ack)
                 }
                 Err(err) => RequestOutcome::Error(format!("save_as failed: {}", err)),
@@ -290,10 +288,10 @@ pub fn handle_request(
             }
             let source_line = match line {
                 Some(line) => {
-                    let _ = command_ui.set_line(line.clone());
+                    command_ui.line_overwrite(line.clone());
                     line
                 }
-                None => command_ui.current_line().to_string(),
+                None => command_ui.line().to_string(),
             };
             let command = source_line
                 .trim_start_matches(':')
@@ -309,11 +307,11 @@ pub fn handle_request(
                             command_ui.clear();
                         }
                         *mode = EditorMode::Normal;
-                        let ack = Ack {
-                            kind: AckKind::Save,
-                            message: StatusMessage::Text { text: msg },
-                            file_path: saved_path,
-                        };
+                        let ack = Ack::new(
+                            AckKind::Save,
+                            StatusMessage::Text { text: msg },
+                            saved_path,
+                        );
                         RequestOutcome::FrameAndAck(ack)
                     }
                     Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
@@ -341,7 +339,7 @@ pub fn handle_request(
         }
         RpcRequest::ModeSet { mode: new_mode } => {
             let prev_mode = *mode;
-            let prev_cursor = (editor.cursor_x, editor.cursor_y);
+            let prev_cursor = editor.cursor_position();
             *mode = match new_mode {
                 RpcMode::Normal => EditorMode::Normal,
                 RpcMode::Edit => {
@@ -355,7 +353,7 @@ pub fn handle_request(
             } else if prev_mode == EditorMode::Command && *mode != EditorMode::Command {
                 command_ui.clear();
             }
-            if *mode != prev_mode || (editor.cursor_x, editor.cursor_y) != prev_cursor {
+            if *mode != prev_mode || editor.cursor_position() != prev_cursor {
                 RequestOutcome::Frame
             } else {
                 RequestOutcome::Skip
@@ -378,36 +376,27 @@ pub fn build_frame(
     let rows = editor.rows_render(&view, size.0, usable_rows);
 
     let cursor_col = view
-        .cursor_x
-        .saturating_sub(view.columns_offset)
+        .cursor_x()
+        .saturating_sub(view.columns_offset())
         .min(size.0.saturating_sub(1));
     let base_row = view
-        .cursor_y
-        .saturating_sub(view.rows_offset)
+        .cursor_y()
+        .saturating_sub(view.rows_offset())
         .saturating_add(1);
     let cursor_row = base_row.max(1).min(size.1.saturating_sub(1).max(1));
 
-    let status = if editor.file_changed() {
-        StatusMessage::Text {
-            text: String::from("modified"),
-        }
-    } else {
-        status.clone()
-    };
+    let status = editor.change_status().status_or(status);
 
-    Frame {
-        mode: mode.label().to_string(),
-        cursor: Cursor {
-            col: cursor_col,
-            row: cursor_row,
-        },
+    Frame::new(
+        mode.label().to_string(),
+        Cursor::new(cursor_col, cursor_row),
         rows,
         status,
-        file_path: view.file.location(),
+        view.file().location(),
         size,
         command_ui,
-        protocol_version: PROTOCOL_VERSION,
-    }
+        PROTOCOL_VERSION,
+    )
 }
 
 fn write_error(stdout: &mut impl Write, message: String) -> io::Result<()> {
@@ -431,6 +420,7 @@ fn write_ack(stdout: &mut impl Write, ack: Ack) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::editor::CursorPosition;
     use std::fs;
     use vimrust_protocol::MoveDirection;
 
@@ -455,13 +445,13 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame.rows.get(0).map(String::as_str), Some("hi"));
+        assert_eq!(frame.rows().get(0).map(String::as_str), Some("hi"));
     }
 
     #[test]
     fn noop_cursor_move_skips_frame() {
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        editor.file.file_lines = vec![String::new()];
+        editor.file_lines_replace(vec![String::new()]);
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
@@ -561,9 +551,9 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        let command_ui_frame = frame.command_ui.unwrap();
-        assert_eq!(command_ui_frame.line, ":x");
-        assert_eq!(command_ui_frame.cursor_x, 2);
+        let command_ui_frame = frame.command_ui().unwrap();
+        assert_eq!(command_ui_frame.line(), ":x");
+        assert_eq!(command_ui_frame.cursor_x(), 2);
     }
 
     #[test]
@@ -590,7 +580,7 @@ mod tests {
     #[test]
     fn noop_delete_under_cursor_skips_frame() {
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        editor.file.file_lines = vec![String::new()];
+        editor.file_lines_replace(vec![String::new()]);
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
@@ -640,7 +630,7 @@ mod tests {
     #[test]
     fn save_as_writes_file_and_updates_status() {
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        editor.file.file_lines = vec![String::from("hello")];
+        editor.file_lines_replace(vec![String::from("hello")]);
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
@@ -659,15 +649,15 @@ mod tests {
             &mut command_ui,
         );
         if let RequestOutcome::FrameAndAck(ack) = outcome {
-            assert_eq!(ack.kind, AckKind::SaveAs);
+            assert_eq!(ack.kind(), AckKind::SaveAs);
             assert_eq!(
-                ack.message,
+                ack.message(),
                 StatusMessage::Text {
                     text: String::from("saved"),
                 }
             );
             assert_eq!(
-                ack.file_path,
+                ack.file_path(),
                 FilePath::Provided {
                     path: path.to_string_lossy().to_string(),
                 }
@@ -693,7 +683,7 @@ mod tests {
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
-        editor.file.file_lines = vec![String::from("changed")];
+        editor.file_lines_replace(vec![String::from("changed")]);
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
@@ -721,7 +711,7 @@ mod tests {
             &mut command_ui,
         );
         if let RequestOutcome::FrameAndAck(ack) = outcome {
-            assert_eq!(ack.kind, AckKind::Save);
+            assert_eq!(ack.kind(), AckKind::Save);
             assert!(matches!(mode, EditorMode::Normal));
             assert_eq!(
                 status,
@@ -743,7 +733,7 @@ mod tests {
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
-        editor.file.file_lines = vec![String::from("changed")];
+        editor.file_lines_replace(vec![String::from("changed")]);
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
@@ -779,7 +769,7 @@ mod tests {
             &mut command_ui,
         );
         if let RequestOutcome::FrameAndAck(ack) = outcome {
-            assert_eq!(ack.kind, AckKind::Save);
+            assert_eq!(ack.kind(), AckKind::Save);
             assert!(matches!(mode, EditorMode::Normal));
             assert_eq!(
                 status,
@@ -802,7 +792,7 @@ mod tests {
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
-        editor.file.file_lines = vec![String::from("changed")];
+        editor.file_lines_replace(vec![String::from("changed")]);
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
@@ -839,7 +829,7 @@ mod tests {
             &mut command_ui,
         );
         if let RequestOutcome::FrameAndAck(ack) = outcome {
-            assert_eq!(ack.kind, AckKind::Save);
+            assert_eq!(ack.kind(), AckKind::Save);
             assert_eq!(
                 status,
                 StatusMessage::Text {
@@ -979,33 +969,35 @@ mod tests {
         );
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        let command_ui_frame = frame.command_ui.expect("expected command ui frame");
-        assert_eq!(command_ui_frame.line, ":s");
-        assert_eq!(command_ui_frame.cursor_x, 2);
-        assert!(command_ui_frame.focus_on_list);
-        assert!(command_ui_frame.selected_index.is_some());
-        assert!(!command_ui_frame.list_items.is_empty());
+        let command_ui_frame = frame
+            .command_ui()
+            .expect("expected command ui frame");
+        assert_eq!(command_ui_frame.line(), ":s");
+        assert_eq!(command_ui_frame.cursor_x(), 2);
+        assert!(command_ui_frame.focus_on_list());
+        assert!(command_ui_frame.selected_index().is_some());
+        assert!(!command_ui_frame.list_items().is_empty());
     }
 
     #[test]
     fn frame_cursor_positions_respect_offsets() {
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        editor.file.file_lines = vec![
+        editor.file_lines_replace(vec![
             String::from("aaa"),
             String::from("bbb"),
             String::from("ccc"),
             String::from("ddd"),
-        ];
-        editor.cursor_x = 5;
-        editor.cursor_y = 3;
+        ]);
+        editor.cursor_position_store(CursorPosition::new(5, 3));
 
         let mode = EditorMode::Normal;
         let status = StatusMessage::Empty;
         let size = (10, 6);
 
         let frame = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame.cursor.col, 5);
-        assert_eq!(frame.cursor.row, 4);
+        let cursor = frame.cursor();
+        assert_eq!(cursor.column(), 5);
+        assert_eq!(cursor.row(), 4);
     }
 
     #[test]
@@ -1027,8 +1019,8 @@ mod tests {
             &mut command_ui,
         );
         let frame_command = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        assert_eq!(frame_command.mode, "COMMAND");
-        assert!(frame_command.command_ui.is_some());
+        assert_eq!(frame_command.mode(), "COMMAND");
+        assert!(frame_command.command_ui().is_some());
 
         let _ = handle_request(
             RpcRequest::ModeSet {
@@ -1041,8 +1033,8 @@ mod tests {
             &mut command_ui,
         );
         let frame_normal = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame_normal.mode, "NORMAL");
-        assert!(frame_normal.command_ui.is_none());
+        assert_eq!(frame_normal.mode(), "NORMAL");
+        assert!(frame_normal.command_ui().is_none());
     }
 
     #[test]
@@ -1053,7 +1045,7 @@ mod tests {
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
-        editor.file.file_lines = vec![String::from("changed")];
+        editor.file_lines_replace(vec![String::from("changed")]);
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
@@ -1068,15 +1060,15 @@ mod tests {
             &mut command_ui,
         );
         if let RequestOutcome::Ack(ack) = outcome {
-            assert_eq!(ack.kind, AckKind::Save);
+            assert_eq!(ack.kind(), AckKind::Save);
             assert_eq!(
-                ack.message,
+                ack.message(),
                 StatusMessage::Text {
                     text: String::from("saved"),
                 }
             );
             assert_eq!(
-                ack.file_path,
+                ack.file_path(),
                 FilePath::Provided {
                     path: path.to_string_lossy().to_string(),
                 }

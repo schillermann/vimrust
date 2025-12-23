@@ -3,25 +3,76 @@ use std::io;
 use crate::file::File;
 use vimrust_protocol::FilePath;
 use vimrust_protocol::MoveDirection;
+use vimrust_protocol::StatusMessage;
 
 const DEFAULT_TAB_STOP: u16 = 4;
 const VERSION: &str = "0.1.0";
 
 pub struct EditorView<'a> {
-    pub file: &'a File,
-    pub cursor_x: u16,
-    pub cursor_y: u16,
-    pub columns_offset: u16,
-    pub rows_offset: u16,
+    file: &'a File,
+    cursor_x: u16,
+    cursor_y: u16,
+    columns_offset: u16,
+    rows_offset: u16,
+}
+
+impl<'a> EditorView<'a> {
+    pub fn file(&self) -> &File {
+        self.file
+    }
+
+    pub fn cursor_x(&self) -> u16 {
+        self.cursor_x
+    }
+
+    pub fn cursor_y(&self) -> u16 {
+        self.cursor_y
+    }
+
+    pub fn columns_offset(&self) -> u16 {
+        self.columns_offset
+    }
+
+    pub fn rows_offset(&self) -> u16 {
+        self.rows_offset
+    }
 }
 
 pub struct Editor {
-    pub cursor_x: u16,
-    pub cursor_y: u16,
-    pub columns_offset: u16,
-    pub rows_offset: u16,
-    pub file: File,
+    cursor_x: u16,
+    cursor_y: u16,
+    columns_offset: u16,
+    rows_offset: u16,
+    file: File,
     tab_stop: u16,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct CursorPosition {
+    column: u16,
+    row: u16,
+}
+
+impl CursorPosition {
+    pub fn new(column: u16, row: u16) -> Self {
+        Self { column, row }
+    }
+}
+
+pub struct FileChange {
+    changed: bool,
+}
+
+impl FileChange {
+    pub fn status_or(&self, status: &StatusMessage) -> StatusMessage {
+        if self.changed {
+            StatusMessage::Text {
+                text: String::from("modified"),
+            }
+        } else {
+            status.clone()
+        }
+    }
 }
 
 impl Editor {
@@ -59,8 +110,22 @@ impl Editor {
         Ok(result)
     }
 
-    pub fn file_changed(&self) -> bool {
-        self.file.changed()
+    pub fn file_location(&self) -> FilePath {
+        self.file.location()
+    }
+
+    pub fn file_lines_clone(&self) -> Vec<String> {
+        self.file.lines_clone()
+    }
+
+    pub fn cursor_position(&self) -> CursorPosition {
+        CursorPosition::new(self.cursor_x, self.cursor_y)
+    }
+
+    pub fn change_status(&self) -> FileChange {
+        FileChange {
+            changed: self.file.changed(),
+        }
     }
 
     fn scroll_offsets_compute(&self, number_of_columns: u16, number_of_rows: u16) -> (u16, u16) {
@@ -101,11 +166,11 @@ impl Editor {
     ) -> Vec<String> {
         let mut rows = Vec::with_capacity(number_of_rows as usize);
         for row_number in 0..number_of_rows {
-            let file_line_number = row_number.saturating_add(view.rows_offset) as usize;
+            let file_line_number = row_number.saturating_add(view.rows_offset()) as usize;
 
-            if file_line_number >= view.file.len() {
+            if file_line_number >= view.file().line_total() {
                 let mut line = String::from("~");
-                if view.file.len() == 0 && row_number == number_of_rows / 3 {
+                if view.file().line_total() == 0 && row_number == number_of_rows / 3 {
                     let mut welcome = format!("VimRust -- version {}", VERSION);
                     if welcome.len() > number_of_columns as usize {
                         welcome.truncate(number_of_columns as usize);
@@ -122,11 +187,11 @@ impl Editor {
                     line.truncate(number_of_columns as usize);
                 }
                 rows.push(line);
-            } else if let Some(file_line) = view.file.line(file_line_number) {
+            } else if let Some(file_line) = view.file().line(file_line_number) {
                 let displayable_line = self.displayable_line(file_line);
                 let visible_slice: String = displayable_line
                     .chars()
-                    .skip(view.columns_offset as usize)
+                    .skip(view.columns_offset() as usize)
                     .take(number_of_columns as usize)
                     .collect();
                 rows.push(visible_slice);
@@ -143,7 +208,7 @@ impl Editor {
             self.columns_offset,
             self.rows_offset,
         );
-        let file_lines_len = self.file.len().min(u16::MAX as usize) as u16;
+        let file_lines_len = self.file.line_total().min(u16::MAX as usize) as u16;
 
         match direction {
             MoveDirection::Left => {
@@ -222,11 +287,7 @@ impl Editor {
 
     pub fn char_insert(&mut self, ch: char) -> bool {
         let target_line = self.cursor_y as usize;
-        if target_line >= self.file.len() {
-            self.file
-                .file_lines
-                .resize_with(target_line.saturating_add(1), String::new);
-        }
+        self.file.line_ensure(target_line);
 
         let insert_at = match self.file.line(target_line) {
             Some(line) => self.column_to_char_index_render(line, self.cursor_x),
@@ -234,7 +295,7 @@ impl Editor {
         };
         let advance = self.char_render_width(ch, self.cursor_x);
 
-        if let Some(line) = self.file.file_lines.get_mut(target_line) {
+        if let Some(line) = self.file.line_at_mut(target_line) {
             let previous_len = line.len();
             let previous_cursor_x = self.cursor_x;
             line.insert(insert_at, ch);
@@ -256,7 +317,7 @@ impl Editor {
 
         if self.cursor_x == 0 {
             let current_index = self.cursor_y as usize;
-            if current_index == 0 || current_index >= self.file.len() {
+            if current_index == 0 || current_index >= self.file.line_total() {
                 return false;
             }
             if let Some(current_line) = self.file.line(current_index).cloned() {
@@ -264,13 +325,10 @@ impl Editor {
                     Some(prev) => self.visual_line_length(prev),
                     None => 0,
                 };
-                if let Some(previous_line) = self
-                    .file
-                    .file_lines
-                    .get_mut(current_index.saturating_sub(1))
+                if let Some(previous_line) = self.file.line_at_mut(current_index.saturating_sub(1))
                 {
                     previous_line.push_str(&current_line);
-                    self.file.file_lines.remove(current_index);
+                    self.file.line_remove(current_index);
                     self.cursor_y = self.cursor_y.saturating_sub(1);
                     self.cursor_x = new_cursor_x;
                     self.file.touch();
@@ -291,7 +349,7 @@ impl Editor {
             None => (0, 0),
         };
 
-        if let Some(line) = self.file.file_lines.get_mut(self.cursor_y as usize)
+        if let Some(line) = self.file.line_at_mut(self.cursor_y as usize)
             && delete_idx < line.len()
         {
             line.remove(delete_idx);
@@ -309,7 +367,7 @@ impl Editor {
             None => return false,
         };
 
-        if let Some(line) = self.file.file_lines.get_mut(self.cursor_y as usize)
+        if let Some(line) = self.file.line_at_mut(self.cursor_y as usize)
             && delete_idx < line.len()
         {
             line.remove(delete_idx);
@@ -318,12 +376,12 @@ impl Editor {
         }
 
         let current_index = self.cursor_y as usize;
-        if current_index + 1 < self.file.len()
+        if current_index + 1 < self.file.line_total()
             && let Some(next_line) = self.file.line(current_index + 1).cloned()
-            && let Some(current_line) = self.file.file_lines.get_mut(current_index)
+            && let Some(current_line) = self.file.line_at_mut(current_index)
         {
             current_line.push_str(&next_line);
-            self.file.file_lines.remove(current_index + 1);
+            self.file.line_remove(current_index + 1);
             self.file.touch();
             return true;
         }
@@ -341,7 +399,7 @@ impl Editor {
 
     fn file_line_length(&self, cursor_y: u16) -> u16 {
         let line_index = cursor_y as usize;
-        if line_index >= self.file.len() {
+        if line_index >= self.file.line_total() {
             return 0;
         }
 
@@ -561,5 +619,17 @@ impl Editor {
     fn line_length(&self, line: &str) -> u16 {
         // Wrapper kept separate in case line length rules diverge from visual length later.
         self.visual_line_length(line)
+    }
+}
+
+#[cfg(test)]
+impl Editor {
+    pub fn file_lines_replace(&mut self, lines: Vec<String>) {
+        self.file.lines_replace(lines);
+    }
+
+    pub fn cursor_position_store(&mut self, position: CursorPosition) {
+        self.cursor_x = position.column;
+        self.cursor_y = position.row;
     }
 }
