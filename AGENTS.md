@@ -129,3 +129,77 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
   - remove setters and move behavior into the object,
   - replace booleans with polymorphic objects,
   - eliminate static helpers by introducing objects.
+
+---
+
+## Git commit message convention
+
+All commits **must** follow the **Conventional Commits v1.0.0** specification.
+
+### Commit message format
+
+```
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+### Allowed commit types
+
+- `feat` – a new feature
+- `fix` – a bug fix
+- `docs` – documentation only changes
+- `style` – formatting changes (no code logic changes)
+- `refactor` – code changes that neither fix a bug nor add a feature
+- `perf` – performance improvements
+- `test` – adding or correcting tests
+- `build` – changes affecting the build system or external dependencies
+- `ci` – changes to CI configuration or scripts
+- `chore` – maintenance tasks that do not affect runtime behavior
+
+### Scope (optional but encouraged)
+
+- The scope should be a **noun** describing the affected area:
+  - `agents`
+  - `rpc`
+  - `infrastructure`
+  - `docs`
+
+Example:
+```
+refactor(agents): remove boolean predicate methods
+```
+
+### Description rules
+
+- Use the **imperative mood** (“add”, “remove”, “enforce”, “disallow”)
+- Do **not** capitalize the first letter
+- Do **not** end with a period
+- Keep it concise and specific
+
+### Commit body (optional)
+
+- Explain **why** the change was made, not how
+- Wrap lines at ~72 characters
+- Reference design rules or constraints when relevant
+
+### Breaking changes
+
+- Breaking changes **must** be explicitly marked
+- Use `!` after the type or a `BREAKING CHANGE:` footer
+
+Example:
+```
+refactor(agents)!: forbid boolean-returning query methods
+
+BREAKING CHANGE: methods returning bool for state inspection
+are no longer allowed; replace them with object-returning queries.
+```
+
+### Enforcement expectations
+
+- Every commit must be parseable by Conventional Commits tooling
+- Agents should **reject** commits that do not follow this format
+- Squash merges must preserve a valid Conventional Commit message
