@@ -1,7 +1,4 @@
-use crate::{
-    command_line::CommandLine,
-    command_list::CommandList,
-};
+use crate::{command_line::CommandLine, command_list::CommandList};
 use vimrust_protocol::{CommandListItemFrame, CommandUiAction, CommandUiFrame};
 
 pub struct CommandUiState {
@@ -31,8 +28,8 @@ impl CommandUiState {
         self.focus_on_list = false;
     }
 
-    pub fn line(&self) -> &str {
-        self.command_line.command_line()
+    pub fn command_text(&self) -> &str {
+        self.command_line.text()
     }
 
     pub fn clear(&mut self) {
@@ -42,7 +39,8 @@ impl CommandUiState {
     }
 
     pub fn list_scroll_adjust(&mut self, visible_rows: usize) {
-        self.command_list.adjust_scroll_for_visible_rows(visible_rows);
+        self.command_list
+            .adjust_scroll_for_visible_rows(visible_rows);
     }
 
     pub fn apply_action(&mut self, action: CommandUiAction, list_rows: usize) -> bool {
@@ -94,7 +92,7 @@ impl CommandUiState {
                 true
             }
             CommandUiAction::MoveSelectionUp | CommandUiAction::MoveSelectionDown => {
-                let matches = self.command_list.filter(self.command_line.command_line());
+                let matches = self.command_list.filter(self.command_line.text());
                 if matches.is_empty() {
                     self.command_list.reset_selection();
                     self.focus_on_list = false;
@@ -102,14 +100,12 @@ impl CommandUiState {
                 }
 
                 self.focus_on_list = true;
-                match self.command_list.command_selected_index() {
+                match self.command_list.selection() {
                     None => match action {
-                        CommandUiAction::MoveSelectionDown => {
-                            self.command_list.set_selected_index(0)
-                        }
+                        CommandUiAction::MoveSelectionDown => self.command_list.select_index(0),
                         CommandUiAction::MoveSelectionUp => self
                             .command_list
-                            .set_selected_index(matches.len().saturating_sub(1)),
+                            .select_index(matches.len().saturating_sub(1)),
                         _ => {}
                     },
                     Some(current_index) => {
@@ -117,11 +113,11 @@ impl CommandUiState {
                         match action {
                             CommandUiAction::MoveSelectionUp if current_index > 0 => {
                                 self.command_list
-                                    .set_selected_index(current_index.saturating_sub(1));
+                                    .select_index(current_index.saturating_sub(1));
                             }
                             CommandUiAction::MoveSelectionDown if current_index < max_index => {
                                 self.command_list
-                                    .set_selected_index(current_index.saturating_add(1));
+                                    .select_index(current_index.saturating_add(1));
                             }
                             _ => {}
                         }
@@ -131,23 +127,28 @@ impl CommandUiState {
                 true
             }
             CommandUiAction::SelectFromList => {
-                    let matches = self.command_list.filter(self.command_line.command_line());
-                    if self.focus_on_list
-                        && !matches.is_empty()
-                        && let Some(selected) = self.command_list.command_selected_index()
+                let matches = self.command_list.filter(self.command_line.text());
+                if self.focus_on_list
+                    && !matches.is_empty()
+                    && let Some(selected) = self.command_list.selection()
                 {
                     let index = selected.min(matches.len().saturating_sub(1));
                     if let Some(entry) = matches.get(index) {
-                        self.command_line.set_content(format!(":{}", entry.name));
+                        self.command_line.set_content(format!(":{}", entry.label()));
                         self.focus_on_list = false;
 
-                        let updated_matches =
-                            self.command_list.filter(self.command_line.command_line());
-                        if let Some(updated_index) = updated_matches
-                            .iter()
-                            .position(|candidate| candidate.name == entry.name)
-                        {
-                            self.command_list.set_selected_index(updated_index);
+                        let updated_matches = self.command_list.filter(self.command_line.text());
+                        let mut updated_index = None;
+                        let mut idx = 0;
+                        while idx < updated_matches.len() {
+                            if updated_matches[idx].label() == entry.label() {
+                                updated_index = Some(idx);
+                                break;
+                            }
+                            idx += 1;
+                        }
+                        if let Some(updated_index) = updated_index {
+                            self.command_list.select_index(updated_index);
                             self.command_list.adjust_scroll_for_visible_rows(list_rows);
                         }
                         return true;
@@ -160,29 +161,31 @@ impl CommandUiState {
     }
 
     pub fn frame(&self) -> CommandUiFrame {
-        let matches = self.command_list.filter(self.command_line.command_line());
-        let selected_index = self.command_list.command_selected_index().and_then(|idx| {
+        let matches = self.command_list.filter(self.command_line.text());
+        let selected_index = if let Some(idx) = self.command_list.selection() {
             if matches.is_empty() {
                 None
             } else {
                 Some(idx.min(matches.len().saturating_sub(1)))
             }
-        });
+        } else {
+            None
+        };
         let mut list_items = Vec::with_capacity(matches.len());
         for entry in matches {
             list_items.push(CommandListItemFrame::new(
-                entry.name.to_string(),
-                entry.description.to_string(),
+                entry.label().to_string(),
+                entry.detail().to_string(),
             ));
         }
 
         CommandUiFrame::new(
-            self.command_line.command_line().to_string(),
-            self.command_line.cursor_x(),
+            self.command_line.text().to_string(),
+            self.command_line.cursor_column(),
             self.focus_on_list,
             list_items,
             selected_index,
-            self.command_list.command_scroll_offset(),
+            self.command_list.scroll_position(),
         )
     }
 }

@@ -30,7 +30,7 @@ fn rpc_stdio_end_to_end_frame_ack_error() {
     let response = read_response(&mut reader);
     match response {
         RpcResponse::Frame(frame) => {
-            assert_eq!(frame.size(), (80, 24));
+            assert_eq!(frame.viewport(), (80, 24));
         }
         _ => panic!("expected frame"),
     }

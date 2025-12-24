@@ -1,25 +1,9 @@
 use std::io::{self, BufRead, Write};
 
-use crate::{
-    EditorMode,
-    command_ui_state::CommandUiState,
-    editor::Editor,
-    file::File,
-};
+use crate::{EditorMode, command_ui_state::CommandUiState, editor::Editor, file::File};
 use vimrust_protocol::{
-    Ack,
-    AckKind,
-    CommandUiAction,
-    CommandUiFrame,
-    Cursor,
-    DeleteKind,
-    FilePath,
-    Frame,
-    PROTOCOL_VERSION,
-    RpcMode,
-    RpcRequest,
-    RpcResponse,
-    StatusMessage,
+    Ack, AckKind, CommandUiAction, CommandUiFrame, Cursor, DeleteKind, FilePath, Frame,
+    PROTOCOL_VERSION, RpcMode, RpcRequest, RpcResponse, StatusMessage,
 };
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
@@ -184,22 +168,19 @@ pub fn handle_request(
                 StatusMessage::Text {
                     text: String::from("opened"),
                 },
-                editor.file_location(),
+                editor.file_path(),
             );
             RequestOutcome::FrameAndAck(ack)
         }
         RpcRequest::FileSave => {
-            let previous_path = editor.file_location();
+            let previous_path = editor.file_path();
             let mut saved_path = FilePath::Missing;
             match editor.file_save(&mut saved_path) {
                 Ok(msg) => {
                     *status = StatusMessage::Text { text: msg.clone() };
-                    let ack = Ack::new(
-                        AckKind::Save,
-                        StatusMessage::Text { text: msg },
-                        saved_path,
-                    );
-                    if editor.file_location() != previous_path {
+                    let ack =
+                        Ack::new(AckKind::Save, StatusMessage::Text { text: msg }, saved_path);
+                    if editor.file_path() != previous_path {
                         RequestOutcome::FrameAndAck(ack)
                     } else {
                         RequestOutcome::Ack(ack)
@@ -210,7 +191,7 @@ pub fn handle_request(
         }
         RpcRequest::FileSaveAs { path } => {
             let mut new_file = File::new(FilePath::Provided { path });
-            new_file.lines_replace(editor.file_lines_clone());
+            new_file.lines_replace(editor.file_lines_snapshot());
             match new_file.save() {
                 Ok(msg) => {
                     *editor = Editor::new(new_file);
@@ -218,7 +199,7 @@ pub fn handle_request(
                     let ack = Ack::new(
                         AckKind::SaveAs,
                         StatusMessage::Text { text: msg },
-                        editor.file_location(),
+                        editor.file_path(),
                     );
                     RequestOutcome::FrameAndAck(ack)
                 }
@@ -291,41 +272,38 @@ pub fn handle_request(
                     command_ui.line_overwrite(line.clone());
                     line
                 }
-                None => command_ui.line().to_string(),
+                None => command_ui.command_text().to_string(),
             };
-            let command = source_line
-                .trim_start_matches(':')
-                .trim()
-                .to_lowercase();
+            let command = source_line.trim_start_matches(':').trim().to_lowercase();
             match command.as_str() {
                 "s" | "save" => {
                     let mut saved_path = FilePath::Missing;
                     match editor.file_save(&mut saved_path) {
-                    Ok(msg) => {
-                        *status = StatusMessage::Text { text: msg.clone() };
-                        if matches!(mode, EditorMode::Command) {
-                            command_ui.clear();
+                        Ok(msg) => {
+                            *status = StatusMessage::Text { text: msg.clone() };
+                            if matches!(mode, EditorMode::Command) {
+                                command_ui.clear();
+                            }
+                            *mode = EditorMode::Normal;
+                            let ack = Ack::new(
+                                AckKind::Save,
+                                StatusMessage::Text { text: msg },
+                                saved_path,
+                            );
+                            RequestOutcome::FrameAndAck(ack)
                         }
-                        *mode = EditorMode::Normal;
-                        let ack = Ack::new(
-                            AckKind::Save,
-                            StatusMessage::Text { text: msg },
-                            saved_path,
-                        );
-                        RequestOutcome::FrameAndAck(ack)
+                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
                     }
-                    Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
-                }
                 }
                 "sq" => {
                     let mut saved_path = FilePath::Missing;
                     match editor.file_save(&mut saved_path) {
-                    Ok(msg) => {
-                        *status = StatusMessage::Text { text: msg.clone() };
-                        RequestOutcome::Quit
+                        Ok(msg) => {
+                            *status = StatusMessage::Text { text: msg.clone() };
+                            RequestOutcome::Quit
+                        }
+                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
                     }
-                    Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
-                }
                 }
                 "q" | "quit" => RequestOutcome::Quit,
                 _ => {
@@ -376,12 +354,12 @@ pub fn build_frame(
     let rows = editor.rows_render(&view, size.0, usable_rows);
 
     let cursor_col = view
-        .cursor_x()
-        .saturating_sub(view.columns_offset())
+        .cursor_column()
+        .saturating_sub(view.column_offset())
         .min(size.0.saturating_sub(1));
     let base_row = view
-        .cursor_y()
-        .saturating_sub(view.rows_offset())
+        .cursor_row()
+        .saturating_sub(view.row_offset())
         .saturating_add(1);
     let cursor_row = base_row.max(1).min(size.1.saturating_sub(1).max(1));
 
@@ -392,7 +370,7 @@ pub fn build_frame(
         Cursor::new(cursor_col, cursor_row),
         rows,
         status,
-        view.file().location(),
+        view.file_ref().path(),
         size,
         command_ui,
         PROTOCOL_VERSION,
@@ -445,7 +423,7 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame.rows().get(0).map(String::as_str), Some("hi"));
+        assert_eq!(frame.editor_rows().get(0).map(String::as_str), Some("hi"));
     }
 
     #[test]
@@ -551,9 +529,9 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        let command_ui_frame = frame.command_ui().unwrap();
-        assert_eq!(command_ui_frame.line(), ":x");
-        assert_eq!(command_ui_frame.cursor_x(), 2);
+        let command_ui_frame = frame.command_ui_frame().unwrap();
+        assert_eq!(command_ui_frame.command_text(), ":x");
+        assert_eq!(command_ui_frame.cursor_column(), 2);
     }
 
     #[test]
@@ -657,7 +635,7 @@ mod tests {
                 }
             );
             assert_eq!(
-                ack.file_path(),
+                ack.path(),
                 FilePath::Provided {
                     path: path.to_string_lossy().to_string(),
                 }
@@ -969,14 +947,12 @@ mod tests {
         );
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        let command_ui_frame = frame
-            .command_ui()
-            .expect("expected command ui frame");
-        assert_eq!(command_ui_frame.line(), ":s");
-        assert_eq!(command_ui_frame.cursor_x(), 2);
-        assert!(command_ui_frame.focus_on_list());
-        assert!(command_ui_frame.selected_index().is_some());
-        assert!(!command_ui_frame.list_items().is_empty());
+        let command_ui_frame = frame.command_ui_frame().expect("expected command ui frame");
+        assert_eq!(command_ui_frame.command_text(), ":s");
+        assert_eq!(command_ui_frame.cursor_column(), 2);
+        assert!(command_ui_frame.list_focus());
+        assert!(command_ui_frame.selected_item().is_some());
+        assert!(!command_ui_frame.command_items().is_empty());
     }
 
     #[test]
@@ -995,9 +971,9 @@ mod tests {
         let size = (10, 6);
 
         let frame = build_frame(&editor, &mode, &status, size, None);
-        let cursor = frame.cursor();
-        assert_eq!(cursor.column(), 5);
-        assert_eq!(cursor.row(), 4);
+        let cursor = frame.cursor_position();
+        assert_eq!(cursor.column_index(), 5);
+        assert_eq!(cursor.row_index(), 4);
     }
 
     #[test]
@@ -1019,8 +995,8 @@ mod tests {
             &mut command_ui,
         );
         let frame_command = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        assert_eq!(frame_command.mode(), "COMMAND");
-        assert!(frame_command.command_ui().is_some());
+        assert_eq!(frame_command.mode_label(), "COMMAND");
+        assert!(frame_command.command_ui_frame().is_some());
 
         let _ = handle_request(
             RpcRequest::ModeSet {
@@ -1033,8 +1009,8 @@ mod tests {
             &mut command_ui,
         );
         let frame_normal = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame_normal.mode(), "NORMAL");
-        assert!(frame_normal.command_ui().is_none());
+        assert_eq!(frame_normal.mode_label(), "NORMAL");
+        assert!(frame_normal.command_ui_frame().is_none());
     }
 
     #[test]
@@ -1068,7 +1044,7 @@ mod tests {
                 }
             );
             assert_eq!(
-                ack.file_path(),
+                ack.path(),
                 FilePath::Provided {
                     path: path.to_string_lossy().to_string(),
                 }

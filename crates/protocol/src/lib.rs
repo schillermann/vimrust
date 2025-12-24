@@ -166,7 +166,7 @@ impl Ack {
         self.message.clone()
     }
 
-    pub fn file_path(&self) -> FilePath {
+    pub fn path(&self) -> FilePath {
         self.file_path.clone()
     }
 }
@@ -207,39 +207,39 @@ impl Frame {
         }
     }
 
-    pub fn mode(&self) -> &str {
+    pub fn mode_label(&self) -> &str {
         &self.mode
     }
 
-    pub fn cursor(&self) -> Cursor {
+    pub fn cursor_position(&self) -> Cursor {
         self.cursor.clone()
     }
 
-    pub fn rows(&self) -> &[String] {
+    pub fn editor_rows(&self) -> &[String] {
         &self.rows
     }
 
-    pub fn status(&self) -> StatusMessage {
+    pub fn status_message(&self) -> StatusMessage {
         self.status.clone()
     }
 
-    pub fn file_path(&self) -> FilePath {
+    pub fn path(&self) -> FilePath {
         self.file_path.clone()
     }
 
-    pub fn size(&self) -> (u16, u16) {
+    pub fn viewport(&self) -> (u16, u16) {
         self.size
     }
 
-    pub fn command_ui(&self) -> Option<&CommandUiFrame> {
+    pub fn command_ui_frame(&self) -> Option<&CommandUiFrame> {
         self.command_ui.as_ref()
     }
 
-    pub fn protocol_version(&self) -> u32 {
+    pub fn version(&self) -> u32 {
         self.protocol_version
     }
 
-    pub fn status_store(&mut self, status: StatusMessage) {
+    pub fn status_update(&mut self, status: StatusMessage) {
         self.status = status;
     }
 }
@@ -255,11 +255,11 @@ impl Cursor {
         Self { col, row }
     }
 
-    pub fn column(&self) -> u16 {
+    pub fn column_index(&self) -> u16 {
         self.col
     }
 
-    pub fn row(&self) -> u16 {
+    pub fn row_index(&self) -> u16 {
         self.row
     }
 }
@@ -293,27 +293,27 @@ impl CommandUiFrame {
         }
     }
 
-    pub fn line(&self) -> &str {
+    pub fn command_text(&self) -> &str {
         &self.line
     }
 
-    pub fn cursor_x(&self) -> u16 {
+    pub fn cursor_column(&self) -> u16 {
         self.cursor_x
     }
 
-    pub fn focus_on_list(&self) -> bool {
+    pub fn list_focus(&self) -> bool {
         self.focus_on_list
     }
 
-    pub fn list_items(&self) -> &[CommandListItemFrame] {
+    pub fn command_items(&self) -> &[CommandListItemFrame] {
         &self.list_items
     }
 
-    pub fn selected_index(&self) -> Option<usize> {
+    pub fn selected_item(&self) -> Option<usize> {
         self.selected_index
     }
 
-    pub fn scroll_offset(&self) -> usize {
+    pub fn scroll_position(&self) -> usize {
         self.scroll_offset
     }
 }
@@ -329,11 +329,11 @@ impl CommandListItemFrame {
         Self { name, description }
     }
 
-    pub fn name(&self) -> &str {
+    pub fn label(&self) -> &str {
         &self.name
     }
 
-    pub fn description(&self) -> &str {
+    pub fn detail(&self) -> &str {
         &self.description
     }
 }

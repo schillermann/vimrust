@@ -77,7 +77,7 @@ impl<'a> Ui<'a> {
 
         self.updated = false;
 
-        let (number_of_columns, number_of_rows) = frame.size();
+        let (number_of_columns, number_of_rows) = frame.viewport();
         if number_of_rows == 0 {
             return Ok(());
         }
@@ -88,18 +88,15 @@ impl<'a> Ui<'a> {
         {
             self.terminal.queue_add_command(Hide)?;
 
-            draw_command_line(
-                self.terminal,
-                number_of_columns,
-                frame
-                    .command_ui()
-                    .map(|command_ui| command_ui.line())
-                    .unwrap_or(""),
-            )?;
+            let command_text = match frame.command_ui_frame() {
+                Some(command_ui) => command_ui.command_text(),
+                None => "",
+            };
+            draw_command_line(self.terminal, number_of_columns, command_text)?;
 
             if usable_rows > 0 {
                 if matches!(self.mode, EditorMode::Command) {
-                    if let Some(cmd_ui) = frame.command_ui() {
+                    if let Some(cmd_ui) = frame.command_ui_frame() {
                         self.draw_command_list_from_frame(
                             cmd_ui,
                             number_of_columns,
@@ -108,7 +105,7 @@ impl<'a> Ui<'a> {
                         )?;
                     }
                 } else {
-                    for (idx, row) in frame.rows().iter().enumerate() {
+                    for (idx, row) in frame.editor_rows().iter().enumerate() {
                         if idx as u16 >= usable_rows {
                             break;
                         }
@@ -122,45 +119,49 @@ impl<'a> Ui<'a> {
             }
 
             if number_of_rows > 1 {
-                self.status_line.file_status_update(frame.status());
+                self.status_line.file_status_update(frame.status_message());
                 self.status_line.draw(
                     self.terminal,
                     &self.mode,
-                    &frame.file_path(),
+                    &frame.path(),
                     number_of_columns,
                     number_of_rows,
                 )?;
             }
 
             let (cursor_col, cursor_row) = match self.mode {
-                EditorMode::Command => frame
-                    .command_ui()
-                    .map(|cmd_ui| {
-                        if cmd_ui.focus_on_list()
-                            && let Some(selected) = cmd_ui.selected_index()
-                        {
-                            let relative_row =
-                                selected.saturating_sub(cmd_ui.scroll_offset()) as u16;
-                            let list_row = 1u16
-                                .saturating_add(1)
-                                .saturating_add(2)
-                                .saturating_add(relative_row)
-                                .min(number_of_rows.saturating_sub(1));
-                            return (0, list_row);
-                        }
-                        (
+                EditorMode::Command => {
+                    if let Some(cmd_ui) = frame.command_ui_frame() {
+                        let mut command_cursor = (
                             cmd_ui
-                                .cursor_x()
+                                .cursor_column()
                                 .saturating_add(1)
                                 .min(number_of_columns.saturating_sub(1)),
                             0,
-                        )
-                    })
-                    .unwrap_or((0, 0)),
+                        );
+                        if cmd_ui.list_focus() {
+                            if let Some(selected) = cmd_ui.selected_item() {
+                                let relative_row =
+                                    selected.saturating_sub(cmd_ui.scroll_position()) as u16;
+                                let list_row = 1u16
+                                    .saturating_add(1)
+                                    .saturating_add(2)
+                                    .saturating_add(relative_row)
+                                    .min(number_of_rows.saturating_sub(1));
+                                command_cursor = (0, list_row);
+                            }
+                        }
+                        command_cursor
+                    } else {
+                        (0, 0)
+                    }
+                }
                 _ => {
-                    let cursor = frame.cursor();
-                    let cursor_col = cursor.column().min(number_of_columns.saturating_sub(1));
-                    let base_row = cursor.row();
+                    let cursor = frame.cursor_position();
+                    let cursor_col = cursor
+                        .column_index()
+                        .min(number_of_columns.saturating_sub(1));
+                    let base_row = cursor.row_index();
                     // Keep the edit cursor off the command-line row (row 0).
                     let min_editor_row = 1;
                     let max_editor_row = number_of_rows.saturating_sub(1).max(min_editor_row);
@@ -187,16 +188,20 @@ impl<'a> Ui<'a> {
             return Ok(());
         }
 
-        let matches = cmd_ui.list_items();
+        let matches = cmd_ui.command_items();
         let available_rows = number_of_rows.saturating_sub(3); // blank + header + divider
         let inner_width = number_of_columns.saturating_sub(2); // left/right padding
-        let query = Self::command_query_from_input(cmd_ui.line());
-        let name_width = matches
-            .iter()
-            .map(|c| c.name().len() as u16)
-            .max()
-            .unwrap_or(0)
-            .min(inner_width);
+        let query = Self::command_query_from_input(cmd_ui.command_text());
+        let mut name_width = 0;
+        let mut idx = 0;
+        while idx < matches.len() {
+            let entry_len = matches[idx].label().len() as u16;
+            if entry_len > name_width {
+                name_width = entry_len;
+            }
+            idx += 1;
+        }
+        let name_width = name_width.min(inner_width);
         let command_col_width = name_width.max(6);
         let desc_col_width = inner_width
             .saturating_sub(command_col_width)
@@ -247,16 +252,16 @@ impl<'a> Ui<'a> {
             self.terminal
                 .queue_add_command(Clear(ClearType::CurrentLine))?;
 
-            if let Some(entry) =
-                matches.get(cmd_ui.scroll_offset().saturating_add(row as usize))
+            if let Some(entry) = matches.get(cmd_ui.scroll_position().saturating_add(row as usize))
             {
-                let is_selected = cmd_ui
-                    .selected_index()
-                    .map(|idx| idx == cmd_ui.scroll_offset().saturating_add(row as usize))
-                    .unwrap_or(false);
+                let is_selected = if let Some(selected_index) = cmd_ui.selected_item() {
+                    selected_index == cmd_ui.scroll_position().saturating_add(row as usize)
+                } else {
+                    false
+                };
 
                 let mut name_display: String = entry
-                    .name()
+                    .label()
                     .chars()
                     .take(command_col_width as usize)
                     .collect();
@@ -267,7 +272,7 @@ impl<'a> Ui<'a> {
                 let mut desc_display = String::new();
                 if desc_col_width > 0 {
                     desc_display = entry
-                        .description()
+                        .detail()
                         .chars()
                         .take(desc_col_width as usize)
                         .collect();
@@ -277,18 +282,25 @@ impl<'a> Ui<'a> {
                     }
                 }
 
-                let name_matches: Vec<usize> = Self::matched_indices(&query, entry.name())
-                    .into_iter()
-                    .filter(|idx| *idx < name_display.chars().count())
-                    .collect();
-                let desc_matches: Vec<usize> = if desc_display.is_empty() {
-                    Vec::new()
-                } else {
-                    Self::matched_indices(&query, entry.description())
-                        .into_iter()
-                        .filter(|idx| *idx < desc_display.chars().count())
-                        .collect()
-                };
+                let mut name_matches = Vec::new();
+                let name_limit = name_display.chars().count();
+                let name_indices = Self::matched_indices(&query, entry.label());
+                for index in name_indices {
+                    if index < name_limit {
+                        name_matches.push(index);
+                    }
+                }
+
+                let mut desc_matches = Vec::new();
+                if !desc_display.is_empty() {
+                    let desc_limit = desc_display.chars().count();
+                    let desc_indices = Self::matched_indices(&query, entry.detail());
+                    for index in desc_indices {
+                        if index < desc_limit {
+                            desc_matches.push(index);
+                        }
+                    }
+                }
 
                 if is_selected {
                     self.terminal.queue_add_command(Print(" "))?;

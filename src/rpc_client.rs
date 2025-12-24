@@ -180,9 +180,11 @@ impl RpcClient {
         }
         match serde_json::from_str::<RpcResponse>(&line) {
             Ok(resp) => Ok(ClientPoll::Event(ClientEvent::Response(resp))),
-            Err(err) => Ok(ClientPoll::Event(ClientEvent::Response(RpcResponse::Error {
-                message: format!("invalid response: {}", err),
-            }))),
+            Err(err) => Ok(ClientPoll::Event(ClientEvent::Response(
+                RpcResponse::Error {
+                    message: format!("invalid response: {}", err),
+                },
+            ))),
         }
     }
 }
@@ -214,16 +216,11 @@ pub struct RpcClientLauncher {
 impl RpcClientLauncher {
     pub fn launch(self) -> io::Result<RpcClient> {
         let current_exe = std::env::current_exe()?;
-        let core_exe = current_exe.with_file_name(format!(
-            "vimrust-core{}",
-            std::env::consts::EXE_SUFFIX
-        ));
+        let core_exe =
+            current_exe.with_file_name(format!("vimrust-core{}", std::env::consts::EXE_SUFFIX));
         let mut cmd = Command::new(core_exe);
         self.target.apply(&mut cmd);
-        let mut child = cmd
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()?;
+        let mut child = cmd.stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
 
         let stdout = match child.stdout.take() {
             Some(stdout) => stdout,

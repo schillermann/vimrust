@@ -17,23 +17,23 @@ pub struct EditorView<'a> {
 }
 
 impl<'a> EditorView<'a> {
-    pub fn file(&self) -> &File {
+    pub fn file_ref(&self) -> &File {
         self.file
     }
 
-    pub fn cursor_x(&self) -> u16 {
+    pub fn cursor_column(&self) -> u16 {
         self.cursor_x
     }
 
-    pub fn cursor_y(&self) -> u16 {
+    pub fn cursor_row(&self) -> u16 {
         self.cursor_y
     }
 
-    pub fn columns_offset(&self) -> u16 {
+    pub fn column_offset(&self) -> u16 {
         self.columns_offset
     }
 
-    pub fn rows_offset(&self) -> u16 {
+    pub fn row_offset(&self) -> u16 {
         self.rows_offset
     }
 }
@@ -106,16 +106,16 @@ impl Editor {
 
     pub fn file_save(&mut self, file_path: &mut FilePath) -> io::Result<String> {
         let result = self.file.save()?;
-        *file_path = self.file.location();
+        *file_path = self.file.path();
         Ok(result)
     }
 
-    pub fn file_location(&self) -> FilePath {
-        self.file.location()
+    pub fn file_path(&self) -> FilePath {
+        self.file.path()
     }
 
-    pub fn file_lines_clone(&self) -> Vec<String> {
-        self.file.lines_clone()
+    pub fn file_lines_snapshot(&self) -> Vec<String> {
+        self.file.lines_snapshot()
     }
 
     pub fn cursor_position(&self) -> CursorPosition {
@@ -124,7 +124,7 @@ impl Editor {
 
     pub fn change_status(&self) -> FileChange {
         FileChange {
-            changed: self.file.changed(),
+            changed: self.file.change_state(),
         }
     }
 
@@ -166,11 +166,11 @@ impl Editor {
     ) -> Vec<String> {
         let mut rows = Vec::with_capacity(number_of_rows as usize);
         for row_number in 0..number_of_rows {
-            let file_line_number = row_number.saturating_add(view.rows_offset()) as usize;
+            let file_line_number = row_number.saturating_add(view.row_offset()) as usize;
 
-            if file_line_number >= view.file().line_total() {
+            if file_line_number >= view.file_ref().line_count() {
                 let mut line = String::from("~");
-                if view.file().line_total() == 0 && row_number == number_of_rows / 3 {
+                if view.file_ref().line_count() == 0 && row_number == number_of_rows / 3 {
                     let mut welcome = format!("VimRust -- version {}", VERSION);
                     if welcome.len() > number_of_columns as usize {
                         welcome.truncate(number_of_columns as usize);
@@ -187,11 +187,11 @@ impl Editor {
                     line.truncate(number_of_columns as usize);
                 }
                 rows.push(line);
-            } else if let Some(file_line) = view.file().line(file_line_number) {
+            } else if let Some(file_line) = view.file_ref().line_at(file_line_number) {
                 let displayable_line = self.displayable_line(file_line);
                 let visible_slice: String = displayable_line
                     .chars()
-                    .skip(view.columns_offset() as usize)
+                    .skip(view.column_offset() as usize)
                     .take(number_of_columns as usize)
                     .collect();
                 rows.push(visible_slice);
@@ -208,18 +208,18 @@ impl Editor {
             self.columns_offset,
             self.rows_offset,
         );
-        let file_lines_len = self.file.line_total().min(u16::MAX as usize) as u16;
+        let file_lines_len = self.file.line_count().min(u16::MAX as usize) as u16;
 
         match direction {
             MoveDirection::Left => {
-                if let Some(line) = self.file.line(self.cursor_y as usize) {
+                if let Some(line) = self.file.line_at(self.cursor_y as usize) {
                     self.cursor_x = self.column_previous_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_sub(1);
                 }
             }
             MoveDirection::Right => {
-                if let Some(line) = self.file.line(self.cursor_y as usize) {
+                if let Some(line) = self.file.line_at(self.cursor_y as usize) {
                     self.cursor_x = self.column_next_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_add(1);
@@ -273,7 +273,7 @@ impl Editor {
         if self.cursor_x > line_length {
             self.cursor_x = line_length;
         }
-        if let Some(line) = self.file.line(self.cursor_y as usize) {
+        if let Some(line) = self.file.line_at(self.cursor_y as usize) {
             self.cursor_x = self.snap_cursor_to_render_character(line, self.cursor_x);
         }
 
@@ -289,7 +289,7 @@ impl Editor {
         let target_line = self.cursor_y as usize;
         self.file.line_ensure(target_line);
 
-        let insert_at = match self.file.line(target_line) {
+        let insert_at = match self.file.line_at(target_line) {
             Some(line) => self.column_to_char_index_render(line, self.cursor_x),
             None => 0,
         };
@@ -317,11 +317,11 @@ impl Editor {
 
         if self.cursor_x == 0 {
             let current_index = self.cursor_y as usize;
-            if current_index == 0 || current_index >= self.file.line_total() {
+            if current_index == 0 || current_index >= self.file.line_count() {
                 return false;
             }
-            if let Some(current_line) = self.file.line(current_index).cloned() {
-                let new_cursor_x = match self.file.line(current_index.saturating_sub(1)) {
+            if let Some(current_line) = self.file.line_at(current_index).cloned() {
+                let new_cursor_x = match self.file.line_at(current_index.saturating_sub(1)) {
                     Some(prev) => self.visual_line_length(prev),
                     None => 0,
                 };
@@ -338,7 +338,7 @@ impl Editor {
             return false;
         }
 
-        let (new_cursor_x, delete_idx) = match self.file.line(self.cursor_y as usize) {
+        let (new_cursor_x, delete_idx) = match self.file.line_at(self.cursor_y as usize) {
             Some(line) => (
                 self.column_previous_render(line, self.cursor_x),
                 self.column_to_char_index_render(
@@ -362,7 +362,7 @@ impl Editor {
     }
 
     pub fn under_cursor_delete(&mut self) -> bool {
-        let delete_idx = match self.file.line(self.cursor_y as usize) {
+        let delete_idx = match self.file.line_at(self.cursor_y as usize) {
             Some(line) => self.column_to_char_index_render(line, self.cursor_x),
             None => return false,
         };
@@ -376,8 +376,8 @@ impl Editor {
         }
 
         let current_index = self.cursor_y as usize;
-        if current_index + 1 < self.file.line_total()
-            && let Some(next_line) = self.file.line(current_index + 1).cloned()
+        if current_index + 1 < self.file.line_count()
+            && let Some(next_line) = self.file.line_at(current_index + 1).cloned()
             && let Some(current_line) = self.file.line_at_mut(current_index)
         {
             current_line.push_str(&next_line);
@@ -390,7 +390,7 @@ impl Editor {
     }
 
     pub fn snap_cursor_to_tab_start(&mut self) {
-        if let Some(line) = self.file.line(self.cursor_y as usize)
+        if let Some(line) = self.file.line_at(self.cursor_y as usize)
             && let Some(start) = self.tab_segment_start(line, self.cursor_x)
         {
             self.cursor_x = start;
@@ -399,11 +399,11 @@ impl Editor {
 
     fn file_line_length(&self, cursor_y: u16) -> u16 {
         let line_index = cursor_y as usize;
-        if line_index >= self.file.line_total() {
+        if line_index >= self.file.line_count() {
             return 0;
         }
 
-        if let Some(line) = self.file.line(line_index) {
+        if let Some(line) = self.file.line_at(line_index) {
             return self.line_length(line);
         }
 

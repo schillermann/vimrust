@@ -27,11 +27,11 @@ impl CommandLine {
         self.cursor_x = self.content.len() as u16;
     }
 
-    pub fn command_line(&self) -> &str {
+    pub fn text(&self) -> &str {
         &self.content
     }
 
-    pub fn cursor_x(&self) -> u16 {
+    pub fn cursor_column(&self) -> u16 {
         self.cursor_x
     }
 

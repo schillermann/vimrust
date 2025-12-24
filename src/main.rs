@@ -57,7 +57,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
                             latest_frame = Some(frame);
                             status_override = StatusMessage::Empty;
                             if let Some(frame) = &latest_frame {
-                                protocol_gate.observe(frame.protocol_version());
+                                protocol_gate.observe(frame.version());
                                 protocol_gate.report();
                                 protocol_gate.result()?;
                             }
@@ -87,7 +87,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
         }
 
         if let Some(frame) = &latest_frame {
-            let mode = match frame.mode() {
+            let mode = match frame.mode_label() {
                 "NORMAL" => EditorMode::Normal,
                 "EDIT" => EditorMode::Edit,
                 "COMMAND" => EditorMode::Command,
@@ -99,8 +99,8 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
             let status = protocol_gate
                 .status()
                 .or(status_override.clone())
-                .or(frame.status());
-            frame_to_render.status_store(status);
+                .or(frame.status_message());
+            frame_to_render.status_update(status);
             ui.render_from_frame(&frame_to_render)?;
         }
 
@@ -113,7 +113,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
                 Event::Key(key_event) => {
                     if let Some(ref mut frame) = latest_frame {
                         ui.status_clear();
-                        match frame.mode() {
+                        match frame.mode_label() {
                             "NORMAL" => match key_event.code {
                                 KeyCode::Char('q') => {
                                     client.send(&RpcRequest::EditorQuit)?;

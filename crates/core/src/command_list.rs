@@ -1,6 +1,6 @@
 pub struct CommandEntry {
-    pub name: &'static str,
-    pub description: &'static str,
+    name: &'static str,
+    description: &'static str,
 }
 
 static COMMANDS: &[CommandEntry] = &[
@@ -51,14 +51,15 @@ impl CommandList {
 
     pub fn filter(&self, query: &str) -> Vec<&'static CommandEntry> {
         let normalized = Self::command_query_from_input(query);
-        self.commands
-            .iter()
-            .filter(|entry| {
-                let name = entry.name.to_lowercase();
-                let desc = entry.description.to_lowercase();
-                Self::fuzzy_match(&normalized, &name) || Self::fuzzy_match(&normalized, &desc)
-            })
-            .collect()
+        let mut matches = Vec::new();
+        for entry in self.commands {
+            let name = entry.label().to_lowercase();
+            let desc = entry.detail().to_lowercase();
+            if Self::fuzzy_match(&normalized, &name) || Self::fuzzy_match(&normalized, &desc) {
+                matches.push(entry);
+            }
+        }
+        matches
     }
 
     pub fn reset_selection(&mut self) {
@@ -66,15 +67,15 @@ impl CommandList {
         self.scroll_offset = 0;
     }
 
-    pub fn command_selected_index(&self) -> Option<usize> {
+    pub fn selection(&self) -> Option<usize> {
         self.selected_index
     }
 
-    pub fn command_scroll_offset(&self) -> usize {
+    pub fn scroll_position(&self) -> usize {
         self.scroll_offset
     }
 
-    pub fn set_selected_index(&mut self, new_index: usize) {
+    pub fn select_index(&mut self, new_index: usize) {
         self.selected_index = Some(new_index);
     }
 
@@ -120,6 +121,16 @@ impl CommandList {
     fn command_query_from_input(command_line: &str) -> String {
         let trimmed = command_line.trim_start_matches(':').trim();
         trimmed.to_lowercase()
+    }
+}
+
+impl CommandEntry {
+    pub fn label(&self) -> &str {
+        self.name
+    }
+
+    pub fn detail(&self) -> &str {
+        self.description
     }
 }
 

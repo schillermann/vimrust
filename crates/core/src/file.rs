@@ -17,7 +17,7 @@ impl File {
         }
     }
 
-    pub fn location(&self) -> FilePath {
+    pub fn path(&self) -> FilePath {
         self.path.clone()
     }
 
@@ -28,7 +28,7 @@ impl File {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
                     "no file path set",
-                ))
+                ));
             }
         };
         let contents = fs::read_to_string(&path)?;
@@ -77,11 +77,11 @@ impl File {
         Ok(String::from("saved"))
     }
 
-    pub fn line(&self, index: usize) -> Option<&String> {
+    pub fn line_at(&self, index: usize) -> Option<&String> {
         self.file_lines.get(index)
     }
 
-    pub fn line_total(&self) -> usize {
+    pub fn line_count(&self) -> usize {
         self.file_lines.len()
     }
 
@@ -104,7 +104,7 @@ impl File {
         }
     }
 
-    pub fn lines_clone(&self) -> Vec<String> {
+    pub fn lines_snapshot(&self) -> Vec<String> {
         self.file_lines.clone()
     }
 
@@ -119,7 +119,7 @@ impl File {
         self.changed = true;
     }
 
-    pub fn changed(&self) -> bool {
+    pub fn change_state(&self) -> bool {
         self.changed
     }
 }

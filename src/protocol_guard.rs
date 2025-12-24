@@ -20,10 +20,7 @@ impl ProtocolGate {
             self.status = StatusMessage::Empty;
         } else {
             self.status = StatusMessage::Text {
-                text: format!(
-                    "protocol mismatch: core {} ui {}",
-                    actual, self.expected
-                ),
+                text: format!("protocol mismatch: core {} ui {}", actual, self.expected),
             };
         }
     }
