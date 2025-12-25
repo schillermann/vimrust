@@ -3,39 +3,64 @@ pub struct CommandEntry {
     description: &'static str,
 }
 
-static COMMANDS: &[CommandEntry] = &[
-    CommandEntry {
-        name: "s",
-        description: "Save the current buffer",
-    },
-    CommandEntry {
-        name: "save",
-        description: "Save the current buffer",
-    },
-    CommandEntry {
-        name: "q",
-        description: "Quit the editor",
-    },
-    CommandEntry {
-        name: "quit",
-        description: "Quit the editor",
-    },
-    CommandEntry {
-        name: "sq",
-        description: "Save and quit",
-    },
-    CommandEntry {
-        name: "o filename",
-        description: "Open a file",
-    },
-    CommandEntry {
-        name: "open filename",
-        description: "Open a file",
-    },
-];
+pub struct CommandRegistry {
+    commands: Vec<CommandEntry>,
+}
+
+impl CommandRegistry {
+    pub fn new() -> Self {
+        Self {
+            commands: vec![
+                CommandEntry {
+                    name: "s",
+                    description: "Save the current buffer",
+                },
+                CommandEntry {
+                    name: "save",
+                    description: "Save the current buffer",
+                },
+                CommandEntry {
+                    name: "q",
+                    description: "Quit the editor",
+                },
+                CommandEntry {
+                    name: "quit",
+                    description: "Quit the editor",
+                },
+                CommandEntry {
+                    name: "sq",
+                    description: "Save and quit",
+                },
+                CommandEntry {
+                    name: "o filename",
+                    description: "Open a file",
+                },
+                CommandEntry {
+                    name: "open filename",
+                    description: "Open a file",
+                },
+            ],
+        }
+    }
+
+    pub fn matching(&self, query: &str) -> Vec<&CommandEntry> {
+        let normalized = CommandList::command_query_from_input(query);
+        let mut matches = Vec::new();
+        for entry in &self.commands {
+            let name = entry.label().to_lowercase();
+            let desc = entry.detail().to_lowercase();
+            if CommandList::fuzzy_match(&normalized, &name)
+                || CommandList::fuzzy_match(&normalized, &desc)
+            {
+                matches.push(entry);
+            }
+        }
+        matches
+    }
+}
 
 pub struct CommandList {
-    commands: &'static [CommandEntry],
+    registry: CommandRegistry,
     selected_index: Option<usize>,
     scroll_offset: usize,
 }
@@ -43,23 +68,14 @@ pub struct CommandList {
 impl CommandList {
     pub fn new() -> Self {
         Self {
-            commands: COMMANDS,
+            registry: CommandRegistry::new(),
             selected_index: None,
             scroll_offset: 0,
         }
     }
 
-    pub fn filter(&self, query: &str) -> Vec<&'static CommandEntry> {
-        let normalized = Self::command_query_from_input(query);
-        let mut matches = Vec::new();
-        for entry in self.commands {
-            let name = entry.label().to_lowercase();
-            let desc = entry.detail().to_lowercase();
-            if Self::fuzzy_match(&normalized, &name) || Self::fuzzy_match(&normalized, &desc) {
-                matches.push(entry);
-            }
-        }
-        matches
+    pub fn filter(&self, query: &str) -> Vec<&CommandEntry> {
+        self.registry.matching(query)
     }
 
     pub fn reset_selection(&mut self) {

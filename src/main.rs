@@ -16,7 +16,7 @@ use rpc_client::{ClientEvent, ClientFilePath, ClientPoll};
 use terminal::Terminal;
 use ui::Ui;
 use vimrust_protocol::{
-    CommandUiAction, DeleteKind, MoveDirection, PROTOCOL_VERSION, RpcMode, RpcRequest, RpcResponse,
+    CommandUiAction, DeleteKind, MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
     StatusMessage,
 };
 
@@ -45,7 +45,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
 
     let mut latest_frame = None;
     let mut status_override = StatusMessage::Empty;
-    let mut protocol_gate = ProtocolGate::new(PROTOCOL_VERSION);
+    let mut protocol_gate = ProtocolGate::new(ProtocolVersion::current());
 
     loop {
         loop {

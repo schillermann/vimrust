@@ -424,7 +424,54 @@ impl<'a> Ui<'a> {
     }
 }
 
-const COMMAND_LINE_PLACEHOLDER: &str = "Press : for commands";
+struct CommandLinePlaceholder {
+    text: &'static str,
+}
+
+impl CommandLinePlaceholder {
+    fn new() -> Self {
+        Self {
+            text: "Press : for commands",
+        }
+    }
+
+    fn display_for(&self, content: &str) -> CommandLineDisplay {
+        if content.is_empty() {
+            CommandLineDisplay::placeholder(self.text)
+        } else {
+            CommandLineDisplay::content(content)
+        }
+    }
+}
+
+struct CommandLineDisplay {
+    text: String,
+    color: Color,
+}
+
+impl CommandLineDisplay {
+    fn placeholder(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            color: Color::DarkGrey,
+        }
+    }
+
+    fn content(text: &str) -> Self {
+        Self {
+            text: text.to_string(),
+            color: Color::Grey,
+        }
+    }
+
+    fn text(&self) -> &str {
+        &self.text
+    }
+
+    fn foreground(&self) -> Color {
+        self.color
+    }
+}
 
 fn draw_command_line(
     terminal: &mut Terminal,
@@ -433,12 +480,9 @@ fn draw_command_line(
 ) -> io::Result<()> {
     terminal.queue_add_command(MoveTo(0, 0))?;
     terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
-    let is_placeholder = content.is_empty();
-    let display_content = if is_placeholder {
-        COMMAND_LINE_PLACEHOLDER
-    } else {
-        content
-    };
+    let placeholder = CommandLinePlaceholder::new();
+    let display = placeholder.display_for(content);
+    let display_content = display.text();
 
     // Leave one column of padding on both sides of the command line.
     let inner_width = number_of_columns.saturating_sub(2) as usize;
@@ -458,11 +502,7 @@ fn draw_command_line(
         g: 27,
         b: 27,
     }))?;
-    terminal.queue_add_command(SetForegroundColor(if is_placeholder {
-        Color::DarkGrey
-    } else {
-        Color::Grey
-    }))?;
+    terminal.queue_add_command(SetForegroundColor(display.foreground()))?;
     terminal.queue_add_command(Print(visible))?;
     terminal.queue_add_command(ResetColor)?;
     Ok(())

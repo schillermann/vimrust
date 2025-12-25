@@ -1,21 +1,21 @@
 use std::io;
 
-use vimrust_protocol::StatusMessage;
+use vimrust_protocol::{ProtocolVersion, StatusMessage};
 
 pub struct ProtocolGate {
-    expected: u32,
+    expected: ProtocolVersion,
     status: StatusMessage,
 }
 
 impl ProtocolGate {
-    pub fn new(expected: u32) -> Self {
+    pub fn new(expected: ProtocolVersion) -> Self {
         Self {
             expected,
             status: StatusMessage::Empty,
         }
     }
 
-    pub fn observe(&mut self, actual: u32) {
+    pub fn observe(&mut self, actual: ProtocolVersion) {
         if self.expected == actual {
             self.status = StatusMessage::Empty;
         } else {

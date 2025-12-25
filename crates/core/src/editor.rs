@@ -5,8 +5,36 @@ use vimrust_protocol::FilePath;
 use vimrust_protocol::MoveDirection;
 use vimrust_protocol::StatusMessage;
 
-const DEFAULT_TAB_STOP: u16 = 4;
-const VERSION: &str = "0.1.0";
+#[derive(Clone, Copy)]
+pub struct TabStop {
+    size: u16,
+}
+
+impl TabStop {
+    pub fn new(size: u16) -> Self {
+        Self { size }
+    }
+
+    pub fn advance_width(&self, column: u16) -> u16 {
+        let tab_size = if self.size == 0 { 1 } else { self.size };
+        let offset = column % tab_size;
+        tab_size.saturating_sub(offset)
+    }
+}
+
+pub struct EditorVersion {
+    label: &'static str,
+}
+
+impl EditorVersion {
+    pub fn current() -> Self {
+        Self { label: "0.1.0" }
+    }
+
+    pub fn append_to(&self, target: &mut String) {
+        target.push_str(self.label);
+    }
+}
 
 pub struct EditorView<'a> {
     file: &'a File,
@@ -44,7 +72,8 @@ pub struct Editor {
     columns_offset: u16,
     rows_offset: u16,
     file: File,
-    tab_stop: u16,
+    tab_stop: TabStop,
+    version: EditorVersion,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -83,7 +112,8 @@ impl Editor {
             columns_offset: 0,
             rows_offset: 0,
             file,
-            tab_stop: DEFAULT_TAB_STOP,
+            tab_stop: TabStop::new(4),
+            version: EditorVersion::current(),
         }
     }
 
@@ -171,7 +201,8 @@ impl Editor {
             if file_line_number >= view.file_ref().line_count() {
                 let mut line = String::from("~");
                 if view.file_ref().line_count() == 0 && row_number == number_of_rows / 3 {
-                    let mut welcome = format!("VimRust -- version {}", VERSION);
+                    let mut welcome = String::from("VimRust -- version ");
+                    self.version.append_to(&mut welcome);
                     if welcome.len() > number_of_columns as usize {
                         welcome.truncate(number_of_columns as usize);
                     }
@@ -445,13 +476,8 @@ impl Editor {
     }
 
     fn char_render_width(&self, character: char, column: u16) -> u16 {
-        let tab_size = if self.tab_stop == 0 { 1 } else { self.tab_stop };
-
         match character {
-            '\t' => {
-                let offset = column % tab_size;
-                tab_size.saturating_sub(offset)
-            }
+            '\t' => self.tab_stop.advance_width(column),
             '\x00'..='\x1f' | '\x7f' => 4,
             _ => 1,
         }

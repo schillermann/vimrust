@@ -2,7 +2,29 @@ use std::fmt;
 
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+#[derive(Serialize, Deserialize, Debug, PartialEq, Clone, Copy)]
+#[serde(transparent)]
+pub struct ProtocolVersion {
+    value: u32,
+}
+
+impl ProtocolVersion {
+    pub fn current() -> Self {
+        Self { value: 1 }
+    }
+}
+
+impl Default for ProtocolVersion {
+    fn default() -> Self {
+        Self::current()
+    }
+}
+
+impl fmt::Display for ProtocolVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.value)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -181,7 +203,7 @@ pub struct Frame {
     size: (u16, u16),
     command_ui: Option<CommandUiFrame>,
     #[serde(default)]
-    protocol_version: u32,
+    protocol_version: ProtocolVersion,
 }
 
 impl Frame {
@@ -193,7 +215,7 @@ impl Frame {
         file_path: FilePath,
         size: (u16, u16),
         command_ui: Option<CommandUiFrame>,
-        protocol_version: u32,
+        protocol_version: ProtocolVersion,
     ) -> Self {
         Self {
             mode,
@@ -235,7 +257,7 @@ impl Frame {
         self.command_ui.as_ref()
     }
 
-    pub fn version(&self) -> u32 {
+    pub fn version(&self) -> ProtocolVersion {
         self.protocol_version
     }
 

@@ -3,7 +3,7 @@ use std::io::{self, BufRead, Write};
 use crate::{EditorMode, command_ui_state::CommandUiState, editor::Editor, file::File};
 use vimrust_protocol::{
     Ack, AckKind, CommandUiAction, CommandUiFrame, Cursor, DeleteKind, FilePath, Frame,
-    PROTOCOL_VERSION, RpcMode, RpcRequest, RpcResponse, StatusMessage,
+    ProtocolVersion, RpcMode, RpcRequest, RpcResponse, StatusMessage,
 };
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
@@ -373,7 +373,7 @@ pub fn build_frame(
         view.file_ref().path(),
         size,
         command_ui,
-        PROTOCOL_VERSION,
+        ProtocolVersion::current(),
     )
 }
 
