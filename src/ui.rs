@@ -95,31 +95,13 @@ impl<'a> Ui<'a> {
             draw_command_line(self.terminal, number_of_columns, command_text)?;
 
             if usable_rows > 0 {
-                if matches!(self.mode, EditorMode::Command) {
-                    if let Some(cmd_ui) = frame.command_ui_frame() {
-                        self.draw_command_list_from_frame(
-                            cmd_ui,
-                            number_of_columns,
-                            1,
-                            usable_rows,
-                        )?;
-                    }
-                } else {
-                    let rows = frame.editor_rows();
-                    let mut idx = 0usize;
-                    while idx < rows.len() {
-                        if idx as u16 >= usable_rows {
-                            break;
-                        }
-                        let row = &rows[idx];
-                        let screen_row = 1u16.saturating_add(idx as u16);
-                        self.terminal.queue_add_command(MoveTo(0, screen_row))?;
-                        self.terminal
-                            .queue_add_command(Clear(ClearType::CurrentLine))?;
-                        self.terminal.queue_add_command(Print(row))?;
-                        idx = idx.saturating_add(1);
-                    }
-                }
+                let body = UiModeBody {
+                    mode: self.mode,
+                    frame,
+                    number_of_columns,
+                    usable_rows,
+                };
+                body.draw(self)?;
             }
 
             if number_of_rows > 1 {
@@ -133,46 +115,13 @@ impl<'a> Ui<'a> {
                 )?;
             }
 
-            let (cursor_col, cursor_row) = match self.mode {
-                EditorMode::Command => {
-                    if let Some(cmd_ui) = frame.command_ui_frame() {
-                        let mut command_cursor = (
-                            cmd_ui
-                                .cursor_column()
-                                .saturating_add(1)
-                                .min(number_of_columns.saturating_sub(1)),
-                            0,
-                        );
-                        if cmd_ui.list_focus() {
-                            if let Some(selected) = cmd_ui.selected_item() {
-                                let relative_row =
-                                    selected.saturating_sub(cmd_ui.scroll_position()) as u16;
-                                let list_row = 1u16
-                                    .saturating_add(1)
-                                    .saturating_add(2)
-                                    .saturating_add(relative_row)
-                                    .min(number_of_rows.saturating_sub(1));
-                                command_cursor = (0, list_row);
-                            }
-                        }
-                        command_cursor
-                    } else {
-                        (0, 0)
-                    }
-                }
-                _ => {
-                    let cursor = frame.cursor_position();
-                    let cursor_col = cursor
-                        .column_index()
-                        .min(number_of_columns.saturating_sub(1));
-                    let base_row = cursor.row_index();
-                    // Keep the edit cursor off the command-line row (row 0).
-                    let min_editor_row = 1;
-                    let max_editor_row = number_of_rows.saturating_sub(1).max(min_editor_row);
-                    let cursor_row = base_row.max(1).min(max_editor_row);
-                    (cursor_col, cursor_row)
-                }
+            let cursor_placement = CursorPlacement {
+                mode: self.mode,
+                frame,
+                number_of_columns,
+                number_of_rows,
             };
+            let (cursor_col, cursor_row) = cursor_placement.position();
             self.terminal
                 .queue_add_command(MoveTo(cursor_col, cursor_row))?;
             self.terminal.queue_add_command(Show)?;
@@ -363,6 +312,24 @@ impl<'a> Ui<'a> {
         Ok(())
     }
 
+    fn draw_editor_rows(&mut self, frame: &Frame, usable_rows: u16) -> io::Result<()> {
+        let rows = frame.editor_rows();
+        let mut idx = 0usize;
+        while idx < rows.len() {
+            if idx as u16 >= usable_rows {
+                break;
+            }
+            let row = &rows[idx];
+            let screen_row = 1u16.saturating_add(idx as u16);
+            self.terminal.queue_add_command(MoveTo(0, screen_row))?;
+            self.terminal
+                .queue_add_command(Clear(ClearType::CurrentLine))?;
+            self.terminal.queue_add_command(Print(row))?;
+            idx = idx.saturating_add(1);
+        }
+        Ok(())
+    }
+
     fn command_query_from_input(command_line: &str) -> String {
         let trimmed = command_line.trim_start_matches(':').trim();
         trimmed.to_lowercase()
@@ -436,6 +403,91 @@ impl<'a> Ui<'a> {
         }
 
         Ok(())
+    }
+}
+
+struct UiModeBody<'a> {
+    mode: EditorMode,
+    frame: &'a Frame,
+    number_of_columns: u16,
+    usable_rows: u16,
+}
+
+impl<'a> UiModeBody<'a> {
+    fn draw(&self, ui: &mut Ui<'_>) -> io::Result<()> {
+        if self.usable_rows == 0 {
+            return Ok(());
+        }
+
+        match self.mode {
+            EditorMode::Command => {
+                if let Some(cmd_ui) = self.frame.command_ui_frame() {
+                    ui.draw_command_list_from_frame(
+                        cmd_ui,
+                        self.number_of_columns,
+                        1,
+                        self.usable_rows,
+                    )?;
+                }
+            }
+            _ => {
+                ui.draw_editor_rows(self.frame, self.usable_rows)?;
+            }
+        }
+
+        Ok(())
+    }
+}
+
+struct CursorPlacement<'a> {
+    mode: EditorMode,
+    frame: &'a Frame,
+    number_of_columns: u16,
+    number_of_rows: u16,
+}
+
+impl<'a> CursorPlacement<'a> {
+    fn position(&self) -> (u16, u16) {
+        match self.mode {
+            EditorMode::Command => {
+                if let Some(cmd_ui) = self.frame.command_ui_frame() {
+                    let mut command_cursor = (
+                        cmd_ui
+                            .cursor_column()
+                            .saturating_add(1)
+                            .min(self.number_of_columns.saturating_sub(1)),
+                        0,
+                    );
+                    if cmd_ui.list_focus() {
+                        if let Some(selected) = cmd_ui.selected_item() {
+                            let relative_row =
+                                selected.saturating_sub(cmd_ui.scroll_position()) as u16;
+                            let list_row = 1u16
+                                .saturating_add(1)
+                                .saturating_add(2)
+                                .saturating_add(relative_row)
+                                .min(self.number_of_rows.saturating_sub(1));
+                            command_cursor = (0, list_row);
+                        }
+                    }
+                    command_cursor
+                } else {
+                    (0, 0)
+                }
+            }
+            _ => {
+                let cursor = self.frame.cursor_position();
+                let cursor_col = cursor
+                    .column_index()
+                    .min(self.number_of_columns.saturating_sub(1));
+                let base_row = cursor.row_index();
+                // Keep the edit cursor off the command-line row (row 0).
+                let min_editor_row = 1;
+                let max_editor_row = self.number_of_rows.saturating_sub(1).max(min_editor_row);
+                let cursor_row = base_row.max(1).min(max_editor_row);
+                (cursor_col, cursor_row)
+            }
+        }
     }
 }
 

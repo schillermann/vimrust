@@ -131,6 +131,176 @@ pub enum RequestOutcome {
     Error(String),
 }
 
+struct TextInsertAction {
+    text: String,
+    signal: FrameSignal,
+}
+
+impl TextInsertAction {
+    fn apply(&mut self, editor: &mut Editor, status: &mut StatusMessage) {
+        let snapshot = editor.snapshot();
+        for ch in self.text.chars() {
+            editor.char_insert(ch);
+        }
+        *status = snapshot.status_from(editor, status.clone());
+        self.signal = snapshot.frame_signal(editor);
+    }
+
+    fn outcome(&self) -> RequestOutcome {
+        match self.signal {
+            FrameSignal::Frame => RequestOutcome::Frame,
+            FrameSignal::Skip => RequestOutcome::Skip,
+        }
+    }
+}
+
+struct TextDeleteAction {
+    kind: DeleteKind,
+    signal: FrameSignal,
+}
+
+impl TextDeleteAction {
+    fn apply(&mut self, editor: &mut Editor, status: &mut StatusMessage) {
+        let snapshot = editor.snapshot();
+        match self.kind {
+            DeleteKind::Backspace => editor.backspace_delete(),
+            DeleteKind::Under => editor.under_cursor_delete(),
+        };
+        *status = snapshot.status_from(editor, status.clone());
+        self.signal = snapshot.frame_signal(editor);
+    }
+
+    fn outcome(&self) -> RequestOutcome {
+        match self.signal {
+            FrameSignal::Frame => RequestOutcome::Frame,
+            FrameSignal::Skip => RequestOutcome::Skip,
+        }
+    }
+}
+
+struct CursorMoveAction {
+    direction: MoveDirection,
+    usable_rows: u16,
+    signal: FrameSignal,
+}
+
+impl CursorMoveAction {
+    fn apply(&mut self, editor: &mut Editor) {
+        let snapshot = editor.snapshot();
+        editor.cursor_move(self.direction, self.usable_rows);
+        self.signal = snapshot.frame_signal(editor);
+    }
+
+    fn outcome(&self) -> RequestOutcome {
+        match self.signal {
+            FrameSignal::Frame => RequestOutcome::Frame,
+            FrameSignal::Skip => RequestOutcome::Skip,
+        }
+    }
+}
+
+struct CommandUiActionRequest {
+    action: CommandUiAction,
+    list_rows: usize,
+    signal: FrameSignal,
+}
+
+impl CommandUiActionRequest {
+    fn apply(&mut self, command_ui: &mut CommandUiState) {
+        let snapshot = command_ui.snapshot();
+        command_ui.apply_action(self.action, self.list_rows);
+        self.signal = snapshot.frame_signal(command_ui);
+    }
+
+    fn outcome(&self) -> RequestOutcome {
+        match self.signal {
+            FrameSignal::Frame => RequestOutcome::Frame,
+            FrameSignal::Skip => RequestOutcome::Skip,
+        }
+    }
+}
+
+enum CommandLineRequest {
+    Provided(String),
+    FromUi,
+}
+
+struct CommandExecuteAction {
+    line: CommandLineRequest,
+    list_rows: usize,
+    selection_signal: FrameSignal,
+    outcome: RequestOutcome,
+}
+
+impl CommandExecuteAction {
+    fn apply(
+        &mut self,
+        editor: &mut Editor,
+        mode: &mut EditorMode,
+        status: &mut StatusMessage,
+        command_ui: &mut CommandUiState,
+    ) {
+        self.selection_signal = FrameSignal::Skip;
+        match &self.line {
+            CommandLineRequest::FromUi => {
+                let snapshot = command_ui.snapshot();
+                command_ui.apply_action(CommandUiAction::SelectFromList, self.list_rows);
+                self.selection_signal = snapshot.frame_signal(command_ui);
+            }
+            CommandLineRequest::Provided(_) => {}
+        }
+
+        let source_line = match &self.line {
+            CommandLineRequest::Provided(line) => {
+                command_ui.line_overwrite(line.clone());
+                line.clone()
+            }
+            CommandLineRequest::FromUi => command_ui.command_text().to_string(),
+        };
+        let command = source_line.trim_start_matches(':').trim().to_lowercase();
+        self.outcome = match command.as_str() {
+            "s" | "save" => {
+                let mut saved_path = FilePath::Missing;
+                match editor.file_save(&mut saved_path) {
+                    Ok(msg) => {
+                        *status = StatusMessage::Text { text: msg.clone() };
+                        if matches!(mode, EditorMode::Command) {
+                            command_ui.clear();
+                        }
+                        *mode = EditorMode::Normal;
+                        let ack = Ack::new(
+                            AckKind::Save,
+                            StatusMessage::Text { text: msg },
+                            saved_path,
+                        );
+                        RequestOutcome::FrameAndAck(ack)
+                    }
+                    Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                }
+            }
+            "sq" => {
+                let mut saved_path = FilePath::Missing;
+                match editor.file_save(&mut saved_path) {
+                    Ok(msg) => {
+                        *status = StatusMessage::Text { text: msg.clone() };
+                        RequestOutcome::Quit
+                    }
+                    Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                }
+            }
+            "q" | "quit" => RequestOutcome::Quit,
+            _ => match self.selection_signal {
+                FrameSignal::Frame => RequestOutcome::Frame,
+                FrameSignal::Skip => RequestOutcome::Skip,
+            },
+        };
+    }
+
+    fn finish(self) -> RequestOutcome {
+        self.outcome
+    }
+}
+
 pub fn handle_request(
     request: RpcRequest,
     editor: &mut Editor,
@@ -209,107 +379,61 @@ pub fn handle_request(
             }
         }
         RpcRequest::TextInsert { text } => {
-            let snapshot = editor.snapshot();
-            for ch in text.chars() {
-                editor.char_insert(ch);
-            }
-            *status = snapshot.status_from(editor, status.clone());
-            match snapshot.frame_signal(editor) {
-                FrameSignal::Frame => RequestOutcome::Frame,
-                FrameSignal::Skip => RequestOutcome::Skip,
-            }
+            let mut action = TextInsertAction {
+                text,
+                signal: FrameSignal::Skip,
+            };
+            action.apply(editor, status);
+            action.outcome()
         }
         RpcRequest::TextDelete { kind } => {
-            let snapshot = editor.snapshot();
-            match kind {
-                DeleteKind::Backspace => editor.backspace_delete(),
-                DeleteKind::Under => editor.under_cursor_delete(),
+            let mut action = TextDeleteAction {
+                kind,
+                signal: FrameSignal::Skip,
             };
-            *status = snapshot.status_from(editor, status.clone());
-            match snapshot.frame_signal(editor) {
-                FrameSignal::Frame => RequestOutcome::Frame,
-                FrameSignal::Skip => RequestOutcome::Skip,
-            }
+            action.apply(editor, status);
+            action.outcome()
         }
         RpcRequest::CursorMove { direction } => {
             let usable_rows = size.1.saturating_sub(2);
-            let snapshot = editor.snapshot();
-            editor.cursor_move(direction, usable_rows);
-            match snapshot.frame_signal(editor) {
-                FrameSignal::Frame => RequestOutcome::Frame,
-                FrameSignal::Skip => RequestOutcome::Skip,
-            }
+            let mut action = CursorMoveAction {
+                direction,
+                usable_rows,
+                signal: FrameSignal::Skip,
+            };
+            action.apply(editor);
+            action.outcome()
         }
         RpcRequest::CommandUi { action } => {
             if !matches!(mode, EditorMode::Command) {
                 return RequestOutcome::Skip;
             }
             let list_rows = command_list_rows(*size);
-            let snapshot = command_ui.snapshot();
-            command_ui.apply_action(action, list_rows);
-            match snapshot.frame_signal(command_ui) {
-                FrameSignal::Frame => RequestOutcome::Frame,
-                FrameSignal::Skip => RequestOutcome::Skip,
-            }
+            let mut request = CommandUiActionRequest {
+                action,
+                list_rows,
+                signal: FrameSignal::Skip,
+            };
+            request.apply(command_ui);
+            request.outcome()
         }
         RpcRequest::CommandExecute { line } => {
             if !matches!(mode, EditorMode::Command) {
                 return RequestOutcome::Skip;
             }
             let list_rows = command_list_rows(*size);
-            let selection_signal = if line.is_none() {
-                let snapshot = command_ui.snapshot();
-                command_ui.apply_action(CommandUiAction::SelectFromList, list_rows);
-                snapshot.frame_signal(command_ui)
-            } else {
-                FrameSignal::Skip
+            let line = match line {
+                Some(line) => CommandLineRequest::Provided(line),
+                None => CommandLineRequest::FromUi,
             };
-            let source_line = match line {
-                Some(line) => {
-                    command_ui.line_overwrite(line.clone());
-                    line
-                }
-                None => command_ui.command_text().to_string(),
+            let mut request = CommandExecuteAction {
+                line,
+                list_rows,
+                selection_signal: FrameSignal::Skip,
+                outcome: RequestOutcome::Skip,
             };
-            let command = source_line.trim_start_matches(':').trim().to_lowercase();
-            match command.as_str() {
-                "s" | "save" => {
-                    let mut saved_path = FilePath::Missing;
-                    match editor.file_save(&mut saved_path) {
-                        Ok(msg) => {
-                            *status = StatusMessage::Text { text: msg.clone() };
-                            if matches!(mode, EditorMode::Command) {
-                                command_ui.clear();
-                            }
-                            *mode = EditorMode::Normal;
-                            let ack = Ack::new(
-                                AckKind::Save,
-                                StatusMessage::Text { text: msg },
-                                saved_path,
-                            );
-                            RequestOutcome::FrameAndAck(ack)
-                        }
-                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
-                    }
-                }
-                "sq" => {
-                    let mut saved_path = FilePath::Missing;
-                    match editor.file_save(&mut saved_path) {
-                        Ok(msg) => {
-                            *status = StatusMessage::Text { text: msg.clone() };
-                            RequestOutcome::Quit
-                        }
-                        Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
-                    }
-                }
-                "q" | "quit" => RequestOutcome::Quit,
-                _ => {
-                    match selection_signal {
-                        FrameSignal::Frame => RequestOutcome::Frame,
-                        FrameSignal::Skip => RequestOutcome::Skip,
-                    }
-                }
-            }
+            request.apply(editor, mode, status, command_ui);
+            request.finish()
         }
         RpcRequest::ModeSet { mode: new_mode } => {
             let prev_mode = *mode;

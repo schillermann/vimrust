@@ -12,7 +12,7 @@ mod ui;
 
 use mode::EditorMode;
 use protocol_guard::ProtocolGate;
-use rpc_client::{ClientEvent, ClientFilePath, ClientPoll};
+use rpc_client::{ClientEvent, ClientFilePath, ClientPoll, RpcClient};
 use terminal::Terminal;
 use ui::Ui;
 use vimrust_protocol::{
@@ -46,6 +46,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
     let mut latest_frame = None;
     let mut status_override = StatusMessage::Empty;
     let mut protocol_gate = ProtocolGate::new(ProtocolVersion::current());
+    let keymap = ModeKeymap::new();
 
     loop {
         loop {
@@ -87,12 +88,7 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
         }
 
         if let Some(frame) = &latest_frame {
-            let mode = match frame.mode_label() {
-                "NORMAL" => EditorMode::Normal,
-                "EDIT" => EditorMode::Edit,
-                "COMMAND" => EditorMode::Command,
-                _ => EditorMode::Normal,
-            };
+            let mode = FrameMode { label: frame.mode_label() }.editor_mode();
             let mut frame_to_render = frame.clone();
             ui.mode_apply(mode);
             // Prefer explicit status message if set by ack/error.
@@ -112,108 +108,10 @@ fn run_rpc_client(terminal: &mut Terminal, file_path: ClientFilePath) -> io::Res
             match event::read()? {
                 Event::Key(key_event) => {
                     if let Some(ref mut frame) = latest_frame {
+                        let mode = FrameMode { label: frame.mode_label() }.editor_mode();
+                        let action = keymap.action_for(mode, key_event.code);
                         ui.status_clear();
-                        match frame.mode_label() {
-                            "NORMAL" => match key_event.code {
-                                KeyCode::Char('q') => {
-                                    client.send(&RpcRequest::EditorQuit)?;
-                                }
-                                KeyCode::Char('e') => client.send(&RpcRequest::ModeSet {
-                                    mode: RpcMode::Edit,
-                                })?,
-                                KeyCode::Char('s') => {
-                                    client.send(&RpcRequest::FileSave)?;
-                                }
-                                KeyCode::Char(':') => {
-                                    client.send(&RpcRequest::ModeSet {
-                                        mode: RpcMode::Command,
-                                    })?;
-                                }
-                                KeyCode::Char('h') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::Left,
-                                })?,
-                                KeyCode::Char('l') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::Right,
-                                })?,
-                                KeyCode::Char('k') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::Up,
-                                })?,
-                                KeyCode::Char('j') => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::Down,
-                                })?,
-                                KeyCode::PageUp => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::PageUp,
-                                })?,
-                                KeyCode::PageDown => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::PageDown,
-                                })?,
-                                KeyCode::Home => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::Home,
-                                })?,
-                                KeyCode::End => client.send(&RpcRequest::CursorMove {
-                                    direction: MoveDirection::End,
-                                })?,
-                                _ => {}
-                            },
-                            "EDIT" => match key_event.code {
-                                KeyCode::Esc => {
-                                    client.send(&RpcRequest::ModeSet {
-                                        mode: RpcMode::Normal,
-                                    })?;
-                                }
-                                KeyCode::Delete => client.send(&RpcRequest::TextDelete {
-                                    kind: DeleteKind::Under,
-                                })?,
-                                KeyCode::Backspace => client.send(&RpcRequest::TextDelete {
-                                    kind: DeleteKind::Backspace,
-                                })?,
-                                KeyCode::Char(ch) => client.send(&RpcRequest::TextInsert {
-                                    text: ch.to_string(),
-                                })?,
-                                _ => {}
-                            },
-                            "COMMAND" => match key_event.code {
-                                KeyCode::Esc => {
-                                    client.send(&RpcRequest::ModeSet {
-                                        mode: RpcMode::Normal,
-                                    })?;
-                                }
-                                KeyCode::Enter => {
-                                    client.send(&RpcRequest::CommandExecute { line: None })?;
-                                }
-                                KeyCode::Backspace => client.send(&RpcRequest::CommandUi {
-                                    action: CommandUiAction::Backspace,
-                                })?,
-                                KeyCode::Delete => client.send(&RpcRequest::CommandUi {
-                                    action: CommandUiAction::Delete,
-                                })?,
-                                KeyCode::Left => client.send(&RpcRequest::CommandUi {
-                                    action: CommandUiAction::MoveLeft,
-                                })?,
-                                KeyCode::Right => client.send(&RpcRequest::CommandUi {
-                                    action: CommandUiAction::MoveRight,
-                                })?,
-                                KeyCode::Home => client.send(&RpcRequest::CommandUi {
-                                    action: CommandUiAction::MoveHome,
-                                })?,
-                                KeyCode::End => client.send(&RpcRequest::CommandUi {
-                                    action: CommandUiAction::MoveEnd,
-                                })?,
-                                KeyCode::Up | KeyCode::Down => {
-                                    let action = match key_event.code {
-                                        KeyCode::Up => CommandUiAction::MoveSelectionUp,
-                                        KeyCode::Down => CommandUiAction::MoveSelectionDown,
-                                        _ => CommandUiAction::MoveSelectionUp,
-                                    };
-                                    client.send(&RpcRequest::CommandUi { action })?;
-                                }
-                                KeyCode::Char(ch) => client.send(&RpcRequest::CommandUi {
-                                    action: CommandUiAction::InsertChar { ch },
-                                })?,
-                                _ => {}
-                            },
-                            _ => {}
-                        }
+                        action.apply(&mut client)?;
                     }
                 }
                 Event::Resize(_, _) => {
@@ -244,6 +142,158 @@ impl ArgFilePath {
         match self.args.next() {
             Some(path) => ClientFilePath::Provided(path),
             None => ClientFilePath::Missing,
+        }
+    }
+}
+
+struct FrameMode<'a> {
+    label: &'a str,
+}
+
+impl<'a> FrameMode<'a> {
+    fn editor_mode(&self) -> EditorMode {
+        match self.label {
+            "NORMAL" => EditorMode::Normal,
+            "EDIT" => EditorMode::Edit,
+            "COMMAND" => EditorMode::Command,
+            _ => EditorMode::Normal,
+        }
+    }
+}
+
+struct ModeKeymap {
+    normal: NormalModeInput,
+    edit: EditModeInput,
+    command: CommandModeInput,
+}
+
+impl ModeKeymap {
+    fn new() -> Self {
+        Self {
+            normal: NormalModeInput,
+            edit: EditModeInput,
+            command: CommandModeInput,
+        }
+    }
+
+    fn action_for(&self, mode: EditorMode, code: KeyCode) -> ClientAction {
+        match mode {
+            EditorMode::Normal => self.normal.action(code),
+            EditorMode::Edit => self.edit.action(code),
+            EditorMode::Command => self.command.action(code),
+        }
+    }
+}
+
+struct NormalModeInput;
+
+impl NormalModeInput {
+    fn action(&self, code: KeyCode) -> ClientAction {
+        match code {
+            KeyCode::Char('q') => ClientAction::Send(RpcRequest::EditorQuit),
+            KeyCode::Char('e') => ClientAction::Send(RpcRequest::ModeSet { mode: RpcMode::Edit }),
+            KeyCode::Char('s') => ClientAction::Send(RpcRequest::FileSave),
+            KeyCode::Char(':') => {
+                ClientAction::Send(RpcRequest::ModeSet { mode: RpcMode::Command })
+            }
+            KeyCode::Char('h') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Left,
+            }),
+            KeyCode::Char('l') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Right,
+            }),
+            KeyCode::Char('k') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Up,
+            }),
+            KeyCode::Char('j') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Down,
+            }),
+            KeyCode::PageUp => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::PageUp,
+            }),
+            KeyCode::PageDown => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::PageDown,
+            }),
+            KeyCode::Home => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Home,
+            }),
+            KeyCode::End => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::End,
+            }),
+            _ => ClientAction::Skip,
+        }
+    }
+}
+
+struct EditModeInput;
+
+impl EditModeInput {
+    fn action(&self, code: KeyCode) -> ClientAction {
+        match code {
+            KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet { mode: RpcMode::Normal }),
+            KeyCode::Delete => ClientAction::Send(RpcRequest::TextDelete {
+                kind: DeleteKind::Under,
+            }),
+            KeyCode::Backspace => ClientAction::Send(RpcRequest::TextDelete {
+                kind: DeleteKind::Backspace,
+            }),
+            KeyCode::Char(ch) => ClientAction::Send(RpcRequest::TextInsert {
+                text: ch.to_string(),
+            }),
+            _ => ClientAction::Skip,
+        }
+    }
+}
+
+struct CommandModeInput;
+
+impl CommandModeInput {
+    fn action(&self, code: KeyCode) -> ClientAction {
+        match code {
+            KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet { mode: RpcMode::Normal }),
+            KeyCode::Enter => ClientAction::Send(RpcRequest::CommandExecute { line: None }),
+            KeyCode::Backspace => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::Backspace,
+            }),
+            KeyCode::Delete => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::Delete,
+            }),
+            KeyCode::Left => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveLeft,
+            }),
+            KeyCode::Right => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveRight,
+            }),
+            KeyCode::Home => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveHome,
+            }),
+            KeyCode::End => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveEnd,
+            }),
+            KeyCode::Up => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveSelectionUp,
+            }),
+            KeyCode::Down => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveSelectionDown,
+            }),
+            KeyCode::Char(ch) => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch },
+            }),
+            _ => ClientAction::Skip,
+        }
+    }
+}
+
+enum ClientAction {
+    Send(RpcRequest),
+    Skip,
+}
+
+impl ClientAction {
+    fn apply(&self, client: &mut RpcClient) -> io::Result<()> {
+        match self {
+            ClientAction::Send(request) => client.send(request),
+            ClientAction::Skip => Ok(()),
         }
     }
 }
