@@ -1,10 +1,33 @@
-use crate::{command_line::CommandLine, command_list::CommandList};
+use crate::{command_line::CommandLine, command_list::CommandList, frame_signal::FrameSignal};
 use vimrust_protocol::{CommandListItemFrame, CommandUiAction, CommandUiFrame};
 
 pub struct CommandUiState {
     command_line: CommandLine,
     command_list: CommandList,
     focus_on_list: bool,
+}
+
+pub struct CommandUiSnapshot {
+    command_text: String,
+    cursor_column: u16,
+    focus_on_list: bool,
+    selection: Option<usize>,
+    scroll_offset: usize,
+}
+
+impl CommandUiSnapshot {
+    pub fn frame_signal(&self, state: &CommandUiState) -> FrameSignal {
+        let same_text = self.command_text == state.command_line.text();
+        let same_cursor = self.cursor_column == state.command_line.cursor_column();
+        let same_focus = self.focus_on_list == state.focus_on_list;
+        let same_selection = self.selection == state.command_list.selection();
+        let same_scroll = self.scroll_offset == state.command_list.scroll_position();
+        if same_text && same_cursor && same_focus && same_selection && same_scroll {
+            FrameSignal::Skip
+        } else {
+            FrameSignal::Frame
+        }
+    }
 }
 
 impl CommandUiState {
@@ -43,60 +66,51 @@ impl CommandUiState {
             .adjust_scroll_for_visible_rows(visible_rows);
     }
 
-    pub fn apply_action(&mut self, action: CommandUiAction, list_rows: usize) -> bool {
+    pub fn apply_action(&mut self, action: CommandUiAction, list_rows: usize) {
         match action {
             CommandUiAction::StartPrompt => {
                 self.start_prompt();
-                true
             }
             CommandUiAction::Clear => {
                 self.clear();
-                true
             }
             CommandUiAction::InsertChar { ch } => {
                 self.command_line.char_insert(ch);
                 self.command_list.reset_selection();
                 self.focus_on_list = false;
-                true
             }
             CommandUiAction::Backspace => {
                 self.command_line.backspace();
                 self.command_list.reset_selection();
                 self.focus_on_list = false;
-                true
             }
             CommandUiAction::Delete => {
                 self.command_line.delete();
                 self.command_list.reset_selection();
                 self.focus_on_list = false;
-                true
             }
             CommandUiAction::MoveLeft => {
                 self.command_line.cursor_move_left();
                 self.focus_on_list = false;
-                true
             }
             CommandUiAction::MoveRight => {
                 self.command_line.cursor_move_right();
                 self.focus_on_list = false;
-                true
             }
             CommandUiAction::MoveHome => {
                 self.command_line.cursor_move_home();
                 self.focus_on_list = false;
-                true
             }
             CommandUiAction::MoveEnd => {
                 self.command_line.cursor_move_end();
                 self.focus_on_list = false;
-                true
             }
             CommandUiAction::MoveSelectionUp | CommandUiAction::MoveSelectionDown => {
                 let matches = self.command_list.filter(self.command_line.text());
                 if matches.is_empty() {
                     self.command_list.reset_selection();
                     self.focus_on_list = false;
-                    return true;
+                    return;
                 }
 
                 self.focus_on_list = true;
@@ -124,7 +138,6 @@ impl CommandUiState {
                     }
                 }
                 self.command_list.adjust_scroll_for_visible_rows(list_rows);
-                true
             }
             CommandUiAction::SelectFromList => {
                 let matches = self.command_list.filter(self.command_line.text());
@@ -151,12 +164,20 @@ impl CommandUiState {
                             self.command_list.select_index(updated_index);
                             self.command_list.adjust_scroll_for_visible_rows(list_rows);
                         }
-                        return true;
+                        return;
                     }
                 }
-
-                true
             }
+        }
+    }
+
+    pub fn snapshot(&self) -> CommandUiSnapshot {
+        CommandUiSnapshot {
+            command_text: self.command_line.text().to_string(),
+            cursor_column: self.command_line.cursor_column(),
+            focus_on_list: self.focus_on_list,
+            selection: self.command_list.selection(),
+            scroll_offset: self.command_list.scroll_position(),
         }
     }
 

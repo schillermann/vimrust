@@ -1,6 +1,8 @@
 use std::io::{self, BufRead, Write};
 
-use crate::{EditorMode, command_ui_state::CommandUiState, editor::Editor, file::File};
+use crate::{
+    EditorMode, FrameSignal, command_ui_state::CommandUiState, editor::Editor, file::File,
+};
 use vimrust_protocol::{
     Ack, AckKind, CommandUiAction, CommandUiFrame, Cursor, DeleteKind, FilePath, Frame,
     ProtocolVersion, RpcMode, RpcRequest, RpcResponse, StatusMessage,
@@ -207,42 +209,35 @@ pub fn handle_request(
             }
         }
         RpcRequest::TextInsert { text } => {
-            let mut changed = false;
+            let snapshot = editor.snapshot();
             for ch in text.chars() {
-                if editor.char_insert(ch) {
-                    changed = true;
-                }
+                editor.char_insert(ch);
             }
-            if changed {
-                *status = StatusMessage::Text {
-                    text: String::from("modified"),
-                };
-                RequestOutcome::Frame
-            } else {
-                RequestOutcome::Skip
+            *status = snapshot.status_from(editor, status.clone());
+            match snapshot.frame_signal(editor) {
+                FrameSignal::Frame => RequestOutcome::Frame,
+                FrameSignal::Skip => RequestOutcome::Skip,
             }
         }
         RpcRequest::TextDelete { kind } => {
-            let changed = match kind {
+            let snapshot = editor.snapshot();
+            match kind {
                 DeleteKind::Backspace => editor.backspace_delete(),
                 DeleteKind::Under => editor.under_cursor_delete(),
             };
-            if changed {
-                *status = StatusMessage::Text {
-                    text: String::from("modified"),
-                };
-                RequestOutcome::Frame
-            } else {
-                RequestOutcome::Skip
+            *status = snapshot.status_from(editor, status.clone());
+            match snapshot.frame_signal(editor) {
+                FrameSignal::Frame => RequestOutcome::Frame,
+                FrameSignal::Skip => RequestOutcome::Skip,
             }
         }
         RpcRequest::CursorMove { direction } => {
             let usable_rows = size.1.saturating_sub(2);
-            let moved = editor.cursor_move(direction, usable_rows);
-            if moved {
-                RequestOutcome::Frame
-            } else {
-                RequestOutcome::Skip
+            let snapshot = editor.snapshot();
+            editor.cursor_move(direction, usable_rows);
+            match snapshot.frame_signal(editor) {
+                FrameSignal::Frame => RequestOutcome::Frame,
+                FrameSignal::Skip => RequestOutcome::Skip,
             }
         }
         RpcRequest::CommandUi { action } => {
@@ -250,11 +245,11 @@ pub fn handle_request(
                 return RequestOutcome::Skip;
             }
             let list_rows = command_list_rows(*size);
-            let changed = command_ui.apply_action(action, list_rows);
-            if changed {
-                RequestOutcome::Frame
-            } else {
-                RequestOutcome::Skip
+            let snapshot = command_ui.snapshot();
+            command_ui.apply_action(action, list_rows);
+            match snapshot.frame_signal(command_ui) {
+                FrameSignal::Frame => RequestOutcome::Frame,
+                FrameSignal::Skip => RequestOutcome::Skip,
             }
         }
         RpcRequest::CommandExecute { line } => {
@@ -262,11 +257,13 @@ pub fn handle_request(
                 return RequestOutcome::Skip;
             }
             let list_rows = command_list_rows(*size);
-            let mut selection_applied = false;
-            if line.is_none() {
-                selection_applied =
-                    command_ui.apply_action(CommandUiAction::SelectFromList, list_rows);
-            }
+            let selection_signal = if line.is_none() {
+                let snapshot = command_ui.snapshot();
+                command_ui.apply_action(CommandUiAction::SelectFromList, list_rows);
+                snapshot.frame_signal(command_ui)
+            } else {
+                FrameSignal::Skip
+            };
             let source_line = match line {
                 Some(line) => {
                     command_ui.line_overwrite(line.clone());
@@ -307,10 +304,9 @@ pub fn handle_request(
                 }
                 "q" | "quit" => RequestOutcome::Quit,
                 _ => {
-                    if selection_applied {
-                        RequestOutcome::Frame
-                    } else {
-                        RequestOutcome::Skip
+                    match selection_signal {
+                        FrameSignal::Frame => RequestOutcome::Frame,
+                        FrameSignal::Skip => RequestOutcome::Skip,
                     }
                 }
             }

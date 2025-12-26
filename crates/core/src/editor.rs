@@ -1,6 +1,7 @@
 use std::io;
 
-use crate::file::File;
+use crate::file::{File, FileChangeToken};
+use crate::frame_signal::FrameSignal;
 use vimrust_protocol::FilePath;
 use vimrust_protocol::MoveDirection;
 use vimrust_protocol::StatusMessage;
@@ -104,6 +105,38 @@ impl FileChange {
     }
 }
 
+pub struct EditorSnapshot {
+    cursor_x: u16,
+    cursor_y: u16,
+    columns_offset: u16,
+    rows_offset: u16,
+    change_mark: FileChangeToken,
+}
+
+impl EditorSnapshot {
+    pub fn frame_signal(&self, editor: &Editor) -> FrameSignal {
+        let same_cursor = self.cursor_x == editor.cursor_x && self.cursor_y == editor.cursor_y;
+        let same_offsets =
+            self.columns_offset == editor.columns_offset && self.rows_offset == editor.rows_offset;
+        let same_change = self.change_mark == editor.file.change_mark();
+        if same_cursor && same_offsets && same_change {
+            FrameSignal::Skip
+        } else {
+            FrameSignal::Frame
+        }
+    }
+
+    pub fn status_from(&self, editor: &Editor, status: StatusMessage) -> StatusMessage {
+        if self.change_mark == editor.file.change_mark() {
+            status
+        } else {
+            StatusMessage::Text {
+                text: String::from("modified"),
+            }
+        }
+    }
+}
+
 impl Editor {
     pub fn new(file: File) -> Self {
         Self {
@@ -155,6 +188,16 @@ impl Editor {
     pub fn change_status(&self) -> FileChange {
         FileChange {
             changed: self.file.change_state(),
+        }
+    }
+
+    pub fn snapshot(&self) -> EditorSnapshot {
+        EditorSnapshot {
+            cursor_x: self.cursor_x,
+            cursor_y: self.cursor_y,
+            columns_offset: self.columns_offset,
+            rows_offset: self.rows_offset,
+            change_mark: self.file.change_mark(),
         }
     }
 
@@ -232,13 +275,7 @@ impl Editor {
         rows
     }
 
-    pub fn cursor_move(&mut self, direction: MoveDirection, usable_rows: u16) -> bool {
-        let before = (
-            self.cursor_x,
-            self.cursor_y,
-            self.columns_offset,
-            self.rows_offset,
-        );
+    pub fn cursor_move(&mut self, direction: MoveDirection, usable_rows: u16) {
         let file_lines_len = self.file.line_count().min(u16::MAX as usize) as u16;
 
         match direction {
@@ -308,15 +345,9 @@ impl Editor {
             self.cursor_x = self.snap_cursor_to_render_character(line, self.cursor_x);
         }
 
-        (
-            self.cursor_x,
-            self.cursor_y,
-            self.columns_offset,
-            self.rows_offset,
-        ) != before
     }
 
-    pub fn char_insert(&mut self, ch: char) -> bool {
+    pub fn char_insert(&mut self, ch: char) {
         let target_line = self.cursor_y as usize;
         self.file.line_ensure(target_line);
 
@@ -331,25 +362,22 @@ impl Editor {
             let previous_cursor_x = self.cursor_x;
             line.insert(insert_at, ch);
             self.cursor_x = self.cursor_x.saturating_add(advance);
-            let changed = line.len() != previous_len || self.cursor_x != previous_cursor_x;
-            if changed {
+            if line.len() != previous_len || self.cursor_x != previous_cursor_x {
                 self.file.touch();
             }
-            return changed;
+            return;
         }
-
-        false
     }
 
-    pub fn backspace_delete(&mut self) -> bool {
+    pub fn backspace_delete(&mut self) {
         if self.cursor_x == 0 && self.cursor_y == 0 {
-            return false;
+            return;
         }
 
         if self.cursor_x == 0 {
             let current_index = self.cursor_y as usize;
             if current_index == 0 || current_index >= self.file.line_count() {
-                return false;
+                return;
             }
             if let Some(current_line) = self.file.line_at(current_index).cloned() {
                 let new_cursor_x = match self.file.line_at(current_index.saturating_sub(1)) {
@@ -363,10 +391,10 @@ impl Editor {
                     self.cursor_y = self.cursor_y.saturating_sub(1);
                     self.cursor_x = new_cursor_x;
                     self.file.touch();
-                    return true;
+                    return;
                 }
             }
-            return false;
+            return;
         }
 
         let (new_cursor_x, delete_idx) = match self.file.line_at(self.cursor_y as usize) {
@@ -386,16 +414,14 @@ impl Editor {
             line.remove(delete_idx);
             self.cursor_x = new_cursor_x;
             self.file.touch();
-            return true;
+            return;
         }
-
-        false
     }
 
-    pub fn under_cursor_delete(&mut self) -> bool {
+    pub fn under_cursor_delete(&mut self) {
         let delete_idx = match self.file.line_at(self.cursor_y as usize) {
             Some(line) => self.column_to_char_index_render(line, self.cursor_x),
-            None => return false,
+            None => return,
         };
 
         if let Some(line) = self.file.line_at_mut(self.cursor_y as usize)
@@ -403,7 +429,7 @@ impl Editor {
         {
             line.remove(delete_idx);
             self.file.touch();
-            return true;
+            return;
         }
 
         let current_index = self.cursor_y as usize;
@@ -414,10 +440,8 @@ impl Editor {
             current_line.push_str(&next_line);
             self.file.line_remove(current_index + 1);
             self.file.touch();
-            return true;
+            return;
         }
-
-        false
     }
 
     pub fn snap_cursor_to_tab_start(&mut self) {

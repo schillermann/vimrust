@@ -6,6 +6,7 @@ pub struct File {
     path: FilePath,
     file_lines: Vec<String>,
     changed: bool,
+    change_token: FileChangeToken,
 }
 
 impl File {
@@ -14,6 +15,7 @@ impl File {
             path: file_path,
             file_lines: Vec::new(),
             changed: false,
+            change_token: FileChangeToken::new(),
         }
     }
 
@@ -43,6 +45,7 @@ impl File {
         }
 
         self.changed = false;
+        self.change_token = FileChangeToken::new();
         Ok(())
     }
 
@@ -51,6 +54,7 @@ impl File {
         self.file_lines.clear();
         self.file_lines.push(String::new());
         self.changed = false;
+        self.change_token = FileChangeToken::new();
     }
 
     pub fn read(&mut self) -> io::Result<()> {
@@ -74,6 +78,7 @@ impl File {
             self.path = FilePath::Provided { path };
         }
         self.changed = false;
+        self.change_token = FileChangeToken::new();
         Ok(String::from("saved"))
     }
 
@@ -117,9 +122,35 @@ impl File {
 
     pub fn touch(&mut self) {
         self.changed = true;
+        self.change_token = self.change_token.next();
     }
 
     pub fn change_state(&self) -> bool {
         self.changed
+    }
+
+    pub fn change_mark(&self) -> FileChangeToken {
+        self.change_token
+    }
+}
+
+// It’s an immutable marker of the file’s change state.
+// Each edit (touch()) advances the token, while open/save/reset set it back to a new base.
+// Snapshot queries compare the previous token to the current one to decide
+// whether to emit a frame or update status, without returning booleans from mutating methods.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct FileChangeToken {
+    value: u64,
+}
+
+impl FileChangeToken {
+    pub fn new() -> Self {
+        Self { value: 0 }
+    }
+
+    pub fn next(&self) -> Self {
+        Self {
+            value: self.value.saturating_add(1),
+        }
     }
 }
