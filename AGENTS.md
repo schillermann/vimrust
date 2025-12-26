@@ -1,4 +1,4 @@
-# AGENTS.md
+# AGENTS
 
 This repository is optimized for Codex-style agent work. Follow the rules below for *all* changes unless a specific module explicitly documents an exception.
 
@@ -44,6 +44,7 @@ This repository is optimized for Codex-style agent work. Follow the rules below 
 
 ### 6) Minimize procedural orchestration
 - Avoid methods that coordinate data via loops and `if/else`.
+- Do not expose lifecycle loops, polling, routing, or batching logic.
 - Push behavior and decisions into objects.
 
 ---
@@ -56,22 +57,24 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 - Returns a value.
 - Has **no observable side effects**.
 - Does **not** change object state.
-- Returns **objects**, not primitives.
+- Returns **objects**, not primitives or booleans.
 - Method names describe **what the object provides**, not *how it is computed*.
 - Examples:
   - `message() -> Message`
   - `client() -> Client`
-  - `total() -> Money`
+  - `frame() -> Frame`
+  - `state() -> State`
 
 #### Command
-- Performs an action.
+- Performs a domain action.
 - Returns **nothing** (or only a language-mandated void/unit).
 - Does **not** return data or status flags.
-- Method names are **clear domain verbs**, not procedural flow words.
+- Method names are **clear domain verbs**, not control-flow verbs.
 - Examples:
-  - `connect()`
   - `open()`
-  - `receive()`
+  - `close()`
+  - `accept(Message)`
+  - `render()`
 
 #### Forbidden
 - Methods that return a value **and** mutate state.
@@ -84,42 +87,92 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 
 ---
 
-### 8) Method and type naming rules (message-oriented)
+### 8) Method naming rules (message-oriented)
 
-- Methods are **messages sent to objects**, not questions asked about them.
-- Avoid interrogative or predicate naming.
-- Avoid orchestration nouns such as:
-  - `*Launcher`
-  - `*Runner`
-  - `*Executor`
-  - `*Manager`
-  - `*Router`
-  - `*Dispatcher`
-  - `*Controller`
-  - `*Handler`
-  - `*Coordinator`
+Methods are **messages sent to objects**, not steps in a procedure.
 
-- Do not introduce central routing, dispatching, coordination, or “traffic cop” objects
-  for **domain behavior** (e.g., `ModeInputRouter`).
-  Prefer polymorphic domain objects (e.g., `Mode`, `State`, `Interaction`) that
-  interpret input via message passing rather than branching and forwarding.
+#### Forbidden procedural / orchestration method names
 
-- If such a class exists (infrastructure boundary only):
-  - Prefer **query methods** that return objects:
-    - `client()`
-    - `message()`
-  - Or **command methods** with clear domain verbs:
-    - `connect()`
-    - `receive()`
-  - Never combine construction, side effects, and return values.
+Do not introduce methods named (or semantically equivalent to):
+
+- `run`
+- `serve` (when it means “enter a loop” rather than a single domain action)
+- `execute`
+- `process`
+- `handle`
+- `dispatch`
+- `route`
+- `drain`
+- `poll`
+- `read`
+- `write`
+- `bootstrap`
+- `loop`
+- `tick`
+
+These names indicate control flow, lifecycle orchestration, batching, polling,
+or delegation instead of behavior.
+
+#### Avoid “type in the method name”
+
+Do not introduce methods that encode message types in the name, such as:
+
+- `handle_event(...)`
+- `handle_response(...)`
+- `accept_response(...)`
+- `receive_input(...)`
+
+This usually means the object is routing/branching and doing type-driven orchestration.
+
+Prefer:
+- **one** command that accepts a polymorphic message:
+  - `accept(Message)`
+- or move behavior into the message itself:
+  - `message.apply_to(session)` / `message.react(session)`
+
+#### Preferred alternatives (examples)
+
+- Replace `run()` / `serve()` / `loop()` with meaningful domain commands:
+  - `open()`, `close()`, `maintain()` (only if “maintain” is domain-meaningful)
+- Replace `handleX(x)` with:
+  - `accept(x)` (and make `x` responsible for behavior)
+- Replace `drainX()` / `readX()` / `receive_input()` with object-returning queries:
+  - `input() -> Input`
+  - `events() -> Events`
+- Replace `render_latest_*` with:
+  - `frame() -> Frame` and/or `render()`
 
 ---
 
-### 9) Avoid global constants as coupling points
+### 9) Type naming rules (anti-orchestration)
+
+Avoid orchestration nouns such as:
+
+- `*Launcher`
+- `*Runner`
+- `*Executor`
+- `*Manager`
+- `*Router`
+- `*Dispatcher`
+- `*Controller`
+- `*Handler`
+- `*Coordinator`
+
+Do not introduce central routing, dispatching, coordination, or
+“traffic cop” objects for **domain behavior**
+(e.g., `ModeInputRouter`, `RpcSessionRunner`).
+
+Prefer polymorphic domain objects
+(e.g. `Mode`, `State`, `Message`, `Event`, `Response`)
+that interpret input via message passing rather than branching and forwarding.
+
+---
+
+### 10) Avoid global constants as coupling points
 - Do not centralize logic in public constants or configuration bags.
 - Prefer objects that encapsulate configuration and behavior together.
 
-### 10) Prefer composition over inheritance
+### 11) Prefer composition over inheritance
 - Favor small composable objects.
 - Inheritance is acceptable only when substitutability is preserved and no shared mutable state is introduced.
 
@@ -128,17 +181,17 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 ## Practical guidance for PRs
 
 - Introduce small objects with a single responsibility.
-- Replace closure-based callbacks with:
-  - dedicated objects implementing an interface/protocol, or
-  - objects passed in and messaged explicitly (`handler.handle(x)`).
+- Move behavior into the object that owns the data.
+- Replace loops and routing code with polymorphism.
 - Keep dependencies explicit via constructors.
 
 ## When these rules clash with existing code
 
 - New code must follow these rules even if legacy code does not.
 - When touching legacy code, improve adherence opportunistically:
-  - remove setters and move behavior into the object,
+  - remove orchestration methods (`run`, `serve`, `handle`, `drain`, `read_*`),
   - replace booleans with polymorphic objects,
+  - collapse `accept_*` variants into `accept(Message)`,
   - eliminate static helpers by introducing objects.
 
 ---
@@ -175,39 +228,23 @@ All commits **must** follow the **Conventional Commits v1.0.0** specification.
 - The scope should be a **noun** describing the affected area:
   - `agents`
   - `rpc`
+  - `editor`
   - `infrastructure`
   - `docs`
 
-Example:
-```
-refactor(agents): remove boolean predicate methods
-```
-
 ### Description rules
 
-- Use the **imperative mood** (“add”, “remove”, “enforce”, “disallow”)
+- Use the **imperative mood**
 - Do **not** capitalize the first letter
 - Do **not** end with a period
 - Keep it concise and specific
-
-### Commit body (optional)
-
-- Explain **why** the change was made, not how
-- Wrap lines at ~72 characters
-- Reference design rules or constraints when relevant
 
 ### Breaking changes
 
 - Breaking changes **must** be explicitly marked
 - Use `!` after the type or a `BREAKING CHANGE:` footer
 
-Example:
-```
-refactor(agents)!: forbid boolean-returning query methods
-
-BREAKING CHANGE: methods returning bool for state inspection
-are no longer allowed; replace them with object-returning queries.
-```
+---
 
 ### Enforcement expectations
 
