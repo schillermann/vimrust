@@ -105,15 +105,19 @@ impl<'a> Ui<'a> {
                         )?;
                     }
                 } else {
-                    for (idx, row) in frame.editor_rows().iter().enumerate() {
+                    let rows = frame.editor_rows();
+                    let mut idx = 0usize;
+                    while idx < rows.len() {
                         if idx as u16 >= usable_rows {
                             break;
                         }
+                        let row = &rows[idx];
                         let screen_row = 1u16.saturating_add(idx as u16);
                         self.terminal.queue_add_command(MoveTo(0, screen_row))?;
                         self.terminal
                             .queue_add_command(Clear(ClearType::CurrentLine))?;
                         self.terminal.queue_add_command(Print(row))?;
+                        idx = idx.saturating_add(1);
                     }
                 }
             }
@@ -371,12 +375,13 @@ impl<'a> Ui<'a> {
         let mut positions = Vec::new();
         let mut q_iter = query.chars().peekable();
         let mut q_index = 0usize;
-        for (idx, ch) in candidate.chars().enumerate() {
+        let mut idx = 0usize;
+        for ch in candidate.chars() {
             if let Some(&qch) = q_iter.peek() {
                 if ch.eq_ignore_ascii_case(&qch) {
                     positions.push(idx);
                     q_iter.next();
-                    q_index += 1;
+                    q_index = q_index.saturating_add(1);
                     if q_index >= query.len() {
                         break;
                     }
@@ -384,6 +389,7 @@ impl<'a> Ui<'a> {
             } else {
                 break;
             }
+            idx = idx.saturating_add(1);
         }
         positions
     }
@@ -396,17 +402,20 @@ impl<'a> Ui<'a> {
         highlight_fg: Color,
         keep_background: bool,
     ) -> io::Result<()> {
-        let mut match_iter = match_indices.iter().copied();
-        let mut next_match = match_iter.next();
+        let mut match_pos = 0usize;
+        let mut next_match = if match_indices.is_empty() {
+            usize::MAX
+        } else {
+            match_indices[0]
+        };
 
         if let Some(color) = default_fg {
             terminal.queue_add_command(SetForegroundColor(color))?;
         }
 
-        for (idx, ch) in text.chars().enumerate() {
-            if let Some(target) = next_match
-                && idx == target
-            {
+        let mut idx = 0usize;
+        for ch in text.chars() {
+            if idx == next_match {
                 terminal.queue_add_command(SetForegroundColor(highlight_fg))?;
                 terminal.queue_add_command(Print(ch))?;
                 if let Some(color) = default_fg {
@@ -414,10 +423,16 @@ impl<'a> Ui<'a> {
                 } else if !keep_background {
                     terminal.queue_add_command(ResetColor)?;
                 }
-                next_match = match_iter.next();
-                continue;
+                match_pos = match_pos.saturating_add(1);
+                if match_pos < match_indices.len() {
+                    next_match = match_indices[match_pos];
+                } else {
+                    next_match = usize::MAX;
+                }
+            } else {
+                terminal.queue_add_command(Print(ch))?;
             }
-            terminal.queue_add_command(Print(ch))?;
+            idx = idx.saturating_add(1);
         }
 
         Ok(())
