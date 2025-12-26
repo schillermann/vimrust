@@ -84,7 +84,7 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 
 ---
 
-### 8) Method naming rules (message-oriented)
+### 8) Method and type naming rules (message-oriented)
 
 - Methods are **messages sent to objects**, not questions asked about them.
 - Avoid interrogative or predicate naming.
@@ -93,6 +93,17 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
   - `*Runner`
   - `*Executor`
   - `*Manager`
+  - `*Router`
+  - `*Dispatcher`
+  - `*Controller`
+  - `*Handler`
+  - `*Coordinator`
+
+- Do not introduce central routing, dispatching, coordination, or “traffic cop” objects
+  for **domain behavior** (e.g., `ModeInputRouter`).
+  Prefer polymorphic domain objects (e.g., `Mode`, `State`, `Interaction`) that
+  interpret input via message passing rather than branching and forwarding.
+
 - If such a class exists (infrastructure boundary only):
   - Prefer **query methods** that return objects:
     - `client()`
