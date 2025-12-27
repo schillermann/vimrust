@@ -88,11 +88,19 @@ impl<'a> Ui<'a> {
         {
             self.terminal.queue_add_command(Hide)?;
 
-            let command_text = match frame.command_ui_frame() {
-                Some(command_ui) => command_ui.command_text(),
-                None => "",
+            let (command_text, command_selection) = match frame.command_ui_frame() {
+                Some(command_ui) => (
+                    command_ui.command_text(),
+                    command_ui.command_selection(),
+                ),
+                None => ("", vimrust_protocol::CommandLineSelection::None),
             };
-            draw_command_line(self.terminal, number_of_columns, command_text)?;
+            draw_command_line(
+                self.terminal,
+                number_of_columns,
+                command_text,
+                command_selection,
+            )?;
 
             if usable_rows > 0 {
                 let body = UiModeBody {
@@ -544,6 +552,7 @@ fn draw_command_line(
     terminal: &mut Terminal,
     number_of_columns: u16,
     content: &str,
+    selection: vimrust_protocol::CommandLineSelection,
 ) -> io::Result<()> {
     terminal.queue_add_command(MoveTo(0, 0))?;
     terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
@@ -569,8 +578,83 @@ fn draw_command_line(
         g: 27,
         b: 27,
     }))?;
-    terminal.queue_add_command(SetForegroundColor(display.foreground()))?;
-    terminal.queue_add_command(Print(visible))?;
+    let highlight = CommandLineHighlight::new(selection);
+    let highlight_indices = highlight.visible_indices(display_content, inner_width);
+    if highlight_indices.is_empty() {
+        terminal.queue_add_command(SetForegroundColor(display.foreground()))?;
+        terminal.queue_add_command(Print(visible))?;
+    } else {
+        CommandLineHighlight::queue(
+            terminal,
+            &visible,
+            display.foreground(),
+            highlight_indices,
+        )?;
+    }
     terminal.queue_add_command(ResetColor)?;
     Ok(())
+}
+
+struct CommandLineHighlight {
+    selection: vimrust_protocol::CommandLineSelection,
+}
+
+impl CommandLineHighlight {
+    fn new(selection: vimrust_protocol::CommandLineSelection) -> Self {
+        Self { selection }
+    }
+
+    fn visible_indices(&self, content: &str, inner_width: usize) -> Vec<usize> {
+        let indices = self.selection.indices();
+        if indices.is_empty() {
+            return indices;
+        }
+        let visible_len = content.chars().take(inner_width).count();
+        let mut visible = Vec::new();
+        let mut idx = 0usize;
+        while idx < indices.len() {
+            let position = indices[idx];
+            if position < visible_len {
+                visible.push(position.saturating_add(1));
+            }
+            idx = idx.saturating_add(1);
+        }
+        visible
+    }
+
+    fn queue(
+        terminal: &mut Terminal,
+        line: &str,
+        default_fg: Color,
+        highlight_indices: Vec<usize>,
+    ) -> io::Result<()> {
+        let highlight_fg = Color::White;
+        terminal.queue_add_command(SetForegroundColor(default_fg))?;
+        let mut match_pos = 0usize;
+        let mut next_match = if highlight_indices.is_empty() {
+            usize::MAX
+        } else {
+            highlight_indices[0]
+        };
+        let mut idx = 0usize;
+        for ch in line.chars() {
+            if idx == next_match {
+                terminal.queue_add_command(SetAttribute(Attribute::Italic))?;
+                terminal.queue_add_command(SetForegroundColor(highlight_fg))?;
+                terminal.queue_add_command(Print(ch))?;
+                terminal.queue_add_command(SetAttribute(Attribute::Reset))?;
+                terminal.queue_add_command(SetForegroundColor(default_fg))?;
+                match_pos = match_pos.saturating_add(1);
+                if match_pos < highlight_indices.len() {
+                    next_match = highlight_indices[match_pos];
+                } else {
+                    next_match = usize::MAX;
+                }
+            } else {
+                terminal.queue_add_command(Print(ch))?;
+            }
+            idx = idx.saturating_add(1);
+        }
+        Ok(())
+    }
 }

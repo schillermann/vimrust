@@ -1,5 +1,11 @@
-use crate::{command_line::CommandLine, command_list::CommandList, frame_signal::FrameSignal};
-use vimrust_protocol::{CommandListItemFrame, CommandUiAction, CommandUiFrame};
+use crate::{
+    command_line::CommandLine,
+    command_list::CommandList,
+    frame_signal::FrameSignal,
+};
+use vimrust_protocol::{
+    CommandLineSelection, CommandListItemFrame, CommandUiAction, CommandUiFrame,
+};
 
 pub struct CommandUiState {
     command_line: CommandLine,
@@ -10,6 +16,7 @@ pub struct CommandUiState {
 pub struct CommandUiSnapshot {
     command_text: String,
     cursor_column: u16,
+    line_selection: CommandLineSelection,
     focus_on_list: bool,
     selection: Option<usize>,
     scroll_offset: usize,
@@ -19,10 +26,17 @@ impl CommandUiSnapshot {
     pub fn frame_signal(&self, state: &CommandUiState) -> FrameSignal {
         let same_text = self.command_text == state.command_line.text();
         let same_cursor = self.cursor_column == state.command_line.cursor_column();
+        let same_line_selection = self.line_selection == state.command_line.selection();
         let same_focus = self.focus_on_list == state.focus_on_list;
         let same_selection = self.selection == state.command_list.selection();
         let same_scroll = self.scroll_offset == state.command_list.scroll_position();
-        if same_text && same_cursor && same_focus && same_selection && same_scroll {
+        if same_text
+            && same_cursor
+            && same_line_selection
+            && same_focus
+            && same_selection
+            && same_scroll
+        {
             FrameSignal::Skip
         } else {
             FrameSignal::Frame
@@ -53,6 +67,10 @@ impl CommandUiState {
 
     pub fn command_text(&self) -> &str {
         self.command_line.text()
+    }
+
+    pub fn line_selection(&self) -> CommandLineSelection {
+        self.command_line.selection()
     }
 
     pub fn clear(&mut self) {
@@ -147,7 +165,12 @@ impl CommandUiState {
                 {
                     let index = selected.min(matches.len().saturating_sub(1));
                     if let Some(entry) = matches.get(index) {
-                        self.command_line.set_content(format!(":{}", entry.label()));
+                        let entry_label = entry.label();
+                        let line = format!(":{}", entry_label);
+                        let placeholder = CommandPlaceholder;
+                        let selection = placeholder.selection_for(&line);
+                        self.command_line
+                            .set_content_with_selection(line, selection);
                         self.focus_on_list = false;
 
                         let updated_matches = self.command_list.filter(self.command_line.text());
@@ -175,6 +198,7 @@ impl CommandUiState {
         CommandUiSnapshot {
             command_text: self.command_line.text().to_string(),
             cursor_column: self.command_line.cursor_column(),
+            line_selection: self.command_line.selection(),
             focus_on_list: self.focus_on_list,
             selection: self.command_list.selection(),
             scroll_offset: self.command_list.scroll_position(),
@@ -203,10 +227,31 @@ impl CommandUiState {
         CommandUiFrame::new(
             self.command_line.text().to_string(),
             self.command_line.cursor_column(),
+            self.command_line.selection(),
             self.focus_on_list,
             list_items,
             selected_index,
             self.command_list.scroll_position(),
         )
+    }
+}
+
+struct CommandPlaceholder;
+
+impl CommandPlaceholder {
+    fn selection_for(&self, line: &str) -> CommandLineSelection {
+        let start = match line.find('{') {
+            Some(start) => start,
+            None => return CommandLineSelection::None,
+        };
+        let tail = &line[start..];
+        let end = match tail.find('}') {
+            Some(offset) => start.saturating_add(offset).saturating_add(1),
+            None => return CommandLineSelection::None,
+        };
+        if end <= start {
+            return CommandLineSelection::None;
+        }
+        CommandLineSelection::range(start as u16, end as u16)
     }
 }

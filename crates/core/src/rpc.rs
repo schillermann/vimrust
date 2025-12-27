@@ -4,8 +4,9 @@ use crate::{
     EditorMode, FrameSignal, command_ui_state::CommandUiState, editor::Editor, file::File,
 };
 use vimrust_protocol::{
-    Ack, AckKind, CommandUiAction, CommandUiFrame, Cursor, DeleteKind, FilePath, Frame,
-    MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse, StatusMessage,
+    Ack, AckKind, CommandLineSelection, CommandUiAction, CommandUiFrame, Cursor, DeleteKind,
+    FilePath, Frame, MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
+    StatusMessage,
 };
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
@@ -225,6 +226,107 @@ enum CommandLineRequest {
     FromUi,
 }
 
+enum CommandPath {
+    Missing,
+    Provided(String),
+}
+
+enum CommandRequest {
+    Save,
+    SaveAndQuit,
+    Quit,
+    Open { path: CommandPath },
+    Skip,
+}
+
+enum CommandExecutionDecision {
+    Allow,
+    Block,
+}
+
+enum PlaceholderPresence {
+    Found,
+    Missing,
+}
+
+struct CommandPlaceholderProbe<'a> {
+    line: &'a str,
+}
+
+impl<'a> CommandPlaceholderProbe<'a> {
+    fn presence(&self) -> PlaceholderPresence {
+        if self.line.contains('{') && self.line.contains('}') {
+            PlaceholderPresence::Found
+        } else {
+            PlaceholderPresence::Missing
+        }
+    }
+}
+
+struct CommandExecutionGate {
+    selection: CommandLineSelection,
+    placeholder: PlaceholderPresence,
+}
+
+impl CommandExecutionGate {
+    fn decision(&self) -> CommandExecutionDecision {
+        match self.selection {
+            CommandLineSelection::Range { .. } => CommandExecutionDecision::Block,
+            CommandLineSelection::None => match self.placeholder {
+                PlaceholderPresence::Found => CommandExecutionDecision::Block,
+                PlaceholderPresence::Missing => CommandExecutionDecision::Allow,
+            },
+        }
+    }
+}
+
+struct CommandText {
+    raw: String,
+}
+
+impl CommandText {
+    fn request(&self) -> CommandRequest {
+        let trimmed = self.raw.trim_start_matches(':').trim();
+        if trimmed.is_empty() {
+            return CommandRequest::Skip;
+        }
+        let parts = CommandParts::new(trimmed);
+        match parts.name.as_str() {
+            "s" | "save" => CommandRequest::Save,
+            "sq" => CommandRequest::SaveAndQuit,
+            "q" | "quit" => CommandRequest::Quit,
+            "o" | "open" => CommandRequest::Open { path: parts.path },
+            _ => CommandRequest::Skip,
+        }
+    }
+}
+
+struct CommandParts {
+    name: String,
+    path: CommandPath,
+}
+
+impl CommandParts {
+    fn new(line: &str) -> Self {
+        let mut split_at = line.len();
+        for (idx, ch) in line.char_indices() {
+            if ch.is_whitespace() {
+                split_at = idx;
+                break;
+            }
+        }
+        let (name, rest) = line.split_at(split_at);
+        let name = name.to_lowercase();
+        let path = if rest.trim().is_empty() {
+            CommandPath::Missing
+        } else {
+            let rest = rest.trim_start();
+            CommandPath::Provided(rest.to_string())
+        };
+        Self { name, path }
+    }
+}
+
 struct CommandExecuteAction {
     line: CommandLineRequest,
     list_rows: usize,
@@ -257,9 +359,24 @@ impl CommandExecuteAction {
             }
             CommandLineRequest::FromUi => command_ui.command_text().to_string(),
         };
-        let command = source_line.trim_start_matches(':').trim().to_lowercase();
-        self.outcome = match command.as_str() {
-            "s" | "save" => {
+        let placeholder = CommandPlaceholderProbe {
+            line: source_line.as_str(),
+        }
+        .presence();
+        let gate = CommandExecutionGate {
+            selection: command_ui.line_selection(),
+            placeholder,
+        };
+        if let CommandExecutionDecision::Block = gate.decision() {
+            self.outcome = match self.selection_signal {
+                FrameSignal::Frame => RequestOutcome::Frame,
+                FrameSignal::Skip => RequestOutcome::Skip,
+            };
+            return;
+        }
+        let command = CommandText { raw: source_line }.request();
+        self.outcome = match command {
+            CommandRequest::Save => {
                 let mut saved_path = FilePath::Missing;
                 match editor.file_save(&mut saved_path) {
                     Ok(msg) => {
@@ -278,7 +395,7 @@ impl CommandExecuteAction {
                     Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
                 }
             }
-            "sq" => {
+            CommandRequest::SaveAndQuit => {
                 let mut saved_path = FilePath::Missing;
                 match editor.file_save(&mut saved_path) {
                     Ok(msg) => {
@@ -288,8 +405,32 @@ impl CommandExecuteAction {
                     Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
                 }
             }
-            "q" | "quit" => RequestOutcome::Quit,
-            _ => match self.selection_signal {
+            CommandRequest::Quit => RequestOutcome::Quit,
+            CommandRequest::Open { path } => match path {
+                CommandPath::Provided(path) => {
+                    let mut new_file = File::new(FilePath::Provided { path });
+                    if let Err(err) = new_file.read() {
+                        RequestOutcome::Error(format!("open failed: {}", err))
+                    } else {
+                        *editor = Editor::new(new_file);
+                        *status = StatusMessage::Empty;
+                        if matches!(mode, EditorMode::Command) {
+                            command_ui.clear();
+                        }
+                        *mode = EditorMode::Normal;
+                        let ack = Ack::new(
+                            AckKind::Open,
+                            StatusMessage::Text {
+                                text: String::from("opened"),
+                            },
+                            editor.file_path(),
+                        );
+                        RequestOutcome::FrameAndAck(ack)
+                    }
+                }
+                CommandPath::Missing => RequestOutcome::Error(String::from("open failed: missing filename")),
+            },
+            CommandRequest::Skip => match self.selection_signal {
                 FrameSignal::Frame => RequestOutcome::Frame,
                 FrameSignal::Skip => RequestOutcome::Skip,
             },
@@ -943,6 +1084,127 @@ mod tests {
     }
 
     #[test]
+    fn command_execute_list_placeholder_skips_execution_for_open_query() {
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        let mut mode = EditorMode::Command;
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 10);
+        let mut command_ui = CommandUiState::new();
+
+        let _ = handle_request(
+            RpcRequest::ModeSet {
+                mode: RpcMode::Command,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 'o' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 'p' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 'e' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch: 'n' },
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let _ = handle_request(
+            RpcRequest::CommandUi {
+                action: CommandUiAction::MoveSelectionDown,
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute { line: None },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        match outcome {
+            RequestOutcome::Ack(_)
+            | RequestOutcome::FrameAndAck(_)
+            | RequestOutcome::Quit => {
+                panic!("expected command execution to be skipped");
+            }
+            RequestOutcome::Frame | RequestOutcome::Skip | RequestOutcome::Error(_) => {}
+        }
+        assert!(matches!(mode, EditorMode::Command));
+    }
+
+    #[test]
+    fn command_execute_placeholder_line_skips_execution() {
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        let mut mode = EditorMode::Command;
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 10);
+        let mut command_ui = CommandUiState::new();
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute {
+                line: Some(":o {filename}".to_string()),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        match outcome {
+            RequestOutcome::Ack(_)
+            | RequestOutcome::FrameAndAck(_)
+            | RequestOutcome::Quit => {
+                panic!("expected command execution to be skipped");
+            }
+            RequestOutcome::Frame | RequestOutcome::Skip | RequestOutcome::Error(_) => {}
+        }
+        assert!(matches!(mode, EditorMode::Command));
+    }
+
+    #[test]
     fn command_execute_quit_requests_quit_outcome() {
         let mut editor = Editor::new(File::new(FilePath::Missing));
         let mut mode = EditorMode::Command;
@@ -961,6 +1223,36 @@ mod tests {
             &mut command_ui,
         );
         assert!(matches!(outcome, RequestOutcome::Quit));
+    }
+
+    #[test]
+    fn command_execute_open_reads_file_and_emits_ack() {
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        let mut mode = EditorMode::Command;
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 10);
+        let mut command_ui = CommandUiState::new();
+        let path = std::env::temp_dir().join("vimrust_rpc_command_open.txt");
+        let _ = fs::write(&path, "hello");
+
+        let outcome = handle_request(
+            RpcRequest::CommandExecute {
+                line: Some(format!(":o {}", path.to_string_lossy())),
+            },
+            &mut editor,
+            &mut mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        assert!(matches!(outcome, RequestOutcome::FrameAndAck(_)));
+        assert_eq!(
+            editor.file_path(),
+            FilePath::Provided {
+                path: path.to_string_lossy().to_string()
+            }
+        );
     }
 
     #[test]
