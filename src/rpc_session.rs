@@ -46,7 +46,7 @@ impl<'a> RpcSession<'a> {
         loop {
             self.receive()?;
             self.render()?;
-            if self.ui.quit() {
+            if matches!(self.ui.quit_signal(), crate::ui::UiQuitSignal::Requested) {
                 break;
             }
             self.listen()?;
@@ -57,12 +57,8 @@ impl<'a> RpcSession<'a> {
 
     fn handshake(&mut self) -> io::Result<()> {
         self.ui.terminal_update_size()?;
-        let size = self.ui.terminal_size();
-        self.client.send(&RpcRequest::EditorResize {
-            cols: size.0,
-            rows: size.1,
-            suppress_frame: false,
-        })?;
+        let request = self.ui.resize_request(false);
+        self.client.send(&request)?;
         self.client.send(&RpcRequest::StateGet)?;
         Ok(())
     }
@@ -162,12 +158,8 @@ impl<'a> RpcSession<'a> {
                 }
                 Event::Resize(_, _) => {
                     self.ui.terminal_update_size()?;
-                    let size = self.ui.terminal_size();
-                    self.client.send(&RpcRequest::EditorResize {
-                        cols: size.0,
-                        rows: size.1,
-                        suppress_frame: false,
-                    })?;
+                    let request = self.ui.resize_request(false);
+                    self.client.send(&request)?;
                 }
                 _ => {}
             }

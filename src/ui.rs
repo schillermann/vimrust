@@ -9,7 +9,7 @@ use crossterm::{
 };
 
 use crate::{mode::EditorMode, status_line::StatusLine, terminal::Terminal};
-use vimrust_protocol::{CommandUiFrame, Frame, StatusMessage};
+use vimrust_protocol::{CommandUiFrame, Frame, RpcRequest, StatusMessage};
 
 /// Responsible for orchestrating the per-frame UI rendering.
 pub struct Ui<'a> {
@@ -31,8 +31,13 @@ impl<'a> Ui<'a> {
         }
     }
 
-    pub fn terminal_size(&self) -> (u16, u16) {
-        self.terminal.size()
+    pub fn resize_request(&self, suppress_frame: bool) -> RpcRequest {
+        let size = self.terminal.size();
+        RpcRequest::EditorResize {
+            cols: size.0,
+            rows: size.1,
+            suppress_frame,
+        }
     }
 
     pub fn status_update(&mut self, message: StatusMessage) {
@@ -49,8 +54,12 @@ impl<'a> Ui<'a> {
         self.updated = true;
     }
 
-    pub fn quit(&self) -> bool {
-        self.quit
+    pub fn quit_signal(&self) -> UiQuitSignal {
+        if self.quit {
+            UiQuitSignal::Requested
+        } else {
+            UiQuitSignal::Idle
+        }
     }
 
     pub fn quit_request(&mut self) {
@@ -412,6 +421,11 @@ impl<'a> Ui<'a> {
 
         Ok(())
     }
+}
+
+pub enum UiQuitSignal {
+    Requested,
+    Idle,
 }
 
 struct UiModeBody<'a> {
