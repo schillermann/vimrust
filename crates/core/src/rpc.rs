@@ -5,7 +5,7 @@ use crate::{
 };
 use vimrust_protocol::{
     Ack, AckKind, CommandUiAction, CommandUiFrame, Cursor, DeleteKind, FilePath, Frame,
-    ProtocolVersion, RpcMode, RpcRequest, RpcResponse, StatusMessage,
+    MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse, StatusMessage,
 };
 
 /// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.

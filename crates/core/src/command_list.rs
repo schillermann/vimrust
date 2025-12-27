@@ -32,11 +32,11 @@ impl CommandRegistry {
                     description: "Save and quit",
                 },
                 CommandEntry {
-                    name: "o filename",
+                    name: "o {filename}",
                     description: "Open a file",
                 },
                 CommandEntry {
-                    name: "open filename",
+                    name: "open {filename}",
                     description: "Open a file",
                 },
             ],

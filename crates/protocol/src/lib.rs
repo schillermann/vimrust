@@ -120,14 +120,14 @@ pub enum RpcRequest {
     },
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum DeleteKind {
     Backspace,
     Under,
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(rename_all = "snake_case")]
 pub enum MoveDirection {
     Left,
@@ -360,7 +360,7 @@ impl CommandListItemFrame {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(tag = "action", rename_all = "snake_case")]
 pub enum CommandUiAction {
     StartPrompt,
