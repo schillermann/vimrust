@@ -1,7 +1,8 @@
 use crate::{
     command_line::CommandLine,
     command_list::CommandList,
-    frame_signal::FrameSignal,
+    command_ui_placeholder::CommandPlaceholder,
+    command_ui_snapshot::CommandUiSnapshot,
 };
 use vimrust_protocol::{
     CommandLineSelection, CommandListItemFrame, CommandUiAction, CommandUiFrame,
@@ -11,37 +12,6 @@ pub struct CommandUiState {
     command_line: CommandLine,
     command_list: CommandList,
     focus_on_list: bool,
-}
-
-pub struct CommandUiSnapshot {
-    command_text: String,
-    cursor_column: u16,
-    line_selection: CommandLineSelection,
-    focus_on_list: bool,
-    selection: Option<usize>,
-    scroll_offset: usize,
-}
-
-impl CommandUiSnapshot {
-    pub fn frame_signal(&self, state: &CommandUiState) -> FrameSignal {
-        let same_text = self.command_text == state.command_line.text();
-        let same_cursor = self.cursor_column == state.command_line.cursor_column();
-        let same_line_selection = self.line_selection == state.command_line.selection();
-        let same_focus = self.focus_on_list == state.focus_on_list;
-        let same_selection = self.selection == state.command_list.selection();
-        let same_scroll = self.scroll_offset == state.command_list.scroll_position();
-        if same_text
-            && same_cursor
-            && same_line_selection
-            && same_focus
-            && same_selection
-            && same_scroll
-        {
-            FrameSignal::Skip
-        } else {
-            FrameSignal::Frame
-        }
-    }
 }
 
 impl CommandUiState {
@@ -195,14 +165,18 @@ impl CommandUiState {
     }
 
     pub fn snapshot(&self) -> CommandUiSnapshot {
-        CommandUiSnapshot {
-            command_text: self.command_line.text().to_string(),
-            cursor_column: self.command_line.cursor_column(),
-            line_selection: self.command_line.selection(),
-            focus_on_list: self.focus_on_list,
-            selection: self.command_list.selection(),
-            scroll_offset: self.command_list.scroll_position(),
-        }
+        CommandUiSnapshot::new(
+            self.command_line.text().to_string(),
+            self.command_line.cursor_column(),
+            self.command_line.selection(),
+            self.focus_on_list,
+            self.command_list.selection(),
+            self.command_list.scroll_position(),
+        )
+    }
+
+    pub(crate) fn view(&self) -> CommandUiView<'_> {
+        CommandUiView::new(self)
     }
 
     pub fn frame(&self) -> CommandUiFrame {
@@ -236,22 +210,30 @@ impl CommandUiState {
     }
 }
 
-struct CommandPlaceholder;
+impl Default for CommandUiState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
-impl CommandPlaceholder {
-    fn selection_for(&self, line: &str) -> CommandLineSelection {
-        let start = match line.find('{') {
-            Some(start) => start,
-            None => return CommandLineSelection::None,
-        };
-        let tail = &line[start..];
-        let end = match tail.find('}') {
-            Some(offset) => start.saturating_add(offset).saturating_add(1),
-            None => return CommandLineSelection::None,
-        };
-        if end <= start {
-            return CommandLineSelection::None;
+pub(crate) struct CommandUiView<'a> {
+    pub(crate) text: &'a str,
+    pub(crate) cursor: u16,
+    pub(crate) selection: CommandLineSelection,
+    pub(crate) focus_on_list: bool,
+    pub(crate) selection_index: Option<usize>,
+    pub(crate) scroll_offset: usize,
+}
+
+impl<'a> CommandUiView<'a> {
+    pub(crate) fn new(state: &'a CommandUiState) -> Self {
+        Self {
+            text: state.command_line.text(),
+            cursor: state.command_line.cursor_column(),
+            selection: state.command_line.selection(),
+            focus_on_list: state.focus_on_list,
+            selection_index: state.command_list.selection(),
+            scroll_offset: state.command_list.scroll_position(),
         }
-        CommandLineSelection::range(start as u16, end as u16)
     }
 }

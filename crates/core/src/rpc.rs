@@ -210,7 +210,8 @@ impl CommandUiActionRequest {
     fn apply(&mut self, command_ui: &mut CommandUiState) {
         let snapshot = command_ui.snapshot();
         command_ui.apply_action(self.action, self.list_rows);
-        self.signal = snapshot.frame_signal(command_ui);
+        let view = command_ui.view();
+        self.signal = snapshot.frame_signal(&view);
     }
 
     fn outcome(&self) -> RequestOutcome {
@@ -347,7 +348,8 @@ impl CommandExecuteAction {
             CommandLineRequest::FromUi => {
                 let snapshot = command_ui.snapshot();
                 command_ui.apply_action(CommandUiAction::SelectFromList, self.list_rows);
-                self.selection_signal = snapshot.frame_signal(command_ui);
+                let view = command_ui.view();
+                self.selection_signal = snapshot.frame_signal(&view);
             }
             CommandLineRequest::Provided(_) => {}
         }
