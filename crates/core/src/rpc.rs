@@ -9,7 +9,7 @@ use vimrust_protocol::{
     StatusMessage,
 };
 
-/// Line-delimited JSON RPC loop for driving the editor core without the terminal UI.
+/// Line-delimited JSON RPC session for driving the editor core without the terminal UI.
 ///
 /// Requests (`"type"` field):
 /// - editor_resize: {"type":"editor_resize","cols":80,"rows":24}
@@ -30,99 +30,111 @@ use vimrust_protocol::{
 /// - frame: {"type":"frame", ...} for state snapshots (emitted after state changes and on get_state)
 /// - ack: {"type":"ack","kind":"save"|"save_as"|"open","message":{"kind":"text","text":"..."},"file_path":{"kind":"provided","path":"/tmp/foo.txt"}} for success confirmation
 /// - error: {"type":"error","message":"..."} on failure
-pub fn serve_stdio(file_path: FilePath) -> io::Result<()> {
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
-    let lines = stdin.lock().lines();
-
-    let file = File::new(file_path.clone());
-    let mut editor = Editor::new(file);
-    editor.file_read()?;
-    let mut mode = EditorMode::Normal;
-    let mut status_message = StatusMessage::Empty;
-    let mut size: (u16, u16) = (80, 24);
-    let mut command_ui = CommandUiState::new();
-
-    for line in lines {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        let request: RpcRequest = match serde_json::from_str(&line) {
-            Ok(req) => req,
-            Err(err) => {
-                let _ = write_error(&mut stdout, format!("invalid JSON: {}", err));
-                continue;
-            }
-        };
-
-        match handle_request(
-            request,
-            &mut editor,
-            &mut mode,
-            &mut status_message,
-            &mut size,
-            &mut command_ui,
-        ) {
-            RequestOutcome::Frame => {
-                let frame = build_frame(
-                    &editor,
-                    &mode,
-                    &status_message,
-                    size,
-                    if matches!(mode, EditorMode::Command) {
-                        Some(command_ui.frame())
-                    } else {
-                        None
-                    },
-                );
-                if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
-                    let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
-                } else {
-                    let _ = stdout.write_all(b"\n");
-                    let _ = stdout.flush();
-                }
-            }
-            RequestOutcome::Ack(ack) => {
-                if let Err(err) = write_ack(&mut stdout, ack) {
-                    let _ = write_error(&mut stdout, format!("failed to serialize ack: {}", err));
-                }
-            }
-            RequestOutcome::FrameAndAck(ack) => {
-                if let Err(err) = write_ack(&mut stdout, ack) {
-                    let _ = write_error(&mut stdout, format!("failed to serialize ack: {}", err));
-                    continue;
-                }
-                let frame = build_frame(
-                    &editor,
-                    &mode,
-                    &status_message,
-                    size,
-                    if matches!(mode, EditorMode::Command) {
-                        Some(command_ui.frame())
-                    } else {
-                        None
-                    },
-                );
-                if let Err(err) = serde_json::to_writer(&mut stdout, &RpcResponse::Frame(frame)) {
-                    let _ = write_error(&mut stdout, format!("failed to serialize frame: {}", err));
-                } else {
-                    let _ = stdout.write_all(b"\n");
-                    let _ = stdout.flush();
-                }
-            }
-            RequestOutcome::Quit => break,
-            RequestOutcome::Skip => {}
-            RequestOutcome::Error(message) => {
-                let _ = write_error(&mut stdout, message);
-            }
-        }
-    }
-
-    Ok(())
+pub struct StdioSession {
+    file_path: FilePath,
 }
 
+impl StdioSession {
+    pub fn new(file_path: FilePath) -> Self {
+        Self { file_path }
+    }
+
+    pub fn open(&mut self) -> io::Result<()> {
+        let stdin = io::stdin();
+        let mut stdout = io::stdout();
+        let lines = stdin.lock().lines();
+        let mut responder = ResponseWriter::new(&mut stdout);
+
+        let file = File::new(self.file_path.clone());
+        let mut editor = Editor::new(file);
+        editor.file_read()?;
+        let mut mode = EditorMode::Normal;
+        let mut status_message = StatusMessage::Empty;
+        let mut size: (u16, u16) = (80, 24);
+        let mut command_ui = CommandUiState::new();
+
+        for line in lines {
+            let line = line?;
+            if line.trim().is_empty() {
+                continue;
+            }
+
+            let request: RpcRequest = match serde_json::from_str(&line) {
+                Ok(req) => req,
+                Err(err) => {
+                    let _ = responder.emit_error(format!("invalid JSON: {}", err));
+                    continue;
+                }
+            };
+
+            let mut record = RequestOutcomeRecord::new();
+            let mut context = RequestContext::new(
+                &mut editor,
+                &mut mode,
+                &mut status_message,
+                &mut size,
+                &mut command_ui,
+            );
+            record.accept(request, &mut context);
+            match record.decision() {
+                RequestOutcome::Frame => {
+                    let frame = build_frame(
+                        &editor,
+                        &mode,
+                        &status_message,
+                        size,
+                        if matches!(mode, EditorMode::Command) {
+                            Some(command_ui.frame())
+                        } else {
+                            None
+                        },
+                    );
+                    if let Err(err) = responder.emit_frame(frame) {
+                        let _ =
+                            responder.emit_error(format!("failed to serialize frame: {}", err));
+                    }
+                }
+                RequestOutcome::Ack(ack) => {
+                    if let Err(err) = responder.emit_ack(ack) {
+                        let _ =
+                            responder.emit_error(format!("failed to serialize ack: {}", err));
+                    }
+                }
+                RequestOutcome::FrameAndAck(ack) => {
+                    if let Err(err) = responder.emit_ack(ack) {
+                        let _ =
+                            responder.emit_error(format!("failed to serialize ack: {}", err));
+                        continue;
+                    }
+                    let frame = build_frame(
+                        &editor,
+                        &mode,
+                        &status_message,
+                        size,
+                        if matches!(mode, EditorMode::Command) {
+                            Some(command_ui.frame())
+                        } else {
+                            None
+                        },
+                    );
+                    if let Err(err) = responder.emit_frame(frame) {
+                        let _ =
+                            responder.emit_error(format!("failed to serialize frame: {}", err));
+                    }
+                }
+                RequestOutcome::Quit => break,
+                RequestOutcome::Skip => {}
+                RequestOutcome::Error(message) => {
+                    let _ = responder.emit_error(message);
+                }
+            }
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Clone)]
 pub enum RequestOutcome {
     Frame,
     Ack(Ack),
@@ -130,6 +142,48 @@ pub enum RequestOutcome {
     Skip,
     Quit,
     Error(String),
+}
+
+struct RequestContext<'a> {
+    editor: &'a mut Editor,
+    mode: &'a mut EditorMode,
+    status: &'a mut StatusMessage,
+    size: &'a mut (u16, u16),
+    command_ui: &'a mut CommandUiState,
+}
+
+impl<'a> RequestContext<'a> {
+    fn new(
+        editor: &'a mut Editor,
+        mode: &'a mut EditorMode,
+        status: &'a mut StatusMessage,
+        size: &'a mut (u16, u16),
+        command_ui: &'a mut CommandUiState,
+    ) -> Self {
+        Self {
+            editor,
+            mode,
+            status,
+            size,
+            command_ui,
+        }
+    }
+}
+
+struct RequestOutcomeRecord {
+    outcome: RequestOutcome,
+}
+
+impl RequestOutcomeRecord {
+    fn new() -> Self {
+        Self {
+            outcome: RequestOutcome::Skip,
+        }
+    }
+
+    fn decision(&self) -> RequestOutcome {
+        self.outcome.clone()
+    }
 }
 
 struct TextInsertAction {
@@ -444,164 +498,171 @@ impl CommandExecuteAction {
     }
 }
 
-pub fn handle_request(
-    request: RpcRequest,
-    editor: &mut Editor,
-    mode: &mut EditorMode,
-    status: &mut StatusMessage,
-    size: &mut (u16, u16),
-    command_ui: &mut CommandUiState,
-) -> RequestOutcome {
-    match request {
-        RpcRequest::EditorResize {
-            cols,
-            rows,
-            suppress_frame,
-        } => {
-            let prev = *size;
-            *size = (cols, rows);
-            if matches!(mode, EditorMode::Command) {
-                let list_rows = command_list_rows(*size);
-                command_ui.list_scroll_adjust(list_rows);
-            }
-            if suppress_frame || *size == prev {
-                RequestOutcome::Skip
-            } else {
-                RequestOutcome::Frame
-            }
-        }
-        RpcRequest::FileOpen { path } => {
-            let mut new_file = File::new(FilePath::Provided { path });
-            if let Err(err) = new_file.read() {
-                return RequestOutcome::Error(format!("open failed: {}", err));
-            }
-            *editor = Editor::new(new_file);
-            *status = StatusMessage::Empty;
-            *mode = EditorMode::Normal;
-            let ack = Ack::new(
-                AckKind::Open,
-                StatusMessage::Text {
-                    text: String::from("opened"),
-                },
-                editor.file_path(),
-            );
-            RequestOutcome::FrameAndAck(ack)
-        }
-        RpcRequest::FileSave => {
-            let previous_path = editor.file_path();
-            let mut saved_path = FilePath::Missing;
-            match editor.file_save(&mut saved_path) {
-                Ok(msg) => {
-                    *status = StatusMessage::Text { text: msg.clone() };
-                    let ack =
-                        Ack::new(AckKind::Save, StatusMessage::Text { text: msg }, saved_path);
-                    if editor.file_path() != previous_path {
-                        RequestOutcome::FrameAndAck(ack)
-                    } else {
-                        RequestOutcome::Ack(ack)
-                    }
+impl RequestOutcomeRecord {
+    fn accept(&mut self, request: RpcRequest, context: &mut RequestContext<'_>) {
+        let editor = &mut *context.editor;
+        let mode = &mut *context.mode;
+        let status = &mut *context.status;
+        let size = &mut *context.size;
+        let command_ui = &mut *context.command_ui;
+
+        self.outcome = match request {
+            RpcRequest::EditorResize {
+                cols,
+                rows,
+                suppress_frame,
+            } => {
+                let prev = *size;
+                *size = (cols, rows);
+                if matches!(mode, EditorMode::Command) {
+                    let list_rows = command_list_rows(*size);
+                    command_ui.list_scroll_adjust(list_rows);
                 }
-                Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
+                if suppress_frame || *size == prev {
+                    RequestOutcome::Skip
+                } else {
+                    RequestOutcome::Frame
+                }
             }
-        }
-        RpcRequest::FileSaveAs { path } => {
-            let mut new_file = File::new(FilePath::Provided { path });
-            new_file.lines_replace(editor.file_lines_snapshot());
-            match new_file.save() {
-                Ok(msg) => {
+            RpcRequest::FileOpen { path } => {
+                let mut new_file = File::new(FilePath::Provided { path });
+                if let Err(err) = new_file.read() {
+                    RequestOutcome::Error(format!("open failed: {}", err))
+                } else {
                     *editor = Editor::new(new_file);
-                    *status = StatusMessage::Text { text: msg.clone() };
+                    *status = StatusMessage::Empty;
+                    *mode = EditorMode::Normal;
                     let ack = Ack::new(
-                        AckKind::SaveAs,
-                        StatusMessage::Text { text: msg },
+                        AckKind::Open,
+                        StatusMessage::Text {
+                            text: String::from("opened"),
+                        },
                         editor.file_path(),
                     );
                     RequestOutcome::FrameAndAck(ack)
                 }
-                Err(err) => RequestOutcome::Error(format!("save_as failed: {}", err)),
             }
-        }
-        RpcRequest::TextInsert { text } => {
-            let mut action = TextInsertAction {
-                text,
-                signal: FrameSignal::Skip,
-            };
-            action.apply(editor, status);
-            action.outcome()
-        }
-        RpcRequest::TextDelete { kind } => {
-            let mut action = TextDeleteAction {
-                kind,
-                signal: FrameSignal::Skip,
-            };
-            action.apply(editor, status);
-            action.outcome()
-        }
-        RpcRequest::CursorMove { direction } => {
-            let usable_rows = size.1.saturating_sub(2);
-            let mut action = CursorMoveAction {
-                direction,
-                usable_rows,
-                signal: FrameSignal::Skip,
-            };
-            action.apply(editor);
-            action.outcome()
-        }
-        RpcRequest::CommandUi { action } => {
-            if !matches!(mode, EditorMode::Command) {
-                return RequestOutcome::Skip;
-            }
-            let list_rows = command_list_rows(*size);
-            let mut request = CommandUiActionRequest {
-                action,
-                list_rows,
-                signal: FrameSignal::Skip,
-            };
-            request.apply(command_ui);
-            request.outcome()
-        }
-        RpcRequest::CommandExecute { line } => {
-            if !matches!(mode, EditorMode::Command) {
-                return RequestOutcome::Skip;
-            }
-            let list_rows = command_list_rows(*size);
-            let line = match line {
-                Some(line) => CommandLineRequest::Provided(line),
-                None => CommandLineRequest::FromUi,
-            };
-            let mut request = CommandExecuteAction {
-                line,
-                list_rows,
-                selection_signal: FrameSignal::Skip,
-                outcome: RequestOutcome::Skip,
-            };
-            request.apply(editor, mode, status, command_ui);
-            request.finish()
-        }
-        RpcRequest::ModeSet { mode: new_mode } => {
-            let prev_mode = *mode;
-            let prev_cursor = editor.cursor_position();
-            *mode = match new_mode {
-                RpcMode::Normal => EditorMode::Normal,
-                RpcMode::Edit => {
-                    editor.snap_cursor_to_tab_start();
-                    EditorMode::Edit
+            RpcRequest::FileSave => {
+                let previous_path = editor.file_path();
+                let mut saved_path = FilePath::Missing;
+                match editor.file_save(&mut saved_path) {
+                    Ok(msg) => {
+                        *status = StatusMessage::Text { text: msg.clone() };
+                        let ack = Ack::new(
+                            AckKind::Save,
+                            StatusMessage::Text { text: msg },
+                            saved_path,
+                        );
+                        if editor.file_path() != previous_path {
+                            RequestOutcome::FrameAndAck(ack)
+                        } else {
+                            RequestOutcome::Ack(ack)
+                        }
+                    }
+                    Err(err) => RequestOutcome::Error(format!("save failed: {}", err)),
                 }
-                RpcMode::Command => EditorMode::Command,
-            };
-            if *mode == EditorMode::Command && prev_mode != EditorMode::Command {
-                command_ui.start_prompt();
-            } else if prev_mode == EditorMode::Command && *mode != EditorMode::Command {
-                command_ui.clear();
             }
-            if *mode != prev_mode || editor.cursor_position() != prev_cursor {
-                RequestOutcome::Frame
-            } else {
-                RequestOutcome::Skip
+            RpcRequest::FileSaveAs { path } => {
+                let mut new_file = File::new(FilePath::Provided { path });
+                new_file.lines_replace(editor.file_lines_snapshot());
+                match new_file.save() {
+                    Ok(msg) => {
+                        *editor = Editor::new(new_file);
+                        *status = StatusMessage::Text { text: msg.clone() };
+                        let ack = Ack::new(
+                            AckKind::SaveAs,
+                            StatusMessage::Text { text: msg },
+                            editor.file_path(),
+                        );
+                        RequestOutcome::FrameAndAck(ack)
+                    }
+                    Err(err) => RequestOutcome::Error(format!("save_as failed: {}", err)),
+                }
             }
-        }
-        RpcRequest::StateGet => RequestOutcome::Frame,
-        RpcRequest::EditorQuit => RequestOutcome::Quit,
+            RpcRequest::TextInsert { text } => {
+                let mut action = TextInsertAction {
+                    text,
+                    signal: FrameSignal::Skip,
+                };
+                action.apply(editor, status);
+                action.outcome()
+            }
+            RpcRequest::TextDelete { kind } => {
+                let mut action = TextDeleteAction {
+                    kind,
+                    signal: FrameSignal::Skip,
+                };
+                action.apply(editor, status);
+                action.outcome()
+            }
+            RpcRequest::CursorMove { direction } => {
+                let usable_rows = size.1.saturating_sub(2);
+                let mut action = CursorMoveAction {
+                    direction,
+                    usable_rows,
+                    signal: FrameSignal::Skip,
+                };
+                action.apply(editor);
+                action.outcome()
+            }
+            RpcRequest::CommandUi { action } => {
+                if !matches!(mode, EditorMode::Command) {
+                    RequestOutcome::Skip
+                } else {
+                    let list_rows = command_list_rows(*size);
+                    let mut request = CommandUiActionRequest {
+                        action,
+                        list_rows,
+                        signal: FrameSignal::Skip,
+                    };
+                    request.apply(command_ui);
+                    request.outcome()
+                }
+            }
+            RpcRequest::CommandExecute { line } => {
+                if !matches!(mode, EditorMode::Command) {
+                    RequestOutcome::Skip
+                } else {
+                    let list_rows = command_list_rows(*size);
+                    let line = match line {
+                        Some(line) => CommandLineRequest::Provided(line),
+                        None => CommandLineRequest::FromUi,
+                    };
+                    let mut request = CommandExecuteAction {
+                        line,
+                        list_rows,
+                        selection_signal: FrameSignal::Skip,
+                        outcome: RequestOutcome::Skip,
+                    };
+                    request.apply(editor, mode, status, command_ui);
+                    request.finish()
+                }
+            }
+            RpcRequest::ModeSet { mode: new_mode } => {
+                let prev_mode = *mode;
+                let prev_cursor = editor.cursor_position();
+                *mode = match new_mode {
+                    RpcMode::Normal => EditorMode::Normal,
+                    RpcMode::Edit => {
+                        editor.snap_cursor_to_tab_start();
+                        EditorMode::Edit
+                    }
+                    RpcMode::Command => EditorMode::Command,
+                };
+                if *mode == EditorMode::Command && prev_mode != EditorMode::Command {
+                    command_ui.start_prompt();
+                } else if prev_mode == EditorMode::Command && *mode != EditorMode::Command {
+                    command_ui.clear();
+                }
+                if *mode != prev_mode || editor.cursor_position() != prev_cursor {
+                    RequestOutcome::Frame
+                } else {
+                    RequestOutcome::Skip
+                }
+            }
+            RpcRequest::StateGet => RequestOutcome::Frame,
+            RpcRequest::EditorQuit => RequestOutcome::Quit,
+        };
     }
 }
 
@@ -640,22 +701,38 @@ pub fn build_frame(
     )
 }
 
-fn write_error(stdout: &mut impl Write, message: String) -> io::Result<()> {
-    serde_json::to_writer(&mut *stdout, &RpcResponse::Error { message })?;
-    stdout.write_all(b"\n")?;
-    stdout.flush()
+struct ResponseWriter<'a> {
+    stdout: &'a mut dyn Write,
+}
+
+impl<'a> ResponseWriter<'a> {
+    fn new(stdout: &'a mut dyn Write) -> Self {
+        Self { stdout }
+    }
+
+    fn emit_frame(&mut self, frame: Frame) -> io::Result<()> {
+        self.emit(RpcResponse::Frame(frame))
+    }
+
+    fn emit_ack(&mut self, ack: Ack) -> io::Result<()> {
+        self.emit(RpcResponse::Ack(ack))
+    }
+
+    fn emit_error(&mut self, message: String) -> io::Result<()> {
+        self.emit(RpcResponse::Error { message })
+    }
+
+    fn emit(&mut self, response: RpcResponse) -> io::Result<()> {
+        serde_json::to_writer(&mut *self.stdout, &response)?;
+        self.stdout.write_all(b"\n")?;
+        self.stdout.flush()
+    }
 }
 
 fn command_list_rows(size: (u16, u16)) -> usize {
     size.1
         .saturating_sub(2) // command line + status line
         .saturating_sub(3) as usize // blank + header + divider rows
-}
-
-fn write_ack(stdout: &mut impl Write, ack: Ack) -> io::Result<()> {
-    serde_json::to_writer(&mut *stdout, &RpcResponse::Ack(ack))?;
-    stdout.write_all(b"\n")?;
-    stdout.flush()
 }
 
 #[cfg(test)]
@@ -665,6 +742,34 @@ mod tests {
     use std::fs;
     use vimrust_protocol::MoveDirection;
 
+    struct RequestHarness<'a> {
+        record: RequestOutcomeRecord,
+        context: RequestContext<'a>,
+    }
+
+    impl<'a> RequestHarness<'a> {
+        fn new(
+            editor: &'a mut Editor,
+            mode: &'a mut EditorMode,
+            status: &'a mut StatusMessage,
+            size: &'a mut (u16, u16),
+            command_ui: &'a mut CommandUiState,
+        ) -> Self {
+            Self {
+                record: RequestOutcomeRecord::new(),
+                context: RequestContext::new(editor, mode, status, size, command_ui),
+            }
+        }
+
+        fn accept(&mut self, request: RpcRequest) {
+            self.record.accept(request, &mut self.context);
+        }
+
+        fn decision(&self) -> RequestOutcome {
+            self.record.decision()
+        }
+    }
+
     #[test]
     fn insert_request_updates_rows() {
         let mut editor = Editor::new(File::new(FilePath::Missing));
@@ -672,17 +777,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::TextInsert {
-                text: "hi".to_string(),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::TextInsert {
+            text: "hi".to_string(),
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, None);
@@ -697,17 +798,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::CursorMove {
-                direction: MoveDirection::Left,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CursorMove {
+            direction: MoveDirection::Left,
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
@@ -718,19 +815,15 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::EditorResize {
-                cols: 20,
-                rows: 40,
-                suppress_frame: true,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::EditorResize {
+            cols: 20,
+            rows: 40,
+            suppress_frame: true,
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
         assert_eq!(size, (20, 40));
     }
@@ -742,19 +835,15 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::EditorResize {
-                cols: 10,
-                rows: 5,
-                suppress_frame: false,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::EditorResize {
+            cols: 10,
+            rows: 5,
+            suppress_frame: false,
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
         assert_eq!(size, (10, 5));
     }
@@ -766,29 +855,19 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (20, 8);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::ModeSet {
-                mode: RpcMode::Command,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::ModeSet {
+            mode: RpcMode::Command,
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
 
-        let outcome = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 'x' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 'x' },
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
@@ -804,17 +883,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 'x' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 'x' },
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
@@ -826,17 +901,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::TextDelete {
-                kind: DeleteKind::Under,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::TextDelete {
+            kind: DeleteKind::Under,
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
@@ -847,19 +918,15 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
         let path = std::env::temp_dir().join("vimrust_missing_file.txt");
         let _ = fs::remove_file(&path);
 
-        let outcome = handle_request(
-            RpcRequest::FileOpen {
-                path: path.to_string_lossy().to_string(),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::FileOpen {
+            path: path.to_string_lossy().to_string(),
+        });
+        let outcome = harness.decision();
         match outcome {
             RequestOutcome::Error(message) => {
                 assert!(message.starts_with("open failed:"));
@@ -876,19 +943,15 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
         let path = std::env::temp_dir().join("vimrust_rpc_test.txt");
         let _ = fs::remove_file(&path);
 
-        let outcome = handle_request(
-            RpcRequest::FileSaveAs {
-                path: path.to_string_lossy().to_string(),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::FileSaveAs {
+            path: path.to_string_lossy().to_string(),
+        });
+        let outcome = harness.decision();
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind(), AckKind::SaveAs);
             assert_eq!(
@@ -929,28 +992,17 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let _ = handle_request(
-            RpcRequest::ModeSet {
-                mode: RpcMode::Command,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::ModeSet {
+            mode: RpcMode::Command,
+        });
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute {
-                line: Some(":s".to_string()),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(":s".to_string()),
+        });
+        let outcome = harness.decision();
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind(), AckKind::Save);
             assert!(matches!(mode, EditorMode::Normal));
@@ -979,36 +1031,18 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let _ = handle_request(
-            RpcRequest::ModeSet {
-                mode: RpcMode::Command,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 's' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::ModeSet {
+            mode: RpcMode::Command,
+        });
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 's' },
+        });
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute { line: None },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute { line: None });
+        let outcome = harness.decision();
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind(), AckKind::Save);
             assert!(matches!(mode, EditorMode::Normal));
@@ -1038,37 +1072,19 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let _ = handle_request(
-            RpcRequest::ModeSet {
-                mode: RpcMode::Command,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::ModeSet {
+            mode: RpcMode::Command,
+        });
 
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::MoveSelectionDown,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::MoveSelectionDown,
+        });
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute { line: None },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute { line: None });
+        let outcome = harness.decision();
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind(), AckKind::Save);
             assert_eq!(
@@ -1092,78 +1108,32 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let _ = handle_request(
-            RpcRequest::ModeSet {
-                mode: RpcMode::Command,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::ModeSet {
+            mode: RpcMode::Command,
+        });
 
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 'o' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 'p' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 'e' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 'n' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 'o' },
+        });
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 'p' },
+        });
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 'e' },
+        });
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 'n' },
+        });
 
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::MoveSelectionDown,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::MoveSelectionDown,
+        });
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute { line: None },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute { line: None });
+        let outcome = harness.decision();
 
         match outcome {
             RequestOutcome::Ack(_)
@@ -1183,17 +1153,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute {
-                line: Some(":o {filename}".to_string()),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(":o {filename}".to_string()),
+        });
+        let outcome = harness.decision();
 
         match outcome {
             RequestOutcome::Ack(_)
@@ -1213,17 +1179,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute {
-                line: Some(":q".to_string()),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(":q".to_string()),
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Quit));
     }
 
@@ -1234,19 +1196,15 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
         let path = std::env::temp_dir().join("vimrust_rpc_command_open.txt");
         let _ = fs::write(&path, "hello");
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute {
-                line: Some(format!(":o {}", path.to_string_lossy())),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(format!(":o {}", path.to_string_lossy())),
+        });
+        let outcome = harness.decision();
 
         assert!(matches!(outcome, RequestOutcome::FrameAndAck(_)));
         assert_eq!(
@@ -1264,17 +1222,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute {
-                line: Some(":unknown".to_string()),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(":unknown".to_string()),
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
         assert!(matches!(mode, EditorMode::Command));
     }
@@ -1286,17 +1240,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::CommandExecute {
-                line: Some(":q".to_string()),
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(":q".to_string()),
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
@@ -1307,17 +1257,13 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::ModeSet {
-                mode: RpcMode::Normal,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::ModeSet {
+            mode: RpcMode::Normal,
+        });
+        let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
@@ -1328,37 +1274,18 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let _ = handle_request(
-            RpcRequest::ModeSet {
-                mode: RpcMode::Command,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch: 's' },
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-        let _ = handle_request(
-            RpcRequest::CommandUi {
-                action: CommandUiAction::MoveSelectionDown,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::ModeSet {
+            mode: RpcMode::Command,
+        });
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::InsertChar { ch: 's' },
+        });
+        harness.accept(RpcRequest::CommandUi {
+            action: CommandUiAction::MoveSelectionDown,
+        });
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
         let command_ui_frame = frame.command_ui_frame().expect("expected command ui frame");
@@ -1397,31 +1324,34 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
-
-        let _ = handle_request(
-            RpcRequest::ModeSet {
+        {
+            let mut harness = RequestHarness::new(
+                &mut editor,
+                &mut mode,
+                &mut status,
+                &mut size,
+                &mut command_ui,
+            );
+            harness.accept(RpcRequest::ModeSet {
                 mode: RpcMode::Command,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+            });
+        }
         let frame_command = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
         assert_eq!(frame_command.mode_label(), "COMMAND");
         assert!(frame_command.command_ui_frame().is_some());
 
-        let _ = handle_request(
-            RpcRequest::ModeSet {
+        {
+            let mut harness = RequestHarness::new(
+                &mut editor,
+                &mut mode,
+                &mut status,
+                &mut size,
+                &mut command_ui,
+            );
+            harness.accept(RpcRequest::ModeSet {
                 mode: RpcMode::Normal,
-            },
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+            });
+        }
         let frame_normal = build_frame(&editor, &mode, &status, size, None);
         assert_eq!(frame_normal.mode_label(), "NORMAL");
         assert!(frame_normal.command_ui_frame().is_none());
@@ -1440,15 +1370,11 @@ mod tests {
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
 
-        let outcome = handle_request(
-            RpcRequest::FileSave,
-            &mut editor,
-            &mut mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
+        harness.accept(RpcRequest::FileSave);
+        let outcome = harness.decision();
         if let RequestOutcome::Ack(ack) = outcome {
             assert_eq!(ack.kind(), AckKind::Save);
             assert_eq!(

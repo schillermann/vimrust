@@ -9,7 +9,7 @@ mod file;
 mod mode;
 mod rpc;
 
-pub use rpc::serve_stdio;
+pub use rpc::StdioSession;
 
 pub(crate) use mode::EditorMode;
 pub(crate) use frame_signal::FrameSignal;

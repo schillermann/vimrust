@@ -6,5 +6,6 @@ fn main() -> std::io::Result<()> {
         Some(path) => vimrust_protocol::FilePath::Provided { path },
         None => vimrust_protocol::FilePath::Missing,
     };
-    vimrust_core::serve_stdio(file_path)
+    let mut session = vimrust_core::StdioSession::new(file_path);
+    session.open()
 }
