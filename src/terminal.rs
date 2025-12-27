@@ -36,6 +36,7 @@ impl Terminal {
             self.out,
             Clear(ClearType::All),
             MoveTo(0, 0),
+            SetCursorStyle::DefaultUserShape,
             LeaveAlternateScreen
         );
         let _ = disable_raw_mode();
