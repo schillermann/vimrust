@@ -64,7 +64,8 @@ pub enum MoveDirection {
 pub enum RpcMode {
     Normal,
     Edit,
-    Command,
+    PromptCommand,
+    PromptKeymap,
 }
 
 #[derive(Serialize, Deserialize)]

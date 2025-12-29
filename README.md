@@ -33,10 +33,11 @@ Send line-delimited JSON requests over stdin. Examples:
 7. `{"type":"text_delete","kind":"backspace"}`
 8. `{"type":"cursor_move","direction":"left"}`
 9. `{"type":"command_ui","action":"insert_char","ch":"a"}`
-10. `{"type":"mode_set","mode":"command"}`
-11. `{"type":"command_execute","line":":s"}` (line is optional; without line, the core uses whatever is currently in its command buffer)
-12. `{"type":"state_get"}`
-13. `{"type":"editor_quit"}`
+10. `{"type":"mode_set","mode":"prompt_command"}`
+11. `{"type":"mode_set","mode":"prompt_keymap"}`
+12. `{"type":"command_execute","line":":s"}` (line is optional; without line, the core uses whatever is currently in its command buffer)
+13. `{"type":"state_get"}`
+14. `{"type":"editor_quit"}`
 
 Responses include frames with mode, cursor, visible rows, status, file path, and size. Explicit acks confirm operations like open/save/save_as even when no frame is emitted. Errors are sent if a request fails.
 

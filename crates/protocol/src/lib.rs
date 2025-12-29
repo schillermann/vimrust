@@ -6,7 +6,7 @@ mod status;
 mod version;
 
 pub use command_ui::{
-    CommandLineSelection, CommandListItemFrame, CommandUiAction, CommandUiFrame,
+    CommandLineSelection, CommandListItemFrame, CommandListItemMode, CommandUiAction, CommandUiFrame,
 };
 pub use frame::{Cursor, Frame};
 pub use path::FilePath;

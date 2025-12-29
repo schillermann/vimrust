@@ -1,3 +1,6 @@
+use crate::prompt_entry::PromptEntry;
+use vimrust_protocol::CommandListItemMode;
+
 pub struct CommandEntry {
     name: &'static str,
     description: &'static str,
@@ -43,7 +46,7 @@ impl CommandRegistry {
         }
     }
 
-    pub fn matching(&self, query: &str) -> Vec<&CommandEntry> {
+    pub fn matching(&self, query: &str) -> Vec<&dyn PromptEntry> {
         let normalized = CommandList::command_query_from_input(query);
         let mut matches = Vec::new();
         for entry in &self.commands {
@@ -52,7 +55,7 @@ impl CommandRegistry {
             if CommandList::fuzzy_match(&normalized, &name)
                 || CommandList::fuzzy_match(&normalized, &desc)
             {
-                matches.push(entry);
+                matches.push(entry as &dyn PromptEntry);
             }
         }
         matches
@@ -74,7 +77,7 @@ impl CommandList {
         }
     }
 
-    pub fn filter(&self, query: &str) -> Vec<&CommandEntry> {
+    pub fn filter(&self, query: &str) -> Vec<&dyn PromptEntry> {
         self.registry.matching(query)
     }
 
@@ -135,18 +138,25 @@ impl CommandList {
     }
 
     fn command_query_from_input(command_line: &str) -> String {
-        let trimmed = command_line.trim_start_matches(':').trim();
+        let trimmed = command_line
+            .trim_start_matches(':')
+            .trim_start_matches(';')
+            .trim();
         trimmed.to_lowercase()
     }
 }
 
-impl CommandEntry {
-    pub fn label(&self) -> &str {
+impl PromptEntry for CommandEntry {
+    fn label(&self) -> &str {
         self.name
     }
 
-    pub fn detail(&self) -> &str {
+    fn detail(&self) -> &str {
         self.description
+    }
+
+    fn mode(&self) -> CommandListItemMode {
+        CommandListItemMode::Command
     }
 }
 

@@ -95,14 +95,29 @@ impl CommandLineSelection {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CommandListItemMode {
+    Command,
+    Normal,
+    Edit,
+    PromptCommand,
+    PromptKeymap,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct CommandListItemFrame {
     name: String,
     description: String,
+    mode: CommandListItemMode,
 }
 
 impl CommandListItemFrame {
-    pub fn new(name: String, description: String) -> Self {
-        Self { name, description }
+    pub fn new(name: String, description: String, mode: CommandListItemMode) -> Self {
+        Self {
+            name,
+            description,
+            mode,
+        }
     }
 
     pub fn label(&self) -> &str {
@@ -111,6 +126,10 @@ impl CommandListItemFrame {
 
     pub fn detail(&self) -> &str {
         &self.description
+    }
+
+    pub fn mode(&self) -> CommandListItemMode {
+        self.mode.clone()
     }
 }
 

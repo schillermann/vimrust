@@ -7,7 +7,7 @@ use crossterm::{
 };
 
 use crate::terminal::Terminal;
-use vimrust_protocol::CommandUiFrame;
+use vimrust_protocol::{CommandListItemMode, CommandUiFrame};
 
 pub(crate) struct CommandListPanel<'a> {
     terminal: &'a mut Terminal,
@@ -43,31 +43,46 @@ impl<'a> CommandListPanel<'a> {
         let available_rows = self.number_of_rows.saturating_sub(3); // blank + header + divider
         let inner_width = self.number_of_columns.saturating_sub(2); // left/right padding
         let query = CommandQuery::new(self.cmd_ui.command_text());
+        let is_keymap = self.cmd_ui.command_text().starts_with(';');
         let mut name_width = 0;
+        let mut mode_width = 0;
+        let mut key_width = 0;
         let mut idx = 0;
         while idx < matches.len() {
-            let entry_len = matches[idx].label().len() as u16;
-            if entry_len > name_width {
-                name_width = entry_len;
+            let entry = &matches[idx];
+            if is_keymap {
+                let mode_label = match entry.mode() {
+                    CommandListItemMode::Command => "COMMAND",
+                    CommandListItemMode::Normal => "NORMAL",
+                    CommandListItemMode::Edit => "EDIT",
+                    CommandListItemMode::PromptCommand => "PROMPT_COMMAND",
+                    CommandListItemMode::PromptKeymap => "PROMPT_KEYMAP",
+                };
+                let mode_len = mode_label.chars().count() as u16;
+                let key_len = entry.label().chars().count() as u16;
+                if mode_len > mode_width {
+                    mode_width = mode_len;
+                }
+                if key_len > key_width {
+                    key_width = key_len;
+                }
+            } else {
+                let entry_len = entry.label().len() as u16;
+                if entry_len > name_width {
+                    name_width = entry_len;
+                }
             }
             idx += 1;
         }
-        let name_width = name_width.min(inner_width);
-        let command_col_width = name_width.max(6);
-        let desc_col_width = inner_width
-            .saturating_sub(command_col_width)
-            .saturating_sub(1); // single space between columns
+        let (command_col_width, mode_col_width, key_col_width, desc_col_width) =
+            CommandListLayout::new(is_keymap, inner_width, name_width, mode_width, key_width)
+                .columns();
 
-        let mut header = format!(
-            "{:<cmd_width$}{}",
-            "Command",
-            if desc_col_width > 0 {
-                format!(" {}", "Description")
-            } else {
-                String::new()
-            },
-            cmd_width = command_col_width as usize
-        );
+        let mut header = if is_keymap {
+            CommandListHeader::new_keymap(key_col_width, mode_col_width, desc_col_width).line()
+        } else {
+            CommandListHeader::new_command(command_col_width, desc_col_width).line()
+        };
         if header.len() > inner_width as usize {
             header.truncate(inner_width as usize);
         } else {
@@ -112,91 +127,305 @@ impl<'a> CommandListPanel<'a> {
                     false
                 };
 
-                let mut name_display: String = entry
-                    .label()
-                    .chars()
-                    .take(command_col_width as usize)
-                    .collect();
-                if name_display.len() < command_col_width as usize {
-                    name_display
-                        .push_str(&" ".repeat(command_col_width as usize - name_display.len()));
-                }
-                let mut desc_display = String::new();
-                if desc_col_width > 0 {
-                    desc_display = entry
-                        .detail()
-                        .chars()
-                        .take(desc_col_width as usize)
-                        .collect();
-                    if desc_display.len() < desc_col_width as usize {
-                        desc_display
-                            .push_str(&" ".repeat(desc_col_width as usize - desc_display.len()));
-                    }
-                }
+                if is_keymap {
+                    let mode_label = match entry.mode() {
+                        CommandListItemMode::Command => "COMMAND",
+                        CommandListItemMode::Normal => "NORMAL",
+                        CommandListItemMode::Edit => "EDIT",
+                        CommandListItemMode::PromptCommand => "PROMPT_COMMAND",
+                        CommandListItemMode::PromptKeymap => "PROMPT_KEYMAP",
+                    };
+                    let key_display =
+                        ColumnDisplay::new(entry.label(), key_col_width).render();
+                    let mode_display =
+                        ColumnDisplay::new(mode_label, mode_col_width).render();
+                    let desc_display = ColumnDisplay::new(entry.detail(), desc_col_width).render();
 
-                let mut name_matches = Vec::new();
-                let name_limit = name_display.chars().count();
-                let name_indices = query.indices_for(entry.label());
-                for index in name_indices {
-                    if index < name_limit {
-                        name_matches.push(index);
+                    let mut mode_matches = Vec::new();
+                    let mut key_matches = Vec::new();
+                    let mode_indices = query.indices_for(mode_label);
+                    let key_indices = query.indices_for(entry.label());
+                    let mut pos = 0;
+                    while pos < mode_indices.len() {
+                        mode_matches.push(mode_indices[pos]);
+                        pos = pos.saturating_add(1);
                     }
-                }
+                    let mut key_pos = 0;
+                    while key_pos < key_indices.len() {
+                        key_matches.push(key_indices[key_pos]);
+                        key_pos = key_pos.saturating_add(1);
+                    }
 
-                let mut desc_matches = Vec::new();
-                if !desc_display.is_empty() {
-                    let desc_limit = desc_display.chars().count();
-                    let desc_indices = query.indices_for(entry.detail());
-                    for index in desc_indices {
-                        if index < desc_limit {
-                            desc_matches.push(index);
+                    let mut desc_matches = Vec::new();
+                    if !desc_display.is_empty() {
+                        let desc_limit = desc_display.chars().count();
+                        let desc_indices = query.indices_for(entry.detail());
+                        let mut desc_idx = 0;
+                        while desc_idx < desc_indices.len() {
+                            let index = desc_indices[desc_idx];
+                            if index < desc_limit {
+                                desc_matches.push(index);
+                            }
+                            desc_idx = desc_idx.saturating_add(1);
                         }
                     }
-                }
 
-                if is_selected {
-                    self.terminal.queue_add_command(Print(" "))?;
-                    self.terminal
-                        .queue_add_command(SetBackgroundColor(Color::DarkGrey))?;
-                    self.terminal
-                        .queue_add_command(SetForegroundColor(Color::White))?;
-                    let name_highlight = CommandListHighlight::new(
-                        &name_matches,
-                        Some(Color::White),
-                        Color::Yellow,
-                        true,
-                    );
-                    name_highlight.paint(self.terminal, &name_display)?;
-                    if !desc_display.is_empty() {
+                    if is_selected {
                         self.terminal.queue_add_command(Print(" "))?;
-                        let desc_highlight = CommandListHighlight::new(
-                            &desc_matches,
+                        self.terminal
+                            .queue_add_command(SetBackgroundColor(Color::DarkGrey))?;
+                        self.terminal
+                            .queue_add_command(SetForegroundColor(Color::White))?;
+                        if key_col_width > 0 {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let key_highlight = CommandListHighlight::new(
+                                &key_matches,
+                                Some(Color::White),
+                                Color::Yellow,
+                                true,
+                            );
+                            key_highlight.paint(self.terminal, &key_display)?;
+                        }
+                        if mode_col_width > 0 {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let mode_highlight = CommandListHighlight::new(
+                                &mode_matches,
+                                Some(Color::White),
+                                Color::Yellow,
+                                true,
+                            );
+                            mode_highlight.paint(self.terminal, &mode_display)?;
+                        }
+                        if !desc_display.is_empty() {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let desc_highlight = CommandListHighlight::new(
+                                &desc_matches,
+                                Some(Color::White),
+                                Color::Yellow,
+                                true,
+                            );
+                            desc_highlight.paint(self.terminal, &desc_display)?;
+                        }
+                        self.terminal.queue_add_command(ResetColor)?;
+                        self.terminal.queue_add_command(Print(" "))?;
+                    } else {
+                        self.terminal.queue_add_command(Print(" "))?;
+                        if key_col_width > 0 {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let key_highlight =
+                                CommandListHighlight::new(&key_matches, None, Color::Yellow, false);
+                            key_highlight.paint(self.terminal, &key_display)?;
+                        }
+                        if mode_col_width > 0 {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let mode_highlight =
+                                CommandListHighlight::new(&mode_matches, None, Color::Yellow, false);
+                            mode_highlight.paint(self.terminal, &mode_display)?;
+                        }
+                        if !desc_display.is_empty() {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let desc_highlight =
+                                CommandListHighlight::new(&desc_matches, None, Color::Yellow, false);
+                            desc_highlight.paint(self.terminal, &desc_display)?;
+                        }
+                        self.terminal.queue_add_command(ResetColor)?;
+                        self.terminal.queue_add_command(Print(" "))?;
+                    }
+                } else {
+                    let name_display =
+                        ColumnDisplay::new(entry.label(), command_col_width).render();
+                    let desc_display = ColumnDisplay::new(entry.detail(), desc_col_width).render();
+
+                    let mut name_matches = Vec::new();
+                    let name_limit = name_display.chars().count();
+                    let name_indices = query.indices_for(entry.label());
+                    let mut match_idx = 0;
+                    while match_idx < name_indices.len() {
+                        let index = name_indices[match_idx];
+                        if index < name_limit {
+                            name_matches.push(index);
+                        }
+                        match_idx = match_idx.saturating_add(1);
+                    }
+
+                    let mut desc_matches = Vec::new();
+                    if !desc_display.is_empty() {
+                        let desc_limit = desc_display.chars().count();
+                        let desc_indices = query.indices_for(entry.detail());
+                        let mut desc_idx = 0;
+                        while desc_idx < desc_indices.len() {
+                            let index = desc_indices[desc_idx];
+                            if index < desc_limit {
+                                desc_matches.push(index);
+                            }
+                            desc_idx = desc_idx.saturating_add(1);
+                        }
+                    }
+
+                    if is_selected {
+                        self.terminal.queue_add_command(Print(" "))?;
+                        self.terminal
+                            .queue_add_command(SetBackgroundColor(Color::DarkGrey))?;
+                        self.terminal
+                            .queue_add_command(SetForegroundColor(Color::White))?;
+                        let name_highlight = CommandListHighlight::new(
+                            &name_matches,
                             Some(Color::White),
                             Color::Yellow,
                             true,
                         );
-                        desc_highlight.paint(self.terminal, &desc_display)?;
-                    }
-                    self.terminal.queue_add_command(ResetColor)?;
-                    self.terminal.queue_add_command(Print(" "))?;
-                } else {
-                    self.terminal.queue_add_command(Print(" "))?;
-                    let name_highlight =
-                        CommandListHighlight::new(&name_matches, None, Color::Yellow, false);
-                    name_highlight.paint(self.terminal, &name_display)?;
-                    if !desc_display.is_empty() {
+                        name_highlight.paint(self.terminal, &name_display)?;
+                        if !desc_display.is_empty() {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let desc_highlight = CommandListHighlight::new(
+                                &desc_matches,
+                                Some(Color::White),
+                                Color::Yellow,
+                                true,
+                            );
+                            desc_highlight.paint(self.terminal, &desc_display)?;
+                        }
+                        self.terminal.queue_add_command(ResetColor)?;
                         self.terminal.queue_add_command(Print(" "))?;
-                        let desc_highlight =
-                            CommandListHighlight::new(&desc_matches, None, Color::Yellow, false);
-                        desc_highlight.paint(self.terminal, &desc_display)?;
+                    } else {
+                        self.terminal.queue_add_command(Print(" "))?;
+                        let name_highlight =
+                            CommandListHighlight::new(&name_matches, None, Color::Yellow, false);
+                        name_highlight.paint(self.terminal, &name_display)?;
+                        if !desc_display.is_empty() {
+                            self.terminal.queue_add_command(Print(" "))?;
+                            let desc_highlight =
+                                CommandListHighlight::new(&desc_matches, None, Color::Yellow, false);
+                            desc_highlight.paint(self.terminal, &desc_display)?;
+                        }
+                        self.terminal.queue_add_command(ResetColor)?;
+                        self.terminal.queue_add_command(Print(" "))?;
                     }
-                    self.terminal.queue_add_command(ResetColor)?;
-                    self.terminal.queue_add_command(Print(" "))?;
                 }
             }
         }
 
         Ok(())
+    }
+}
+
+struct CommandListLayout {
+    is_keymap: bool,
+    inner_width: u16,
+    name_width: u16,
+    mode_width: u16,
+    key_width: u16,
+}
+
+impl CommandListLayout {
+    fn new(
+        is_keymap: bool,
+        inner_width: u16,
+        name_width: u16,
+        mode_width: u16,
+        key_width: u16,
+    ) -> Self {
+        Self {
+            is_keymap,
+            inner_width,
+            name_width,
+            mode_width,
+            key_width,
+        }
+    }
+
+    fn columns(&self) -> (u16, u16, u16, u16) {
+        if self.is_keymap {
+            let mut key_col_width = self.key_width.max(3).min(self.inner_width);
+            let mut remaining = self.inner_width.saturating_sub(key_col_width);
+            let mut mode_col_width = 0;
+            let mut desc_col_width = 0;
+            if remaining > 1 {
+                mode_col_width = self.mode_width.max(4).min(remaining.saturating_sub(1));
+                remaining = remaining.saturating_sub(mode_col_width);
+                if mode_col_width > 0 && remaining > 1 {
+                    desc_col_width = remaining.saturating_sub(1);
+                }
+            } else {
+                key_col_width = self.inner_width;
+            }
+            (0, mode_col_width, key_col_width, desc_col_width)
+        } else {
+            let name_width = self.name_width.min(self.inner_width);
+            let command_col_width = name_width.max(6);
+            let desc_col_width = self
+                .inner_width
+                .saturating_sub(command_col_width)
+                .saturating_sub(1);
+            (command_col_width, 0, 0, desc_col_width)
+        }
+    }
+}
+
+struct CommandListHeader {
+    line: String,
+}
+
+impl CommandListHeader {
+    fn new_command(command_col_width: u16, desc_col_width: u16) -> Self {
+        let line = format!(
+            "{:<cmd_width$}{}",
+            "Command",
+            if desc_col_width > 0 {
+                format!(" {}", "Description")
+            } else {
+                String::new()
+            },
+            cmd_width = command_col_width as usize
+        );
+        Self { line }
+    }
+
+    fn new_keymap(key_col_width: u16, mode_col_width: u16, desc_col_width: u16) -> Self {
+        let mut line = format!("{:<key_width$}", "Key", key_width = key_col_width as usize);
+        if mode_col_width > 0 {
+            line.push(' ');
+            line.push_str(&format!(
+                "{:<mode_width$}",
+                "Mode",
+                mode_width = mode_col_width as usize
+            ));
+        }
+        if desc_col_width > 0 {
+            line.push(' ');
+            line.push_str("Description");
+        }
+        Self { line }
+    }
+
+    fn line(&self) -> String {
+        self.line.clone()
+    }
+}
+
+struct ColumnDisplay<'a> {
+    content: &'a str,
+    width: u16,
+}
+
+impl<'a> ColumnDisplay<'a> {
+    fn new(content: &'a str, width: u16) -> Self {
+        Self { content, width }
+    }
+
+    fn render(&self) -> String {
+        if self.width == 0 {
+            return String::new();
+        }
+        let mut display: String = self
+            .content
+            .chars()
+            .take(self.width as usize)
+            .collect();
+        if display.len() < self.width as usize {
+            display.push_str(&" ".repeat(self.width as usize - display.len()));
+        }
+        display
     }
 }
 
@@ -206,7 +435,10 @@ struct CommandQuery {
 
 impl CommandQuery {
     fn new(command_line: &str) -> Self {
-        let trimmed = command_line.trim_start_matches(':').trim();
+        let trimmed = command_line
+            .trim_start_matches(':')
+            .trim_start_matches(';')
+            .trim();
         Self {
             normalized: trimmed.to_lowercase(),
         }

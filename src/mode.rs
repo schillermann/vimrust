@@ -2,7 +2,8 @@
 pub(crate) enum EditorMode {
     Normal,
     Edit,
-    Command,
+    PromptCommand,
+    PromptKeymap,
 }
 
 impl EditorMode {
@@ -10,7 +11,8 @@ impl EditorMode {
         match self {
             EditorMode::Normal => "NORMAL",
             EditorMode::Edit => "EDIT",
-            EditorMode::Command => "COMMAND",
+            EditorMode::PromptCommand => "PROMPT_COMMAND",
+            EditorMode::PromptKeymap => "PROMPT_KEYMAP",
         }
     }
 }

@@ -177,7 +177,8 @@ impl<'a> FrameMode<'a> {
         match self.label {
             "NORMAL" => EditorMode::Normal,
             "EDIT" => EditorMode::Edit,
-            "COMMAND" => EditorMode::Command,
+            "PROMPT_COMMAND" => EditorMode::PromptCommand,
+            "PROMPT_KEYMAP" => EditorMode::PromptKeymap,
             _ => EditorMode::Normal,
         }
     }
@@ -186,7 +187,8 @@ impl<'a> FrameMode<'a> {
 pub struct ModeKeymap {
     normal: NormalModeInput,
     edit: EditModeInput,
-    command: CommandModeInput,
+    prompt_command: PromptCommandInput,
+    prompt_keymap: PromptKeymapInput,
 }
 
 impl ModeKeymap {
@@ -194,7 +196,8 @@ impl ModeKeymap {
         Self {
             normal: NormalModeInput,
             edit: EditModeInput,
-            command: CommandModeInput,
+            prompt_command: PromptCommandInput,
+            prompt_keymap: PromptKeymapInput,
         }
     }
 
@@ -202,7 +205,8 @@ impl ModeKeymap {
         match mode {
             EditorMode::Normal => self.normal.action(code),
             EditorMode::Edit => self.edit.action(code),
-            EditorMode::Command => self.command.action(code),
+            EditorMode::PromptCommand => self.prompt_command.action(code),
+            EditorMode::PromptKeymap => self.prompt_keymap.action(code),
         }
     }
 }
@@ -218,7 +222,10 @@ impl NormalModeInput {
             }),
             KeyCode::Char('s') => ClientAction::Send(RpcRequest::FileSave),
             KeyCode::Char(':') => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::Command,
+                mode: RpcMode::PromptCommand,
+            }),
+            KeyCode::Char(';') => ClientAction::Send(RpcRequest::ModeSet {
+                mode: RpcMode::PromptKeymap,
             }),
             KeyCode::Char('h') => ClientAction::Send(RpcRequest::CursorMove {
                 direction: MoveDirection::Left,
@@ -271,15 +278,55 @@ impl EditModeInput {
     }
 }
 
-struct CommandModeInput;
+struct PromptCommandInput;
 
-impl CommandModeInput {
+impl PromptCommandInput {
     fn action(&self, code: KeyCode) -> ClientAction {
         match code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Normal,
             }),
             KeyCode::Enter => ClientAction::Send(RpcRequest::CommandExecute { line: None }),
+            KeyCode::Backspace => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::Backspace,
+            }),
+            KeyCode::Delete => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::Delete,
+            }),
+            KeyCode::Left => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveLeft,
+            }),
+            KeyCode::Right => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveRight,
+            }),
+            KeyCode::Home => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveHome,
+            }),
+            KeyCode::End => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveEnd,
+            }),
+            KeyCode::Up => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveSelectionUp,
+            }),
+            KeyCode::Down => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::MoveSelectionDown,
+            }),
+            KeyCode::Char(ch) => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::InsertChar { ch },
+            }),
+            _ => ClientAction::Skip,
+        }
+    }
+}
+
+struct PromptKeymapInput;
+
+impl PromptKeymapInput {
+    fn action(&self, code: KeyCode) -> ClientAction {
+        match code {
+            KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
+                mode: RpcMode::Normal,
+            }),
             KeyCode::Backspace => ClientAction::Send(RpcRequest::CommandUi {
                 action: CommandUiAction::Backspace,
             }),

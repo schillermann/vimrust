@@ -15,9 +15,9 @@ impl CommandLine {
         }
     }
 
-    pub fn start_prompt(&mut self) {
+    pub fn start_prompt(&mut self, prefix: char) {
         self.content.clear();
-        self.content.push(':');
+        self.content.push(prefix);
         self.cursor_x = 1;
         self.selection.clear();
     }

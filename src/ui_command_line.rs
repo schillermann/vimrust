@@ -77,22 +77,31 @@ impl<'a> CommandLinePanel<'a> {
 }
 
 struct CommandLinePlaceholder {
-    text: &'static str,
+    empty_text: &'static str,
+    command_text: &'static str,
+    keymap_text: &'static str,
 }
 
 impl CommandLinePlaceholder {
     fn new() -> Self {
         Self {
-            text: "Press : for commands",
+            empty_text: "Press : for commands or ; for keymaps",
+            command_text: ": type a command",
+            keymap_text: "; filter keymaps",
         }
     }
 
     fn display_for(&self, content: &str) -> CommandLineDisplay {
         if content.is_empty() {
-            CommandLineDisplay::placeholder(self.text)
-        } else {
-            CommandLineDisplay::content(content)
+            return CommandLineDisplay::placeholder(self.empty_text);
         }
+        if content == ":" {
+            return CommandLineDisplay::placeholder(self.command_text);
+        }
+        if content == ";" {
+            return CommandLineDisplay::placeholder(self.keymap_text);
+        }
+        CommandLineDisplay::content(content)
     }
 }
 

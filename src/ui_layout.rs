@@ -36,7 +36,7 @@ impl<'a> UiBody<'a> {
         }
 
         match self.mode {
-            EditorMode::Command => {
+            EditorMode::PromptCommand | EditorMode::PromptKeymap => {
                 if let Some(cmd_ui) = self.frame.command_ui_frame() {
                     let mut panel = CommandListPanel::new(
                         terminal,
@@ -82,7 +82,7 @@ impl<'a> CursorPlacement<'a> {
 
     pub(crate) fn position(&self) -> (u16, u16) {
         match self.mode {
-            EditorMode::Command => {
+            EditorMode::PromptCommand | EditorMode::PromptKeymap => {
                 if let Some(cmd_ui) = self.frame.command_ui_frame() {
                     let mut command_cursor = (
                         cmd_ui
