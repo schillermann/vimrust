@@ -8,8 +8,8 @@ mod rpc_session;
 mod status_line;
 mod terminal;
 mod ui;
-mod ui_command_line;
-mod ui_command_list;
+mod ui_prompt_line;
+mod ui_prompt_list;
 mod ui_editor_rows;
 mod ui_layout;
 

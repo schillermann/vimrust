@@ -3,7 +3,7 @@ use std::io;
 use crate::{
     mode::EditorMode,
     terminal::Terminal,
-    ui_command_list::CommandListPanel,
+    ui_prompt_list::PromptListView,
     ui_editor_rows::EditorRowsPanel,
 };
 use vimrust_protocol::Frame;
@@ -38,7 +38,7 @@ impl<'a> UiBody<'a> {
         match self.mode {
             EditorMode::PromptCommand | EditorMode::PromptKeymap => {
                 if let Some(cmd_ui) = self.frame.command_ui_frame() {
-                    let mut panel = CommandListPanel::new(
+                    let mut panel = PromptListView::new(
                         terminal,
                         cmd_ui,
                         self.number_of_columns,

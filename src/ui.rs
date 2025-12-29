@@ -6,7 +6,7 @@ use crate::{
     mode::EditorMode,
     status_line::StatusLine,
     terminal::Terminal,
-    ui_command_line::CommandLinePanel,
+    ui_prompt_line::CommandLinePanel,
     ui_layout::{CursorPlacement, UiBody},
 };
 use vimrust_protocol::{Frame, RpcRequest, StatusMessage};

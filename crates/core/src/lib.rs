@@ -1,8 +1,8 @@
-mod command_line;
+mod prompt_line;
 mod command_list;
 mod keymap_list;
-mod command_ui_state;
-mod command_ui_snapshot;
+mod prompt_ui_state;
+mod prompt_ui_snapshot;
 mod command_ui_placeholder;
 mod editor;
 mod frame_signal;

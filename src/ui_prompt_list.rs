@@ -7,9 +7,9 @@ use crossterm::{
 };
 
 use crate::terminal::Terminal;
-use vimrust_protocol::{CommandListItemMode, CommandUiFrame};
+use vimrust_protocol::{PromptMode, CommandUiFrame};
 
-pub(crate) struct CommandListPanel<'a> {
+pub(crate) struct PromptListView<'a> {
     terminal: &'a mut Terminal,
     cmd_ui: &'a CommandUiFrame,
     number_of_columns: u16,
@@ -17,7 +17,7 @@ pub(crate) struct CommandListPanel<'a> {
     number_of_rows: u16,
 }
 
-impl<'a> CommandListPanel<'a> {
+impl<'a> PromptListView<'a> {
     pub(crate) fn new(
         terminal: &'a mut Terminal,
         cmd_ui: &'a CommandUiFrame,
@@ -52,11 +52,11 @@ impl<'a> CommandListPanel<'a> {
             let entry = &matches[idx];
             if is_keymap {
                 let mode_label = match entry.mode() {
-                    CommandListItemMode::Command => "COMMAND",
-                    CommandListItemMode::Normal => "NORMAL",
-                    CommandListItemMode::Edit => "EDIT",
-                    CommandListItemMode::PromptCommand => "PROMPT_COMMAND",
-                    CommandListItemMode::PromptKeymap => "PROMPT_KEYMAP",
+                    PromptMode::Command => "COMMAND",
+                    PromptMode::Normal => "NORMAL",
+                    PromptMode::Edit => "EDIT",
+                    PromptMode::PromptCommand => "PROMPT_COMMAND",
+                    PromptMode::PromptKeymap => "PROMPT_KEYMAP",
                 };
                 let mode_len = mode_label.chars().count() as u16;
                 let key_len = entry.label().chars().count() as u16;
@@ -75,13 +75,13 @@ impl<'a> CommandListPanel<'a> {
             idx += 1;
         }
         let (command_col_width, mode_col_width, key_col_width, desc_col_width) =
-            CommandListLayout::new(is_keymap, inner_width, name_width, mode_width, key_width)
+            PromptListLayout::new(is_keymap, inner_width, name_width, mode_width, key_width)
                 .columns();
 
         let mut header = if is_keymap {
-            CommandListHeader::new_keymap(key_col_width, mode_col_width, desc_col_width).line()
+            PromptListHeader::new_keymap(key_col_width, mode_col_width, desc_col_width).line()
         } else {
-            CommandListHeader::new_command(command_col_width, desc_col_width).line()
+            PromptListHeader::new_command(command_col_width, desc_col_width).line()
         };
         if header.len() > inner_width as usize {
             header.truncate(inner_width as usize);
@@ -129,11 +129,11 @@ impl<'a> CommandListPanel<'a> {
 
                 if is_keymap {
                     let mode_label = match entry.mode() {
-                        CommandListItemMode::Command => "COMMAND",
-                        CommandListItemMode::Normal => "NORMAL",
-                        CommandListItemMode::Edit => "EDIT",
-                        CommandListItemMode::PromptCommand => "PROMPT_COMMAND",
-                        CommandListItemMode::PromptKeymap => "PROMPT_KEYMAP",
+                        PromptMode::Command => "COMMAND",
+                        PromptMode::Normal => "NORMAL",
+                        PromptMode::Edit => "EDIT",
+                        PromptMode::PromptCommand => "PROMPT_COMMAND",
+                        PromptMode::PromptKeymap => "PROMPT_KEYMAP",
                     };
                     let key_display =
                         ColumnDisplay::new(entry.label(), key_col_width).render();
@@ -178,7 +178,7 @@ impl<'a> CommandListPanel<'a> {
                             .queue_add_command(SetForegroundColor(Color::White))?;
                         if key_col_width > 0 {
                             self.terminal.queue_add_command(Print(" "))?;
-                            let key_highlight = CommandListHighlight::new(
+                            let key_highlight = PromptListHighlight::new(
                                 &key_matches,
                                 Some(Color::White),
                                 Color::Yellow,
@@ -188,7 +188,7 @@ impl<'a> CommandListPanel<'a> {
                         }
                         if mode_col_width > 0 {
                             self.terminal.queue_add_command(Print(" "))?;
-                            let mode_highlight = CommandListHighlight::new(
+                            let mode_highlight = PromptListHighlight::new(
                                 &mode_matches,
                                 Some(Color::White),
                                 Color::Yellow,
@@ -198,7 +198,7 @@ impl<'a> CommandListPanel<'a> {
                         }
                         if !desc_display.is_empty() {
                             self.terminal.queue_add_command(Print(" "))?;
-                            let desc_highlight = CommandListHighlight::new(
+                            let desc_highlight = PromptListHighlight::new(
                                 &desc_matches,
                                 Some(Color::White),
                                 Color::Yellow,
@@ -213,19 +213,19 @@ impl<'a> CommandListPanel<'a> {
                         if key_col_width > 0 {
                             self.terminal.queue_add_command(Print(" "))?;
                             let key_highlight =
-                                CommandListHighlight::new(&key_matches, None, Color::Yellow, false);
+                                PromptListHighlight::new(&key_matches, None, Color::Yellow, false);
                             key_highlight.paint(self.terminal, &key_display)?;
                         }
                         if mode_col_width > 0 {
                             self.terminal.queue_add_command(Print(" "))?;
                             let mode_highlight =
-                                CommandListHighlight::new(&mode_matches, None, Color::Yellow, false);
+                                PromptListHighlight::new(&mode_matches, None, Color::Yellow, false);
                             mode_highlight.paint(self.terminal, &mode_display)?;
                         }
                         if !desc_display.is_empty() {
                             self.terminal.queue_add_command(Print(" "))?;
                             let desc_highlight =
-                                CommandListHighlight::new(&desc_matches, None, Color::Yellow, false);
+                                PromptListHighlight::new(&desc_matches, None, Color::Yellow, false);
                             desc_highlight.paint(self.terminal, &desc_display)?;
                         }
                         self.terminal.queue_add_command(ResetColor)?;
@@ -268,7 +268,7 @@ impl<'a> CommandListPanel<'a> {
                             .queue_add_command(SetBackgroundColor(Color::DarkGrey))?;
                         self.terminal
                             .queue_add_command(SetForegroundColor(Color::White))?;
-                        let name_highlight = CommandListHighlight::new(
+                        let name_highlight = PromptListHighlight::new(
                             &name_matches,
                             Some(Color::White),
                             Color::Yellow,
@@ -277,7 +277,7 @@ impl<'a> CommandListPanel<'a> {
                         name_highlight.paint(self.terminal, &name_display)?;
                         if !desc_display.is_empty() {
                             self.terminal.queue_add_command(Print(" "))?;
-                            let desc_highlight = CommandListHighlight::new(
+                            let desc_highlight = PromptListHighlight::new(
                                 &desc_matches,
                                 Some(Color::White),
                                 Color::Yellow,
@@ -290,12 +290,12 @@ impl<'a> CommandListPanel<'a> {
                     } else {
                         self.terminal.queue_add_command(Print(" "))?;
                         let name_highlight =
-                            CommandListHighlight::new(&name_matches, None, Color::Yellow, false);
+                            PromptListHighlight::new(&name_matches, None, Color::Yellow, false);
                         name_highlight.paint(self.terminal, &name_display)?;
                         if !desc_display.is_empty() {
                             self.terminal.queue_add_command(Print(" "))?;
                             let desc_highlight =
-                                CommandListHighlight::new(&desc_matches, None, Color::Yellow, false);
+                                PromptListHighlight::new(&desc_matches, None, Color::Yellow, false);
                             desc_highlight.paint(self.terminal, &desc_display)?;
                         }
                         self.terminal.queue_add_command(ResetColor)?;
@@ -309,7 +309,7 @@ impl<'a> CommandListPanel<'a> {
     }
 }
 
-struct CommandListLayout {
+struct PromptListLayout {
     is_keymap: bool,
     inner_width: u16,
     name_width: u16,
@@ -317,7 +317,7 @@ struct CommandListLayout {
     key_width: u16,
 }
 
-impl CommandListLayout {
+impl PromptListLayout {
     fn new(
         is_keymap: bool,
         inner_width: u16,
@@ -362,11 +362,11 @@ impl CommandListLayout {
     }
 }
 
-struct CommandListHeader {
+struct PromptListHeader {
     line: String,
 }
 
-impl CommandListHeader {
+impl PromptListHeader {
     fn new_command(command_col_width: u16, desc_col_width: u16) -> Self {
         let line = format!(
             "{:<cmd_width$}{}",
@@ -471,14 +471,14 @@ impl CommandQuery {
     }
 }
 
-struct CommandListHighlight<'a> {
+struct PromptListHighlight<'a> {
     match_indices: &'a [usize],
     default_fg: Option<Color>,
     highlight_fg: Color,
     keep_background: bool,
 }
 
-impl<'a> CommandListHighlight<'a> {
+impl<'a> PromptListHighlight<'a> {
     fn new(
         match_indices: &'a [usize],
         default_fg: Option<Color>,

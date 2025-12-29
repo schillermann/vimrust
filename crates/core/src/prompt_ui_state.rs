@@ -1,9 +1,9 @@
 use crate::{
-    command_line::CommandLine,
+    prompt_line::PromptLine,
     command_list::CommandList,
     keymap_list::KeymapList,
     command_ui_placeholder::CommandPlaceholder,
-    command_ui_snapshot::CommandUiSnapshot,
+    prompt_ui_snapshot::CommandUiSnapshot,
     prompt_entry::PromptEntry,
 };
 use vimrust_protocol::{
@@ -11,7 +11,7 @@ use vimrust_protocol::{
 };
 
 pub struct CommandUiState {
-    command_line: CommandLine,
+    prompt_line: PromptLine,
     command_list: CommandList,
     keymap_list: KeymapList,
     focus_on_list: bool,
@@ -21,7 +21,7 @@ pub struct CommandUiState {
 impl CommandUiState {
     pub fn new() -> Self {
         Self {
-            command_line: CommandLine::new(),
+            prompt_line: PromptLine::new(),
             command_list: CommandList::new(),
             keymap_list: KeymapList::new(),
             focus_on_list: false,
@@ -31,34 +31,34 @@ impl CommandUiState {
 
     pub fn prompt_command(&mut self) {
         self.prompt_kind = PromptKind::Command;
-        self.command_line.start_prompt(':');
+        self.prompt_line.start_prompt(':');
         self.command_list.reset_selection();
         self.focus_on_list = false;
     }
 
     pub fn prompt_keymap(&mut self) {
         self.prompt_kind = PromptKind::Keymap;
-        self.command_line.start_prompt(';');
+        self.prompt_line.start_prompt(';');
         self.keymap_list.reset_selection();
         self.focus_on_list = false;
     }
 
     pub fn line_overwrite(&mut self, new_content: String) {
-        self.command_line.set_content(new_content);
+        self.prompt_line.set_content(new_content);
         self.list_reset();
         self.focus_on_list = false;
     }
 
     pub fn command_text(&self) -> &str {
-        self.command_line.text()
+        self.prompt_line.text()
     }
 
     pub fn line_selection(&self) -> CommandLineSelection {
-        self.command_line.selection()
+        self.prompt_line.selection()
     }
 
     pub fn clear(&mut self) {
-        self.command_line.clear();
+        self.prompt_line.clear();
         self.list_reset();
         self.focus_on_list = false;
     }
@@ -76,39 +76,39 @@ impl CommandUiState {
                 self.clear();
             }
             CommandUiAction::InsertChar { ch } => {
-                self.command_line.char_insert(ch);
+                self.prompt_line.char_insert(ch);
                 self.list_reset();
                 self.focus_on_list = false;
             }
             CommandUiAction::Backspace => {
-                self.command_line.backspace();
+                self.prompt_line.backspace();
                 self.list_reset();
                 self.focus_on_list = false;
             }
             CommandUiAction::Delete => {
-                self.command_line.delete();
+                self.prompt_line.delete();
                 self.list_reset();
                 self.focus_on_list = false;
             }
             CommandUiAction::MoveLeft => {
-                self.command_line.cursor_move_left();
+                self.prompt_line.cursor_move_left();
                 self.focus_on_list = false;
             }
             CommandUiAction::MoveRight => {
-                self.command_line.cursor_move_right();
+                self.prompt_line.cursor_move_right();
                 self.focus_on_list = false;
             }
             CommandUiAction::MoveHome => {
-                self.command_line.cursor_move_home();
+                self.prompt_line.cursor_move_home();
                 self.focus_on_list = false;
             }
             CommandUiAction::MoveEnd => {
-                self.command_line.cursor_move_end();
+                self.prompt_line.cursor_move_end();
                 self.focus_on_list = false;
             }
             CommandUiAction::MoveSelectionUp | CommandUiAction::MoveSelectionDown => {
                 let match_count = {
-                    let matches = self.list_filter(self.command_line.text());
+                    let matches = self.list_filter(self.prompt_line.text());
                     matches.len()
                 };
                 if match_count == 0 {
@@ -146,7 +146,7 @@ impl CommandUiState {
                     return;
                 }
                 let selected_label = {
-                    let matches = self.list_filter(self.command_line.text());
+                    let matches = self.list_filter(self.prompt_line.text());
                     if self.focus_on_list
                         && !matches.is_empty()
                         && let Some(selected) = self.list_selection()
@@ -161,11 +161,11 @@ impl CommandUiState {
                     let line = format!(":{}", entry_label);
                     let placeholder = CommandPlaceholder;
                     let selection = placeholder.selection_for(&line);
-                    self.command_line
+                    self.prompt_line
                         .set_content_with_selection(line, selection);
                     self.focus_on_list = false;
 
-                    let updated_matches = self.list_filter(self.command_line.text());
+                    let updated_matches = self.list_filter(self.prompt_line.text());
                     let mut updated_index = None;
                     let mut idx = 0;
                     while idx < updated_matches.len() {
@@ -187,9 +187,9 @@ impl CommandUiState {
 
     pub fn snapshot(&self) -> CommandUiSnapshot {
         CommandUiSnapshot::new(
-            self.command_line.text().to_string(),
-            self.command_line.cursor_column(),
-            self.command_line.selection(),
+            self.prompt_line.text().to_string(),
+            self.prompt_line.cursor_column(),
+            self.prompt_line.selection(),
             self.focus_on_list,
             self.list_selection(),
             self.list_scroll_position(),
@@ -201,7 +201,7 @@ impl CommandUiState {
     }
 
     pub fn frame(&self) -> CommandUiFrame {
-        let matches = self.list_filter(self.command_line.text());
+        let matches = self.list_filter(self.prompt_line.text());
         let selected_index = if let Some(idx) = self.list_selection() {
             if matches.is_empty() {
                 None
@@ -221,9 +221,9 @@ impl CommandUiState {
         }
 
         CommandUiFrame::new(
-            self.command_line.text().to_string(),
-            self.command_line.cursor_column(),
-            self.command_line.selection(),
+            self.prompt_line.text().to_string(),
+            self.prompt_line.cursor_column(),
+            self.prompt_line.selection(),
             self.focus_on_list,
             list_items,
             selected_index,
@@ -298,9 +298,9 @@ pub(crate) struct CommandUiView<'a> {
 impl<'a> CommandUiView<'a> {
     pub(crate) fn new(state: &'a CommandUiState) -> Self {
         Self {
-            text: state.command_line.text(),
-            cursor: state.command_line.cursor_column(),
-            selection: state.command_line.selection(),
+            text: state.prompt_line.text(),
+            cursor: state.prompt_line.cursor_column(),
+            selection: state.prompt_line.selection(),
             focus_on_list: state.focus_on_list,
             selection_index: state.list_selection(),
             scroll_offset: state.list_scroll_position(),

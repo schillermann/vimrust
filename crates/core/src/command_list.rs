@@ -1,5 +1,5 @@
 use crate::prompt_entry::PromptEntry;
-use vimrust_protocol::CommandListItemMode;
+use vimrust_protocol::PromptMode;
 
 pub struct CommandEntry {
     name: &'static str,
@@ -155,8 +155,8 @@ impl PromptEntry for CommandEntry {
         self.description
     }
 
-    fn mode(&self) -> CommandListItemMode {
-        CommandListItemMode::Command
+    fn mode(&self) -> PromptMode {
+        PromptMode::Command
     }
 }
 

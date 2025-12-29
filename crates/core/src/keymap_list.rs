@@ -1,8 +1,8 @@
 use crate::prompt_entry::PromptEntry;
-use vimrust_protocol::CommandListItemMode;
+use vimrust_protocol::PromptMode;
 
 pub struct KeymapEntry {
-    mode: CommandListItemMode,
+    mode: PromptMode,
     key: &'static str,
     description: &'static str,
 }
@@ -16,177 +16,177 @@ impl KeymapRegistry {
         Self {
             keymaps: vec![
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "q",
                     description: "Quit the editor",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "e",
                     description: "Enter edit mode",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "s",
                     description: "Save the current buffer",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: ":",
                     description: "Open the command prompt",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: ";",
                     description: "Open the keymap prompt",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "h",
                     description: "Move cursor left",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "j",
                     description: "Move cursor down",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "k",
                     description: "Move cursor up",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "l",
                     description: "Move cursor right",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "PageUp",
                     description: "Move cursor one page up",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "PageDown",
                     description: "Move cursor one page down",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "Home",
                     description: "Move cursor to line start",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Normal,
+                    mode: PromptMode::Normal,
                     key: "End",
                     description: "Move cursor to line end",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Edit,
+                    mode: PromptMode::Edit,
                     key: "Esc",
                     description: "Return to normal mode",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Edit,
+                    mode: PromptMode::Edit,
                     key: "Backspace",
                     description: "Delete character before cursor",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::Edit,
+                    mode: PromptMode::Edit,
                     key: "Delete",
                     description: "Delete character under cursor",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Esc",
                     description: "Return to normal mode",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Enter",
                     description: "Execute command",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Backspace",
                     description: "Delete character before cursor",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Delete",
                     description: "Delete character under cursor",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Left",
                     description: "Move cursor left",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Right",
                     description: "Move cursor right",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Home",
                     description: "Move cursor to line start",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "End",
                     description: "Move cursor to line end",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Up",
                     description: "Move selection up",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptCommand,
+                    mode: PromptMode::PromptCommand,
                     key: "Down",
                     description: "Move selection down",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Esc",
                     description: "Return to normal mode",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Backspace",
                     description: "Delete character before cursor",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Delete",
                     description: "Delete character under cursor",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Left",
                     description: "Move cursor left",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Right",
                     description: "Move cursor right",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Home",
                     description: "Move cursor to line start",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "End",
                     description: "Move cursor to line end",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Up",
                     description: "Move selection up",
                 },
                 KeymapEntry {
-                    mode: CommandListItemMode::PromptKeymap,
+                    mode: PromptMode::PromptKeymap,
                     key: "Down",
                     description: "Move selection down",
                 },
@@ -201,11 +201,11 @@ impl KeymapRegistry {
             let key_label = entry.label().to_string();
             let desc = entry.detail().to_lowercase();
             let mode_label = match entry.mode {
-                CommandListItemMode::Command => "command",
-                CommandListItemMode::Normal => "normal",
-                CommandListItemMode::Edit => "edit",
-                CommandListItemMode::PromptCommand => "prompt_command",
-                CommandListItemMode::PromptKeymap => "prompt_keymap",
+                PromptMode::Command => "command",
+                PromptMode::Normal => "normal",
+                PromptMode::Edit => "edit",
+                PromptMode::PromptCommand => "prompt_command",
+                PromptMode::PromptKeymap => "prompt_keymap",
             };
             if KeymapList::fuzzy_match(&normalized, &key_label)
                 || KeymapList::fuzzy_match(&normalized, &desc)
@@ -311,7 +311,7 @@ impl PromptEntry for KeymapEntry {
         self.description
     }
 
-    fn mode(&self) -> CommandListItemMode {
+    fn mode(&self) -> PromptMode {
         self.mode.clone()
     }
 }

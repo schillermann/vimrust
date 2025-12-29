@@ -1,7 +1,7 @@
 use std::io::{self, BufRead, Write};
 
 use crate::{
-    EditorMode, FrameSignal, command_ui_state::CommandUiState, editor::Editor, file::File,
+    EditorMode, FrameSignal, prompt_ui_state::CommandUiState, editor::Editor, file::File,
 };
 use vimrust_protocol::{
     Ack, AckKind, CommandLineSelection, CommandUiAction, CommandUiFrame, Cursor, DeleteKind,

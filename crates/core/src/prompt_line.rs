@@ -1,12 +1,12 @@
 use vimrust_protocol::CommandLineSelection;
 
-pub struct CommandLine {
+pub struct PromptLine {
     content: String,
     cursor_x: u16,
     selection: CommandLineSelection,
 }
 
-impl CommandLine {
+impl PromptLine {
     pub fn new() -> Self {
         Self {
             content: String::new(),

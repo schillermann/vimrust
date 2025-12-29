@@ -1,12 +1,12 @@
-mod command_ui;
+mod prompt_ui;
 mod frame;
 mod path;
 mod rpc;
 mod status;
 mod version;
 
-pub use command_ui::{
-    CommandLineSelection, CommandListItemFrame, CommandListItemMode, CommandUiAction, CommandUiFrame,
+pub use prompt_ui::{
+    CommandLineSelection, CommandListItemFrame, PromptMode, CommandUiAction, CommandUiFrame,
 };
 pub use frame::{Cursor, Frame};
 pub use path::FilePath;
