@@ -7,7 +7,7 @@ use crossterm::{
 };
 
 use crate::{mode::EditorMode, terminal::Terminal};
-use vimrust_protocol::{FilePath, StatusMessage};
+use vimrust_protocol::{FilePath, StatusMessage, StatusPosition};
 
 /// Renders the status line on the last row of the screen.
 pub struct StatusLine {
@@ -36,14 +36,19 @@ impl StatusLine {
         terminal: &mut Terminal,
         mode: &EditorMode,
         file_path: &FilePath,
-        position_label: String,
+        position: StatusPosition,
         number_of_columns: u16,
         number_of_rows: u16,
     ) -> io::Result<()> {
         // Leave one column of padding on both sides of the status line.
         let inner_width = number_of_columns.saturating_sub(2);
-        let mut status = format!("{} > {}", mode.label(), file_path);
+        let mut status = String::new();
+        mode.append_to(&mut status);
+        status.push_str(" > ");
+        status.push_str(&format!("{}", file_path));
         self.file_status.append_to_status_line(&mut status);
+        let mut position_label = String::new();
+        position.append_to(&mut position_label);
         let status_line = self.compose_line(&status, &position_label, inner_width as usize);
         let status = format!(" {} ", status_line);
         terminal.queue_add_command(MoveTo(0, number_of_rows.saturating_sub(1)))?;

@@ -1,6 +1,6 @@
 use std::io;
 
-use crossterm::cursor::{Hide, MoveTo, Show};
+use crossterm::cursor::{Hide, Show};
 
 use crate::{
     mode::EditorMode,
@@ -9,7 +9,7 @@ use crate::{
     ui_prompt_line::CommandLinePanel,
     ui_layout::{CursorPlacement, UiBody},
 };
-use vimrust_protocol::{Frame, RpcRequest, StatusMessage};
+use vimrust_protocol::{CommandUiAccess, Frame, RpcRequest, StatusMessage, ViewportSink};
 
 /// Responsible for orchestrating the per-frame UI rendering.
 pub struct Ui<'a> {
@@ -85,55 +85,9 @@ impl<'a> Ui<'a> {
         }
 
         self.updated = false;
-
-        let (number_of_columns, number_of_rows) = frame.viewport();
-        if number_of_rows == 0 {
-            return Ok(());
-        }
-
-        let usable_rows = number_of_rows.saturating_sub(2);
-
-        self.terminal.clear_buffer();
-        {
-            self.terminal.queue_add_command(Hide)?;
-
-            let (command_text, command_selection) = match frame.command_ui_frame() {
-                Some(command_ui) => (
-                    command_ui.command_text(),
-                    command_ui.command_selection(),
-                ),
-                None => ("", vimrust_protocol::CommandLineSelection::None),
-            };
-            let mut command_line =
-                CommandLinePanel::new(self.terminal, number_of_columns, command_text, command_selection);
-            command_line.paint()?;
-
-            if usable_rows > 0 {
-                let body = UiBody::new(self.mode, frame, number_of_columns, usable_rows);
-                body.paint(self.terminal)?;
-            }
-
-            if number_of_rows > 1 {
-                self.status_line.file_status_update(frame.status_message());
-                self.status_line.draw(
-                    self.terminal,
-                    &self.mode,
-                    &frame.path(),
-                    frame.position_label(),
-                    number_of_columns,
-                    number_of_rows,
-                )?;
-            }
-
-            let cursor_placement =
-                CursorPlacement::new(self.mode, frame, number_of_columns, number_of_rows);
-            let (cursor_col, cursor_row) = cursor_placement.position();
-            self.terminal
-                .queue_add_command(MoveTo(cursor_col, cursor_row))?;
-            self.terminal.queue_add_command(Show)?;
-        }
-
-        self.terminal.queue_execute()
+        let mut render = FrameRender::new(self, frame);
+        frame.viewport().apply_to(&mut render);
+        render.finish()
     }
 
 }
@@ -141,4 +95,107 @@ impl<'a> Ui<'a> {
 pub enum UiQuitSignal {
     Requested,
     Idle,
+}
+
+struct FrameRender<'a, 'b> {
+    ui: &'a mut Ui<'b>,
+    frame: &'a Frame,
+    result: io::Result<()>,
+}
+
+impl<'a, 'b> FrameRender<'a, 'b> {
+    fn new(ui: &'a mut Ui<'b>, frame: &'a Frame) -> Self {
+        Self {
+            ui,
+            frame,
+            result: Ok(()),
+        }
+    }
+
+    fn finish(self) -> io::Result<()> {
+        self.result
+    }
+
+    fn render_with_size(&mut self, number_of_columns: u16, number_of_rows: u16) -> io::Result<()> {
+        if number_of_rows == 0 {
+            return Ok(());
+        }
+
+        let usable_rows = number_of_rows.saturating_sub(2);
+
+        self.ui.terminal.clear_buffer();
+        {
+            self.ui.terminal.queue_add_command(Hide)?;
+
+            let mut command_input = CommandInput::new();
+            match self.frame.command_ui() {
+                CommandUiAccess::Available(command_ui) => {
+                    command_input.use_frame(&command_ui);
+                }
+                CommandUiAccess::Missing => {}
+            }
+            let mut command_line = command_input.panel(self.ui.terminal, number_of_columns);
+            command_line.paint()?;
+
+            if usable_rows > 0 {
+                let body = UiBody::new(self.ui.mode, self.frame, number_of_columns, usable_rows);
+                body.paint(self.ui.terminal)?;
+            }
+
+            if number_of_rows > 1 {
+                self.ui
+                    .status_line
+                    .file_status_update(self.frame.status());
+                self.ui.status_line.draw(
+                    self.ui.terminal,
+                    &self.ui.mode,
+                    &self.frame.path(),
+                    self.frame.position(),
+                    number_of_columns,
+                    number_of_rows,
+                )?;
+            }
+
+            let cursor_placement =
+                CursorPlacement::new(self.ui.mode, self.frame, number_of_columns, number_of_rows);
+            let cursor = cursor_placement.command();
+            self.ui.terminal.queue_add_command(cursor)?;
+            self.ui.terminal.queue_add_command(Show)?;
+        }
+
+        self.ui.terminal.queue_execute()
+    }
+}
+
+impl<'a, 'b> ViewportSink for FrameRender<'a, 'b> {
+    fn size(&mut self, columns: u16, rows: u16) {
+        self.result = self.render_with_size(columns, rows);
+    }
+}
+
+struct CommandInput {
+    text: String,
+    selection: vimrust_protocol::CommandLineSelection,
+}
+
+impl CommandInput {
+    fn new() -> Self {
+        Self {
+            text: String::new(),
+            selection: vimrust_protocol::CommandLineSelection::None,
+        }
+    }
+
+    fn use_frame(&mut self, command_ui: &vimrust_protocol::CommandUiFrame) {
+        self.text = command_ui.command_text().to_string();
+        self.selection = command_ui.command_selection();
+    }
+
+    fn panel<'a>(
+        &self,
+        terminal: &'a mut Terminal,
+        number_of_columns: u16,
+    ) -> CommandLinePanel<'a, '_> {
+        CommandLinePanel::new(terminal, number_of_columns, &self.text, self.selection.clone())
+    }
 }

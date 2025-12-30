@@ -99,7 +99,7 @@ impl<'a> RpcSession<'a> {
         self.latest_frame = Some(frame);
         self.status_override = StatusMessage::Empty;
         if let Some(frame) = &self.latest_frame {
-            self.protocol_gate.observe(frame.version());
+        self.protocol_gate.observe(frame.protocol());
             self.protocol_gate.report();
             self.protocol_gate.result()?;
         }
@@ -124,10 +124,7 @@ impl<'a> RpcSession<'a> {
 
     fn render(&mut self) -> io::Result<()> {
         if let Some(frame) = &self.latest_frame {
-            let mode = FrameMode {
-                label: frame.mode_label(),
-            }
-            .editor_mode();
+            let mode = UiFrameMode::new(frame.mode()).editor_mode();
             let mut frame_to_render = frame.clone();
             self.ui.mode_apply(mode);
             // Prefer explicit status message if set by ack/error.
@@ -135,7 +132,7 @@ impl<'a> RpcSession<'a> {
                 .protocol_gate
                 .status()
                 .or(self.status_override.clone())
-                .or(frame.status_message());
+                .or(frame.status());
             frame_to_render.status_update(status);
             self.ui.render_from_frame(&frame_to_render)?;
         }
@@ -147,10 +144,7 @@ impl<'a> RpcSession<'a> {
             match event::read()? {
                 Event::Key(key_event) => {
                     if let Some(ref mut frame) = self.latest_frame {
-                        let mode = FrameMode {
-                            label: frame.mode_label(),
-                        }
-                        .editor_mode();
+                        let mode = UiFrameMode::new(frame.mode()).editor_mode();
                         let action = self.keymap.action_for(mode, key_event.code);
                         self.ui.status_clear();
                         action.apply(&mut self.client)?;
@@ -168,18 +162,21 @@ impl<'a> RpcSession<'a> {
     }
 }
 
-struct FrameMode<'a> {
-    label: &'a str,
+struct UiFrameMode {
+    mode: vimrust_protocol::FrameMode,
 }
 
-impl<'a> FrameMode<'a> {
+impl UiFrameMode {
+    fn new(mode: vimrust_protocol::FrameMode) -> Self {
+        Self { mode }
+    }
+
     fn editor_mode(&self) -> EditorMode {
-        match self.label {
-            "NORMAL" => EditorMode::Normal,
-            "EDIT" => EditorMode::Edit,
-            "PROMPT_COMMAND" => EditorMode::PromptCommand,
-            "PROMPT_KEYMAP" => EditorMode::PromptKeymap,
-            _ => EditorMode::Normal,
+        match self.mode {
+            vimrust_protocol::FrameMode::Normal => EditorMode::Normal,
+            vimrust_protocol::FrameMode::Edit => EditorMode::Edit,
+            vimrust_protocol::FrameMode::PromptCommand => EditorMode::PromptCommand,
+            vimrust_protocol::FrameMode::PromptKeymap => EditorMode::PromptKeymap,
         }
     }
 }

@@ -9,18 +9,18 @@ use crossterm::{
 use crate::terminal::Terminal;
 use vimrust_protocol::CommandLineSelection;
 
-pub(crate) struct CommandLinePanel<'a> {
+pub(crate) struct CommandLinePanel<'a, 'b> {
     terminal: &'a mut Terminal,
     number_of_columns: u16,
-    content: &'a str,
+    content: &'b str,
     selection: CommandLineSelection,
 }
 
-impl<'a> CommandLinePanel<'a> {
+impl<'a, 'b> CommandLinePanel<'a, 'b> {
     pub(crate) fn new(
         terminal: &'a mut Terminal,
         number_of_columns: u16,
-        content: &'a str,
+        content: &'b str,
         selection: CommandLineSelection,
     ) -> Self {
         Self {

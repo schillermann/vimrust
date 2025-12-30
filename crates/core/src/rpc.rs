@@ -5,7 +5,7 @@ use crate::{
 };
 use vimrust_protocol::{
     Ack, AckKind, CommandLineSelection, CommandUiAction, CommandUiFrame, Cursor, DeleteKind,
-    FilePath, Frame, MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
+    FilePath, Frame, FrameMode, MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
     StatusMessage, StatusPosition,
 };
 
@@ -724,14 +724,16 @@ pub fn build_frame(
 
     let status = editor.change_status().status_or(status);
     let total_rows = view.file_ref().line_total();
-    let status_position = StatusPosition {
-        column: view.cursor_column(),
-        row: view.cursor_row(),
-        total_rows,
-    };
+    let status_position =
+        StatusPosition::new(view.cursor_column(), view.cursor_row(), total_rows);
 
     Frame::new(
-        mode.label().to_string(),
+        match mode {
+            EditorMode::Normal => FrameMode::Normal,
+            EditorMode::Edit => FrameMode::Edit,
+            EditorMode::PromptCommand => FrameMode::PromptCommand,
+            EditorMode::PromptKeymap => FrameMode::PromptKeymap,
+        },
         Cursor::new(cursor_col, cursor_row),
         rows,
         status,
@@ -782,7 +784,7 @@ mod tests {
     use super::*;
     use crate::editor::CursorPosition;
     use std::fs;
-    use vimrust_protocol::MoveDirection;
+    use vimrust_protocol::{CommandUiAccess, CursorSink, FrameRowSink, MoveDirection};
 
     struct RequestHarness<'a> {
         record: RequestOutcomeRecord,
@@ -812,6 +814,65 @@ mod tests {
         }
     }
 
+    struct RowsProbe {
+        rows: Vec<String>,
+    }
+
+    impl RowsProbe {
+        fn new() -> Self {
+            Self { rows: Vec::new() }
+        }
+
+        fn expect_row(&self, index: u16, expected: &str) {
+            let found = self
+                .rows
+                .get(index as usize)
+                .map(String::as_str)
+                .unwrap_or("");
+            assert_eq!(found, expected);
+        }
+    }
+
+    impl FrameRowSink for RowsProbe {
+        fn paint_row(&mut self, index: u16, row: &str) {
+            if self.rows.len() <= index as usize {
+                self.rows
+                    .resize_with(index.saturating_add(1) as usize, String::new);
+            }
+            self.rows[index as usize] = row.to_string();
+        }
+    }
+
+    struct CursorProbe {
+        column: u16,
+        row: u16,
+        placed: bool,
+    }
+
+    impl CursorProbe {
+        fn new() -> Self {
+            Self {
+                column: 0,
+                row: 0,
+                placed: false,
+            }
+        }
+
+        fn expect_position(&self, column: u16, row: u16) {
+            assert!(self.placed);
+            assert_eq!(self.column, column);
+            assert_eq!(self.row, row);
+        }
+    }
+
+    impl CursorSink for CursorProbe {
+        fn place(&mut self, column: u16, row: u16) {
+            self.column = column;
+            self.row = row;
+            self.placed = true;
+        }
+    }
+
     #[test]
     fn insert_request_updates_rows() {
         let mut editor = Editor::new(File::new(FilePath::Missing));
@@ -829,7 +890,9 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame.editor_rows().get(0).map(String::as_str), Some("hi"));
+        let mut rows = RowsProbe::new();
+        frame.rows().paint(size.1.saturating_sub(2), &mut rows);
+        rows.expect_row(0, "hi");
     }
 
     #[test]
@@ -849,11 +912,10 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame.editor_rows().get(0).map(String::as_str), Some("hello"));
-        assert_eq!(
-            frame.editor_rows().get(1).map(String::as_str),
-            Some(" world")
-        );
+        let mut rows = RowsProbe::new();
+        frame.rows().paint(size.1.saturating_sub(2), &mut rows);
+        rows.expect_row(0, "hello");
+        rows.expect_row(1, " world");
     }
 
     #[test]
@@ -937,7 +999,10 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        let command_ui_frame = frame.command_ui_frame().unwrap();
+        let command_ui_frame = match frame.command_ui() {
+            CommandUiAccess::Available(command_ui) => command_ui,
+            CommandUiAccess::Missing => panic!("expected command ui frame"),
+        };
         assert_eq!(command_ui_frame.command_text(), ":x");
         assert_eq!(command_ui_frame.cursor_column(), 2);
     }
@@ -1372,7 +1437,10 @@ mod tests {
         });
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        let command_ui_frame = frame.command_ui_frame().expect("expected command ui frame");
+        let command_ui_frame = match frame.command_ui() {
+            CommandUiAccess::Available(command_ui) => command_ui,
+            CommandUiAccess::Missing => panic!("expected command ui frame"),
+        };
         assert_eq!(command_ui_frame.command_text(), ":s");
         assert_eq!(command_ui_frame.cursor_column(), 2);
         assert!(command_ui_frame.list_focus());
@@ -1395,7 +1463,10 @@ mod tests {
         });
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        let command_ui_frame = frame.command_ui_frame().expect("expected command ui frame");
+        let command_ui_frame = match frame.command_ui() {
+            CommandUiAccess::Available(command_ui) => command_ui,
+            CommandUiAccess::Missing => panic!("expected command ui frame"),
+        };
         assert_eq!(command_ui_frame.command_text(), ";");
         let items = command_ui_frame.command_items();
         let mut found = false;
@@ -1428,9 +1499,9 @@ mod tests {
         let size = (10, 6);
 
         let frame = build_frame(&editor, &mode, &status, size, None);
-        let cursor = frame.cursor_position();
-        assert_eq!(cursor.column_index(), 5);
-        assert_eq!(cursor.row_index(), 4);
+        let mut cursor = CursorProbe::new();
+        frame.cursor().place_on(&mut cursor);
+        cursor.expect_position(5, 4);
     }
 
     #[test]
@@ -1453,8 +1524,11 @@ mod tests {
             });
         }
         let frame_command = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        assert_eq!(frame_command.mode_label(), "PROMPT_COMMAND");
-        assert!(frame_command.command_ui_frame().is_some());
+        assert!(matches!(frame_command.mode(), FrameMode::PromptCommand));
+        match frame_command.command_ui() {
+            CommandUiAccess::Available(_) => {}
+            CommandUiAccess::Missing => panic!("expected command ui frame"),
+        }
 
         {
             let mut harness = RequestHarness::new(
@@ -1469,8 +1543,11 @@ mod tests {
             });
         }
         let frame_normal = build_frame(&editor, &mode, &status, size, None);
-        assert_eq!(frame_normal.mode_label(), "NORMAL");
-        assert!(frame_normal.command_ui_frame().is_none());
+        assert!(matches!(frame_normal.mode(), FrameMode::Normal));
+        match frame_normal.command_ui() {
+            CommandUiAccess::Available(_) => panic!("expected command ui to be missing"),
+            CommandUiAccess::Missing => {}
+        }
     }
 
     #[test]

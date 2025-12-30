@@ -1,7 +1,7 @@
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Command, Stdio};
 
-use vimrust_protocol::{AckKind, RpcRequest, RpcResponse};
+use vimrust_protocol::{AckKind, RpcRequest, RpcResponse, ViewportSink};
 
 fn read_response(reader: &mut BufReader<std::process::ChildStdout>) -> RpcResponse {
     let mut line = String::new();
@@ -30,7 +30,9 @@ fn rpc_stdio_end_to_end_frame_ack_error() {
     let response = read_response(&mut reader);
     match response {
         RpcResponse::Frame(frame) => {
-            assert_eq!(frame.viewport(), (80, 24));
+            let mut viewport = ViewportProbe::new();
+            frame.viewport().apply_to(&mut viewport);
+            viewport.expect_size(80, 24);
         }
         _ => panic!("expected frame"),
     }
@@ -64,4 +66,34 @@ fn rpc_stdio_end_to_end_frame_ack_error() {
     }
 
     let _ = child.kill();
+}
+
+struct ViewportProbe {
+    columns: u16,
+    rows: u16,
+    ready: bool,
+}
+
+impl ViewportProbe {
+    fn new() -> Self {
+        Self {
+            columns: 0,
+            rows: 0,
+            ready: false,
+        }
+    }
+
+    fn expect_size(&self, columns: u16, rows: u16) {
+        assert!(self.ready);
+        assert_eq!(self.columns, columns);
+        assert_eq!(self.rows, rows);
+    }
+}
+
+impl ViewportSink for ViewportProbe {
+    fn size(&mut self, columns: u16, rows: u16) {
+        self.columns = columns;
+        self.rows = rows;
+        self.ready = true;
+    }
 }
