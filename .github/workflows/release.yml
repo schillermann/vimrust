@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            asset: linux-x86_64
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            asset: windows-x86_64
+          - os: macos-13
+            target: x86_64-apple-darwin
+            asset: macos-x86_64
+          - os: macos-14
+            target: aarch64-apple-darwin
+            asset: macos-aarch64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Build
+        run: |
+          cargo build --release --target ${{ matrix.target }}
+          cargo build -p vimrust-core --release --target ${{ matrix.target }}
+
+      - name: Package (unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/vimrust dist/
+          cp target/${{ matrix.target }}/release/vimrust-core dist/
+          tar -czf vimrust-${{ github.ref_name }}-${{ matrix.asset }}.tar.gz -C dist .
+
+      - name: Package (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target\${{ matrix.target }}\release\vimrust.exe dist\
+          Copy-Item target\${{ matrix.target }}\release\vimrust-core.exe dist\
+          Compress-Archive -Path dist\* -DestinationPath vimrust-${{ github.ref_name }}-${{ matrix.asset }}.zip
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            vimrust-${{ github.ref_name }}-${{ matrix.asset }}.tar.gz
+            vimrust-${{ github.ref_name }}-${{ matrix.asset }}.zip
