@@ -177,7 +177,6 @@ impl<'a> PromptListView<'a> {
                         self.terminal
                             .queue_add_command(SetForegroundColor(Color::White))?;
                         if key_col_width > 0 {
-                            self.terminal.queue_add_command(Print(" "))?;
                             let key_highlight = PromptListHighlight::new(
                                 &key_matches,
                                 Some(Color::White),
@@ -211,7 +210,6 @@ impl<'a> PromptListView<'a> {
                     } else {
                         self.terminal.queue_add_command(Print(" "))?;
                         if key_col_width > 0 {
-                            self.terminal.queue_add_command(Print(" "))?;
                             let key_highlight =
                                 PromptListHighlight::new(&key_matches, None, Color::Yellow, false);
                             key_highlight.paint(self.terminal, &key_display)?;
