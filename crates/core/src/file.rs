@@ -90,6 +90,10 @@ impl File {
         self.file_lines.len()
     }
 
+    pub fn line_total(&self) -> u16 {
+        self.file_lines.len().min(u16::MAX as usize) as u16
+    }
+
     pub fn line_at_mut(&mut self, index: usize) -> Option<&mut String> {
         self.file_lines.get_mut(index)
     }

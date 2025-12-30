@@ -36,6 +36,7 @@ impl StatusLine {
         terminal: &mut Terminal,
         mode: &EditorMode,
         file_path: &FilePath,
+        position_label: String,
         number_of_columns: u16,
         number_of_rows: u16,
     ) -> io::Result<()> {
@@ -43,12 +44,8 @@ impl StatusLine {
         let inner_width = number_of_columns.saturating_sub(2);
         let mut status = format!("{} > {}", mode.label(), file_path);
         self.file_status.append_to_status_line(&mut status);
-        if status.len() < inner_width as usize {
-            status.push_str(&" ".repeat(inner_width as usize - status.len()));
-        } else {
-            status.truncate(inner_width as usize);
-        }
-        let status = format!(" {} ", status);
+        let status_line = self.compose_line(&status, &position_label, inner_width as usize);
+        let status = format!(" {} ", status_line);
         terminal.queue_add_command(MoveTo(0, number_of_rows.saturating_sub(1)))?;
         terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
         terminal.queue_add_command(SetBackgroundColor(Color::Grey))?;
@@ -57,5 +54,38 @@ impl StatusLine {
         terminal.queue_add_command(ResetColor)?;
 
         Ok(())
+    }
+
+    fn compose_line(&self, left: &str, right: &str, inner_width: usize) -> String {
+        if inner_width == 0 {
+            return String::new();
+        }
+
+        let mut cells = vec![' '; inner_width];
+        let mut left_chars: Vec<char> = left.chars().collect();
+        if left_chars.len() > inner_width {
+            left_chars.truncate(inner_width);
+        }
+        let mut idx = 0usize;
+        while idx < left_chars.len() {
+            cells[idx] = left_chars[idx];
+            idx = idx.saturating_add(1);
+        }
+
+        let mut right_chars: Vec<char> = right.chars().collect();
+        if right_chars.len() > inner_width {
+            right_chars.truncate(inner_width);
+        }
+        let right_len = right_chars.len();
+        if right_len > 0 {
+            let start = inner_width.saturating_sub(right_len);
+            let mut right_idx = 0usize;
+            while right_idx < right_len {
+                cells[start.saturating_add(right_idx)] = right_chars[right_idx];
+                right_idx = right_idx.saturating_add(1);
+            }
+        }
+
+        cells.into_iter().collect()
     }
 }

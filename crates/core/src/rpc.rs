@@ -6,7 +6,7 @@ use crate::{
 use vimrust_protocol::{
     Ack, AckKind, CommandLineSelection, CommandUiAction, CommandUiFrame, Cursor, DeleteKind,
     FilePath, Frame, MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
-    StatusMessage,
+    StatusMessage, StatusPosition,
 };
 
 /// Line-delimited JSON RPC session for driving the editor core without the terminal UI.
@@ -723,12 +723,19 @@ pub fn build_frame(
     let cursor_row = base_row.max(1).min(size.1.saturating_sub(1).max(1));
 
     let status = editor.change_status().status_or(status);
+    let total_rows = view.file_ref().line_total();
+    let status_position = StatusPosition {
+        column: view.cursor_column(),
+        row: view.cursor_row(),
+        total_rows,
+    };
 
     Frame::new(
         mode.label().to_string(),
         Cursor::new(cursor_col, cursor_row),
         rows,
         status,
+        status_position,
         view.file_ref().path(),
         size,
         command_ui,

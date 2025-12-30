@@ -119,6 +119,7 @@ impl<'a> Ui<'a> {
                     self.terminal,
                     &self.mode,
                     &frame.path(),
+                    frame.position_label(),
                     number_of_columns,
                     number_of_rows,
                 )?;

@@ -8,6 +8,8 @@ pub struct Frame {
     cursor: Cursor,
     rows: Vec<String>,
     status: StatusMessage,
+    #[serde(default)]
+    status_position: StatusPosition,
     file_path: FilePath,
     size: (u16, u16),
     command_ui: Option<CommandUiFrame>,
@@ -21,6 +23,7 @@ impl Frame {
         cursor: Cursor,
         rows: Vec<String>,
         status: StatusMessage,
+        status_position: StatusPosition,
         file_path: FilePath,
         size: (u16, u16),
         command_ui: Option<CommandUiFrame>,
@@ -31,6 +34,7 @@ impl Frame {
             cursor,
             rows,
             status,
+            status_position,
             file_path,
             size,
             command_ui,
@@ -52,6 +56,10 @@ impl Frame {
 
     pub fn status_message(&self) -> StatusMessage {
         self.status.clone()
+    }
+
+    pub fn position_label(&self) -> String {
+        self.status_position.label()
     }
 
     pub fn path(&self) -> FilePath {
@@ -92,5 +100,32 @@ impl Cursor {
 
     pub fn row_index(&self) -> u16 {
         self.row
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(default)]
+pub struct StatusPosition {
+    pub column: u16,
+    pub row: u16,
+    pub total_rows: u16,
+}
+
+impl StatusPosition {
+    pub fn label(&self) -> String {
+        let column = self.column.saturating_add(1);
+        let row = self.row.saturating_add(1);
+        let total = self.total_rows.max(1);
+        format!("{}:{}/{}", row, column, total)
+    }
+}
+
+impl Default for StatusPosition {
+    fn default() -> Self {
+        Self {
+            column: 0,
+            row: 0,
+            total_rows: 1,
+        }
     }
 }
