@@ -96,6 +96,11 @@ impl KeymapRegistry {
                     description: "Delete character under cursor",
                 },
                 KeymapEntry {
+                    mode: PromptMode::Edit,
+                    key: "Enter",
+                    description: "Insert line break",
+                },
+                KeymapEntry {
                     mode: PromptMode::PromptCommand,
                     key: "Esc",
                     description: "Return to normal mode",

@@ -369,6 +369,27 @@ impl Editor {
         }
     }
 
+    pub fn line_break(&mut self) {
+        let target_line = self.cursor_y as usize;
+        self.file.line_ensure(target_line);
+
+        let split_at = match self.file.line_at(target_line) {
+            Some(line) => self.column_to_char_index_render(line, self.cursor_x),
+            None => 0,
+        };
+
+        let remainder = match self.file.line_at_mut(target_line) {
+            Some(line) => line.split_off(split_at),
+            None => String::new(),
+        };
+
+        self.file
+            .line_insert(target_line.saturating_add(1), remainder);
+        self.cursor_y = self.cursor_y.saturating_add(1);
+        self.cursor_x = 0;
+        self.file.touch();
+    }
+
     pub fn backspace_delete(&mut self) {
         if self.cursor_x == 0 && self.cursor_y == 0 {
             return;

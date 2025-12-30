@@ -270,6 +270,7 @@ impl EditModeInput {
             KeyCode::Backspace => ClientAction::Send(RpcRequest::TextDelete {
                 kind: DeleteKind::Backspace,
             }),
+            KeyCode::Enter => ClientAction::Send(RpcRequest::LineBreak),
             KeyCode::Char(ch) => ClientAction::Send(RpcRequest::TextInsert {
                 text: ch.to_string(),
             }),

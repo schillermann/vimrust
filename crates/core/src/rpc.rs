@@ -18,6 +18,7 @@ use vimrust_protocol::{
 /// - file_save_as: {"type":"file_save_as","path":"/tmp/new.txt"}
 /// - text_insert: {"type":"text_insert","text":"hello"}
 /// - text_delete: {"type":"text_delete","kind":"backspace"|"under"}
+/// - line_break: {"type":"line_break"}
 /// - cursor_move: {"type":"cursor_move","direction":"left"|"right"|"up"|"down"|"page_up"|"page_down"|"home"|"end"}
 /// - command_ui: {"type":"command_ui","action":"insert_char","ch":"a"} (for command-line editing/navigation)
 /// - mode_set: {"type":"mode_set","mode":"normal"|"edit"|"prompt_command"|"prompt_keymap"}
@@ -221,6 +222,26 @@ impl TextDeleteAction {
             DeleteKind::Backspace => editor.backspace_delete(),
             DeleteKind::Under => editor.under_cursor_delete(),
         };
+        *status = snapshot.status_from(editor, status.clone());
+        self.signal = snapshot.frame_signal(editor);
+    }
+
+    fn outcome(&self) -> RequestOutcome {
+        match self.signal {
+            FrameSignal::Frame => RequestOutcome::Frame,
+            FrameSignal::Skip => RequestOutcome::Skip,
+        }
+    }
+}
+
+struct LineBreakAction {
+    signal: FrameSignal,
+}
+
+impl LineBreakAction {
+    fn apply(&mut self, editor: &mut Editor, status: &mut StatusMessage) {
+        let snapshot = editor.snapshot();
+        editor.line_break();
         *status = snapshot.status_from(editor, status.clone());
         self.signal = snapshot.frame_signal(editor);
     }
@@ -595,6 +616,13 @@ impl RequestOutcomeRecord {
                 action.apply(editor, status);
                 action.outcome()
             }
+            RpcRequest::LineBreak => {
+                let mut action = LineBreakAction {
+                    signal: FrameSignal::Skip,
+                };
+                action.apply(editor, status);
+                action.outcome()
+            }
             RpcRequest::CursorMove { direction } => {
                 let usable_rows = size.1.saturating_sub(2);
                 let mut action = CursorMoveAction {
@@ -795,6 +823,30 @@ mod tests {
 
         let frame = build_frame(&editor, &mode, &status, size, None);
         assert_eq!(frame.editor_rows().get(0).map(String::as_str), Some("hi"));
+    }
+
+    #[test]
+    fn line_break_splits_line_at_cursor() {
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        editor.file_lines_replace(vec![String::from("hello world")]);
+        editor.cursor_position_store(CursorPosition::new(5, 0));
+        let mut mode = EditorMode::Normal;
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 5);
+        let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
+
+        harness.accept(RpcRequest::LineBreak);
+        let outcome = harness.decision();
+        assert!(matches!(outcome, RequestOutcome::Frame));
+
+        let frame = build_frame(&editor, &mode, &status, size, None);
+        assert_eq!(frame.editor_rows().get(0).map(String::as_str), Some("hello"));
+        assert_eq!(
+            frame.editor_rows().get(1).map(String::as_str),
+            Some(" world")
+        );
     }
 
     #[test]
@@ -1342,7 +1394,9 @@ mod tests {
         let mut found = false;
         let mut idx = 0usize;
         while idx < items.len() {
-            if items[idx].label() == "normal q" {
+            if items[idx].label() == "q"
+                && matches!(items[idx].mode(), vimrust_protocol::PromptMode::Normal)
+            {
                 found = true;
                 break;
             }

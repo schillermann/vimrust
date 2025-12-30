@@ -109,6 +109,14 @@ impl File {
         }
     }
 
+    pub fn line_insert(&mut self, index: usize, line: String) {
+        if index >= self.file_lines.len() {
+            self.file_lines.push(line);
+        } else {
+            self.file_lines.insert(index, line);
+        }
+    }
+
     pub fn lines_snapshot(&self) -> Vec<String> {
         self.file_lines.clone()
     }

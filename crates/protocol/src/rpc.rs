@@ -23,6 +23,7 @@ pub enum RpcRequest {
     TextDelete {
         kind: DeleteKind,
     },
+    LineBreak,
     CursorMove {
         direction: MoveDirection,
     },
