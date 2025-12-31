@@ -142,6 +142,11 @@ impl KeymapRegistry {
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptCommand,
+                    key: "Tab",
+                    description: "Complete file name in command prompt",
+                },
+                KeymapEntry {
+                    mode: PromptMode::PromptCommand,
                     key: "Up",
                     description: "Move selection up",
                 },

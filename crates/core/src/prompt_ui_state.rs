@@ -3,6 +3,7 @@ use crate::{
     command_list::CommandList,
     keymap_list::KeymapList,
     command_ui_placeholder::CommandPlaceholder,
+    command_completion::CommandCompletion,
     prompt_ui_snapshot::CommandUiSnapshot,
     prompt_entry::PromptEntry,
 };
@@ -104,6 +105,15 @@ impl CommandUiState {
             }
             CommandUiAction::MoveEnd => {
                 self.prompt_line.cursor_move_end();
+                self.focus_on_list = false;
+            }
+            CommandUiAction::Complete => {
+                let completion = CommandCompletion::new(
+                    self.prompt_line.text().to_string(),
+                    self.prompt_line.cursor_column(),
+                );
+                completion.apply(&mut self.prompt_line);
+                self.list_reset();
                 self.focus_on_list = false;
             }
             CommandUiAction::MoveSelectionUp | CommandUiAction::MoveSelectionDown => {

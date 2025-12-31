@@ -303,6 +303,9 @@ impl PromptCommandInput {
             KeyCode::End => ClientAction::Send(RpcRequest::CommandUi {
                 action: CommandUiAction::MoveEnd,
             }),
+            KeyCode::Tab => ClientAction::Send(RpcRequest::CommandUi {
+                action: CommandUiAction::Complete,
+            }),
             KeyCode::Up => ClientAction::Send(RpcRequest::CommandUi {
                 action: CommandUiAction::MoveSelectionUp,
             }),

@@ -4,6 +4,7 @@ mod keymap_list;
 mod prompt_ui_state;
 mod prompt_ui_snapshot;
 mod command_ui_placeholder;
+mod command_completion;
 mod editor;
 mod frame_signal;
 mod file;

@@ -145,6 +145,7 @@ pub enum CommandUiAction {
     MoveRight,
     MoveHome,
     MoveEnd,
+    Complete,
     MoveSelectionUp,
     MoveSelectionDown,
     SelectFromList,
