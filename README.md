@@ -16,7 +16,7 @@ cargo run my_file.txt
 
 # Keymap
 
-# Normal Mode
+## Normal Mode
 
 |Key |Description |
 |----|------------|
@@ -28,13 +28,24 @@ cargo run my_file.txt
 |`E` |Edit Mode   |
 |`S` |Save File   |
 
-# Edit Mode
+## Edit Mode
 
 |Key  |Description|
 |-----|-----------|
 |`Esc`|Normal Mode|
 
 # Development
+
+## Docs
+
+- [Architecture overview](docs/architecture.md)
+- [Core component notes](docs/components/core.md)
+- [UI client component notes](docs/components/ui.md)
+- [RPC session component notes](docs/components/rpc.md)
+- [Protocol component notes](docs/components/protocol.md)
+- [Decisions (ADRs)](docs/decisions/README.md)
+- [Constraints](docs/constraints.md)
+- [Glossary](docs/glossary.md)
 
 ## RPC protocol
 
