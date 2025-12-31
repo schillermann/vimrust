@@ -39,8 +39,16 @@ impl CommandRegistry {
                     description: "Open a file",
                 },
                 CommandEntry {
+                    name: "o",
+                    description: "Reload the current file from disk",
+                },
+                CommandEntry {
                     name: "open {filename}",
                     description: "Open a file",
+                },
+                CommandEntry {
+                    name: "open",
+                    description: "Reload the current file from disk",
                 },
             ],
         }

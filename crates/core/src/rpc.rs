@@ -505,7 +505,32 @@ impl CommandExecuteAction {
                         RequestOutcome::FrameAndAck(ack)
                     }
                 }
-                CommandPath::Missing => RequestOutcome::Error(String::from("open failed: missing filename")),
+                CommandPath::Missing => match editor.file_path() {
+                    FilePath::Provided { path } => {
+                        let mut new_file = File::new(FilePath::Provided { path });
+                        if let Err(err) = new_file.read() {
+                            RequestOutcome::Error(format!("reload failed: {}", err))
+                        } else {
+                            *editor = Editor::new(new_file);
+                            *status = StatusMessage::Empty;
+                            if matches!(mode, EditorMode::PromptCommand) {
+                                command_ui.clear();
+                            }
+                            *mode = EditorMode::Normal;
+                            let ack = Ack::new(
+                                AckKind::Open,
+                                StatusMessage::Text {
+                                    text: String::from("reloaded"),
+                                },
+                                editor.file_path(),
+                            );
+                            RequestOutcome::FrameAndAck(ack)
+                        }
+                    }
+                    FilePath::Missing => {
+                        RequestOutcome::Error(String::from("reload failed: no file path"))
+                    }
+                },
             },
             CommandRequest::Skip => match self.selection_signal {
                 FrameSignal::Frame => RequestOutcome::Frame,
@@ -1343,6 +1368,33 @@ mod tests {
             FilePath::Provided {
                 path: path.to_string_lossy().to_string()
             }
+        );
+    }
+
+    #[test]
+    fn command_execute_reload_reads_current_file() {
+        let path = std::env::temp_dir().join("vimrust_rpc_command_reload.txt");
+        let _ = fs::write(&path, "disk");
+        let mut editor = Editor::new(File::new(FilePath::Provided {
+            path: path.to_string_lossy().to_string(),
+        }));
+        editor.file_lines_replace(vec![String::from("memory")]);
+        let mut mode = EditorMode::PromptCommand;
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 10);
+        let mut command_ui = CommandUiState::new();
+        let mut harness =
+            RequestHarness::new(&mut editor, &mut mode, &mut status, &mut size, &mut command_ui);
+
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(":o".to_string()),
+        });
+        let outcome = harness.decision();
+
+        assert!(matches!(outcome, RequestOutcome::FrameAndAck(_)));
+        assert_eq!(
+            editor.file_lines_snapshot(),
+            vec![String::from("disk")]
         );
     }
 

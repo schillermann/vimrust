@@ -9,6 +9,7 @@ Conventional Commits.
 
 ### Added
 - Auto completion for file paths to open files in the command line prompt.
+- Reload the current file from disk with `:o`/`:open` when no filename is provided.
 
 ## [0.1.0] - 2025-12-30
 
