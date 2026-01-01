@@ -247,6 +247,17 @@ impl Editor {
             .snake(position, &mut self.file, &self.line_view, &mut update);
     }
 
+    pub fn selection_case_screaming_snake(&mut self) {
+        let position = self.cursor_position();
+        let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);
+        self.selection.screaming_snake(
+            position,
+            &mut self.file,
+            &self.line_view,
+            &mut update,
+        );
+    }
+
     pub fn selection_case_pascal(&mut self) {
         let position = self.cursor_position();
         let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);

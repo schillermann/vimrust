@@ -305,6 +305,7 @@ enum CaseStyle {
     Kebab,
     Camel,
     Snake,
+    ScreamingSnake,
     Pascal,
 }
 
@@ -313,6 +314,7 @@ enum CaseStyleChoice {
     Kebab,
     Camel,
     Snake,
+    ScreamingSnake,
     Pascal,
     Unknown,
 }
@@ -404,6 +406,9 @@ impl CommandText {
                     CaseStyleChoice::Snake => CommandRequest::Case {
                         style: CaseStyle::Snake,
                     },
+                    CaseStyleChoice::ScreamingSnake => CommandRequest::Case {
+                        style: CaseStyle::ScreamingSnake,
+                    },
                     CaseStyleChoice::Pascal => CommandRequest::Case {
                         style: CaseStyle::Pascal,
                     },
@@ -458,6 +463,7 @@ impl CaseArgument {
             "kebab" => CaseStyleChoice::Kebab,
             "camel" => CaseStyleChoice::Camel,
             "snake" => CaseStyleChoice::Snake,
+            "screaming" => CaseStyleChoice::ScreamingSnake,
             "pascal" => CaseStyleChoice::Pascal,
             _ => CaseStyleChoice::Unknown,
         }
@@ -596,6 +602,7 @@ impl CommandExecuteAction {
                     CaseStyle::Kebab => editor.selection_case_kebab(),
                     CaseStyle::Camel => editor.selection_case_camel(),
                     CaseStyle::Snake => editor.selection_case_snake(),
+                    CaseStyle::ScreamingSnake => editor.selection_case_screaming_snake(),
                     CaseStyle::Pascal => editor.selection_case_pascal(),
                 }
                 if matches!(mode, EditorMode::PromptCommand) {

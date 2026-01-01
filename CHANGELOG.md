@@ -14,6 +14,7 @@ Conventional Commits.
 - Kebab-case transformation command for visual selections via `:case kebab`.
 - CamelCase transformation command for visual selections via `:case camel`.
 - snake_case transformation command for visual selections via `:case snake`.
+- SCREAMING_SNAKE_CASE transformation command for visual selections via `:case screaming`.
 - PascalCase transformation command for visual selections via `:case pascal`.
 
 ## [0.1.0] - 2025-12-30
