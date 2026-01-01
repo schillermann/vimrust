@@ -3,25 +3,18 @@ use std::io;
 use crate::file::{File, FileChangeToken};
 use crate::frame_signal::FrameSignal;
 use vimrust_protocol::FilePath;
+use vimrust_protocol::FrameSelection;
 use vimrust_protocol::MoveDirection;
 use vimrust_protocol::StatusMessage;
 
-#[derive(Clone, Copy)]
-pub struct TabStop {
-    size: u16,
-}
+#[path = "editor_selection.rs"]
+mod editor_selection;
+#[path = "line_view.rs"]
+mod line_view;
 
-impl TabStop {
-    pub fn new(size: u16) -> Self {
-        Self { size }
-    }
-
-    pub fn advance_width(&self, column: u16) -> u16 {
-        let tab_size = if self.size == 0 { 1 } else { self.size };
-        let offset = column % tab_size;
-        tab_size.saturating_sub(offset)
-    }
-}
+use crate::command_scope::CommandScope;
+use self::editor_selection::{CursorUpdate, EditorSelection};
+use self::line_view::LineView;
 
 pub struct EditorVersion {
     label: &'static str,
@@ -73,8 +66,9 @@ pub struct Editor {
     columns_offset: u16,
     rows_offset: u16,
     file: File,
-    tab_stop: TabStop,
     version: EditorVersion,
+    selection: EditorSelection,
+    line_view: LineView,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -145,8 +139,9 @@ impl Editor {
             columns_offset: 0,
             rows_offset: 0,
             file,
-            tab_stop: TabStop::new(4),
             version: EditorVersion::current(),
+            selection: EditorSelection::new(),
+            line_view: LineView::new(4),
         }
     }
 
@@ -199,6 +194,43 @@ impl Editor {
             rows_offset: self.rows_offset,
             change_mark: self.file.change_mark(),
         }
+    }
+
+    pub fn visual_begin(&mut self) {
+        let position = self.cursor_position();
+        self.selection.begin(position);
+    }
+
+    pub fn visual_clear(&mut self) {
+        self.selection.clear();
+    }
+
+    pub fn command_scope(&self) -> CommandScope {
+        self.selection.scope()
+    }
+
+    pub fn frame_selection(
+        &self,
+        view: &EditorView<'_>,
+        number_of_columns: u16,
+        number_of_rows: u16,
+    ) -> FrameSelection {
+        let cursor = self.cursor_position();
+        self.selection.frame_selection(
+            cursor,
+            view,
+            number_of_columns,
+            number_of_rows,
+            &self.file,
+            &self.line_view,
+        )
+    }
+
+    pub fn kebab_selection(&mut self) {
+        let position = self.cursor_position();
+        let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);
+        self.selection
+            .kebab(position, &mut self.file, &self.line_view, &mut update);
     }
 
     fn scroll_offsets_compute(&self, number_of_columns: u16, number_of_rows: u16) -> (u16, u16) {
@@ -262,7 +294,7 @@ impl Editor {
                 }
                 rows.push(line);
             } else if let Some(file_line) = view.file_ref().line_at(file_line_number) {
-                let displayable_line = self.displayable_line(file_line);
+                let displayable_line = self.line_view.displayable_line(file_line);
                 let visible_slice: String = displayable_line
                     .chars()
                     .skip(view.column_offset() as usize)
@@ -281,14 +313,14 @@ impl Editor {
         match direction {
             MoveDirection::Left => {
                 if let Some(line) = self.file.line_at(self.cursor_y as usize) {
-                    self.cursor_x = self.column_previous_render(line, self.cursor_x);
+                    self.cursor_x = self.line_view.column_previous_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_sub(1);
                 }
             }
             MoveDirection::Right => {
                 if let Some(line) = self.file.line_at(self.cursor_y as usize) {
-                    self.cursor_x = self.column_next_render(line, self.cursor_x);
+                    self.cursor_x = self.line_view.column_next_render(line, self.cursor_x);
                 } else {
                     self.cursor_x = self.cursor_x.saturating_add(1);
                 }
@@ -342,7 +374,9 @@ impl Editor {
             self.cursor_x = line_length;
         }
         if let Some(line) = self.file.line_at(self.cursor_y as usize) {
-            self.cursor_x = self.snap_cursor_to_render_character(line, self.cursor_x);
+            self.cursor_x = self
+                .line_view
+                .snap_cursor_to_render_character(line, self.cursor_x);
         }
 
     }
@@ -352,10 +386,10 @@ impl Editor {
         self.file.line_ensure(target_line);
 
         let insert_at = match self.file.line_at(target_line) {
-            Some(line) => self.column_to_char_index_render(line, self.cursor_x),
+            Some(line) => self.line_view.column_to_char_index_render(line, self.cursor_x),
             None => 0,
         };
-        let advance = self.char_render_width(ch, self.cursor_x);
+        let advance = self.line_view.char_render_width(ch, self.cursor_x);
 
         if let Some(line) = self.file.line_at_mut(target_line) {
             let previous_len = line.len();
@@ -374,7 +408,7 @@ impl Editor {
         self.file.line_ensure(target_line);
 
         let split_at = match self.file.line_at(target_line) {
-            Some(line) => self.column_to_char_index_render(line, self.cursor_x),
+            Some(line) => self.line_view.column_to_char_index_render(line, self.cursor_x),
             None => 0,
         };
 
@@ -402,7 +436,7 @@ impl Editor {
             }
             if let Some(current_line) = self.file.line_at(current_index).cloned() {
                 let new_cursor_x = match self.file.line_at(current_index.saturating_sub(1)) {
-                    Some(prev) => self.visual_line_length(prev),
+                    Some(prev) => self.line_view.visual_line_length(prev),
                     None => 0,
                 };
                 if let Some(previous_line) = self.file.line_at_mut(current_index.saturating_sub(1))
@@ -420,10 +454,10 @@ impl Editor {
 
         let (new_cursor_x, delete_idx) = match self.file.line_at(self.cursor_y as usize) {
             Some(line) => (
-                self.column_previous_render(line, self.cursor_x),
-                self.column_to_char_index_render(
+                self.line_view.column_previous_render(line, self.cursor_x),
+                self.line_view.column_to_char_index_render(
                     line,
-                    self.column_previous_render(line, self.cursor_x),
+                    self.line_view.column_previous_render(line, self.cursor_x),
                 ),
             ),
             None => (0, 0),
@@ -441,7 +475,7 @@ impl Editor {
 
     pub fn under_cursor_delete(&mut self) {
         let delete_idx = match self.file.line_at(self.cursor_y as usize) {
-            Some(line) => self.column_to_char_index_render(line, self.cursor_x),
+            Some(line) => self.line_view.column_to_char_index_render(line, self.cursor_x),
             None => return,
         };
 
@@ -467,7 +501,7 @@ impl Editor {
 
     pub fn snap_cursor_to_tab_start(&mut self) {
         if let Some(line) = self.file.line_at(self.cursor_y as usize)
-            && let Some(start) = self.tab_segment_start(line, self.cursor_x)
+            && let Some(start) = self.line_view.tab_segment_start(line, self.cursor_x)
         {
             self.cursor_x = start;
         }
@@ -480,219 +514,15 @@ impl Editor {
         }
 
         if let Some(line) = self.file.line_at(line_index) {
-            return self.line_length(line);
+            return self.line_view.line_length(line);
         }
 
         0
     }
 
-    fn displayable_line(&self, line: &str) -> String {
-        let mut expanded = String::new();
-        let mut column: u16 = 0;
-
-        for ch in line.chars() {
-            match ch {
-                '\t' => {
-                    let spaces = self.char_render_width(ch, column);
-                    let mut count = 0;
-                    while count < spaces {
-                        expanded.push(' ');
-                        count += 1;
-                    }
-                    column = column.saturating_add(spaces);
-                }
-                '\x00'..='\x1f' => {
-                    let hex = format!("<{:02X}>", ch as u8);
-                    expanded.push_str(&hex);
-                    column = column.saturating_add(4);
-                }
-                '\x7f' => {
-                    expanded.push_str("<7F>");
-                    column = column.saturating_add(4);
-                }
-                _ => {
-                    expanded.push(ch);
-                    column = column.saturating_add(1);
-                }
-            }
-        }
-
-        expanded
-    }
-
-    fn char_render_width(&self, character: char, column: u16) -> u16 {
-        match character {
-            '\t' => self.tab_stop.advance_width(column),
-            '\x00'..='\x1f' | '\x7f' => 4,
-            _ => 1,
-        }
-    }
-
-    fn segments_render(&self, line: &str) -> Vec<(u16, u16, char)> {
-        let mut segments = Vec::new();
-        let mut column: u16 = 0;
-
-        for ch in line.chars() {
-            let start = column;
-            let char_width = self.char_render_width(ch, column);
-            let end = column.saturating_add(char_width);
-            segments.push((start, end, ch));
-            column = end;
-        }
-
-        segments
-    }
-
-    fn column_next_render(&self, line: &str, cursor_x: u16) -> u16 {
-        let segments = self.segments_render(line);
-        if segments.is_empty() {
-            return 0;
-        }
-
-        for (idx, (start, end, ch)) in segments.iter().enumerate() {
-            let next_segment = segments.get(idx.saturating_add(1));
-
-            if cursor_x < *start {
-                if *ch == '\t' {
-                    return end.saturating_sub(1);
-                }
-                return *start;
-            }
-
-            if cursor_x < *end {
-                if *ch == '\t' {
-                    let target = end.saturating_sub(1);
-                    if cursor_x < target {
-                        return target;
-                    }
-                    if let Some((next_start, next_end, next_ch)) = next_segment {
-                        if *next_ch == '\t' {
-                            return next_end.saturating_sub(1);
-                        }
-                        return *next_start;
-                    }
-                    return *end;
-                }
-
-                if let Some((_, next_end, next_char)) = next_segment
-                    && *next_char == '\t'
-                {
-                    return next_end.saturating_sub(1);
-                }
-
-                return *end;
-            }
-        }
-
-        if let Some((_, end, _)) = segments.last() {
-            *end
-        } else {
-            0
-        }
-    }
-
-    fn column_previous_render(&self, line: &str, current_x: u16) -> u16 {
-        let segments = self.segments_render(line);
-        if segments.is_empty() {
-            return 0;
-        }
-
-        let mut best: u16 = 0;
-        for (start, end, ch) in segments {
-            let stop = if ch == '\t' {
-                end.saturating_sub(1)
-            } else {
-                start
-            };
-
-            if stop < current_x && stop >= best {
-                best = stop;
-            }
-        }
-
-        best
-    }
-
-    fn snap_cursor_to_render_character(&self, line: &str, cursor_x: u16) -> u16 {
-        let segments = self.segments_render(line);
-        if segments.is_empty() {
-            return 0;
-        }
-
-        let line_length = match segments.last() {
-            Some((_, end, _)) => *end,
-            None => 0,
-        };
-        let clamped_x = cursor_x.min(line_length);
-        let last_index = segments.len() - 1;
-
-        for (idx, (start, end, ch)) in segments.iter().enumerate() {
-            let in_segment = clamped_x >= *start && clamped_x < *end;
-            let at_line_end = clamped_x == line_length && idx == last_index;
-
-            if in_segment {
-                return match ch {
-                    '\t' => end.saturating_sub(1),
-                    '\x00'..='\x1f' | '\x7f' => *start,
-                    _ => *start,
-                };
-            }
-
-            if at_line_end {
-                return match ch {
-                    '\t' => end.saturating_sub(1),
-                    '\x00'..='\x1f' | '\x7f' => *start,
-                    _ => clamped_x,
-                };
-            }
-        }
-
-        clamped_x
-    }
-
-    fn tab_segment_start(&self, line: &str, cursor_x: u16) -> Option<u16> {
-        for (start, end, ch) in self.segments_render(line) {
-            if cursor_x >= start && cursor_x < end && ch == '\t' {
-                return Some(start);
-            }
-        }
-        None
-    }
-
-    fn column_to_char_index_render(&self, line: &str, cursor_x: u16) -> usize {
-        let mut column: u16 = 0;
-
-        for (idx, ch) in line.char_indices() {
-            let width = self.char_render_width(ch, column);
-            if cursor_x <= column {
-                return idx;
-            }
-            if cursor_x < column.saturating_add(width) {
-                return idx;
-            }
-            column = column.saturating_add(width);
-        }
-
-        line.len()
-    }
-
-    fn visual_line_length(&self, line: &str) -> u16 {
-        let mut column: u16 = 0;
-
-        for ch in line.chars() {
-            let width = self.char_render_width(ch, column);
-            column = column.saturating_add(width);
-        }
-
-        column
-    }
-
-    fn line_length(&self, line: &str) -> u16 {
-        // Wrapper kept separate in case line length rules diverge from visual length later.
-        self.visual_line_length(line)
-    }
 }
 
+#[derive(Copy, Clone)]
 #[cfg(test)]
 impl Editor {
     pub fn file_lines_replace(&mut self, lines: Vec<String>) {

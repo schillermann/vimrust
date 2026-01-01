@@ -55,6 +55,7 @@ impl Terminal {
         let style = match mode {
             EditorMode::Normal => SetCursorStyle::DefaultUserShape,
             EditorMode::Edit => SetCursorStyle::SteadyBar,
+            EditorMode::Visual => SetCursorStyle::DefaultUserShape,
             EditorMode::PromptCommand => SetCursorStyle::SteadyBar,
             EditorMode::PromptKeymap => SetCursorStyle::SteadyBar,
         };

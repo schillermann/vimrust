@@ -37,6 +37,11 @@ impl KeymapRegistry {
                 },
                 KeymapEntry {
                     mode: PromptMode::Normal,
+                    key: "v",
+                    description: "Enter visual mode",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Normal,
                     key: ";",
                     description: "Open the keymap prompt",
                 },
@@ -99,6 +104,56 @@ impl KeymapRegistry {
                     mode: PromptMode::Edit,
                     key: "Enter",
                     description: "Insert line break",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "Esc",
+                    description: "Return to normal mode",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: ":",
+                    description: "Open the command prompt",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "h",
+                    description: "Move cursor left",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "j",
+                    description: "Move cursor down",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "k",
+                    description: "Move cursor up",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "l",
+                    description: "Move cursor right",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "PageUp",
+                    description: "Move cursor one page up",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "PageDown",
+                    description: "Move cursor one page down",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "Home",
+                    description: "Move cursor to line start",
+                },
+                KeymapEntry {
+                    mode: PromptMode::Visual,
+                    key: "End",
+                    description: "Move cursor to line end",
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptCommand,
@@ -214,6 +269,7 @@ impl KeymapRegistry {
                 PromptMode::Command => "command",
                 PromptMode::Normal => "normal",
                 PromptMode::Edit => "edit",
+                PromptMode::Visual => "visual",
                 PromptMode::PromptCommand => "prompt_command",
                 PromptMode::PromptKeymap => "prompt_keymap",
             };

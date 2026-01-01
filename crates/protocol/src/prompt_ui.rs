@@ -100,6 +100,7 @@ pub enum PromptMode {
     Command,
     Normal,
     Edit,
+    Visual,
     PromptCommand,
     PromptKeymap,
 }

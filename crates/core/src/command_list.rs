@@ -1,9 +1,11 @@
+use crate::command_scope::CommandScope;
 use crate::prompt_entry::PromptEntry;
 use vimrust_protocol::PromptMode;
 
 pub struct CommandEntry {
     name: &'static str,
     description: &'static str,
+    mode: PromptMode,
 }
 
 pub struct CommandRegistry {
@@ -17,47 +19,68 @@ impl CommandRegistry {
                 CommandEntry {
                     name: "s",
                     description: "Save the current buffer",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "save",
                     description: "Save the current buffer",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "q",
                     description: "Quit the editor",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "quit",
                     description: "Quit the editor",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "sq",
                     description: "Save and quit",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "o {filename}",
                     description: "Open a file",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "o",
                     description: "Reload the current file from disk",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "open {filename}",
                     description: "Open a file",
+                    mode: PromptMode::Command,
                 },
                 CommandEntry {
                     name: "open",
                     description: "Reload the current file from disk",
+                    mode: PromptMode::Command,
+                },
+                CommandEntry {
+                    name: "kebab",
+                    description: "Convert selection to kebab case",
+                    mode: PromptMode::Visual,
                 },
             ],
         }
     }
 
-    pub fn matching(&self, query: &str) -> Vec<&dyn PromptEntry> {
+    pub fn matching(&self, query: &str, scope: CommandScope) -> Vec<&dyn PromptEntry> {
         let normalized = CommandList::command_query_from_input(query);
         let mut matches = Vec::new();
         for entry in &self.commands {
+            let allow = match scope {
+                CommandScope::Normal => matches!(entry.mode, PromptMode::Command),
+                CommandScope::Visual => matches!(entry.mode, PromptMode::Visual),
+            };
+            if !allow {
+                continue;
+            }
             let name = entry.label().to_lowercase();
             let desc = entry.detail().to_lowercase();
             if CommandList::fuzzy_match(&normalized, &name)
@@ -85,8 +108,8 @@ impl CommandList {
         }
     }
 
-    pub fn filter(&self, query: &str) -> Vec<&dyn PromptEntry> {
-        self.registry.matching(query)
+    pub fn filter(&self, query: &str, scope: CommandScope) -> Vec<&dyn PromptEntry> {
+        self.registry.matching(query, scope)
     }
 
     pub fn reset_selection(&mut self) {
@@ -164,7 +187,7 @@ impl PromptEntry for CommandEntry {
     }
 
     fn mode(&self) -> PromptMode {
-        PromptMode::Command
+        self.mode.clone()
     }
 }
 

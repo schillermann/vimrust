@@ -2,6 +2,7 @@
 pub(crate) enum EditorMode {
     Normal,
     Edit,
+    Visual,
     PromptCommand,
     PromptKeymap,
 }

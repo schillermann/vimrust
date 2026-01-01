@@ -6,6 +6,7 @@ use crate::{
     command_completion::CommandCompletion,
     prompt_ui_snapshot::CommandUiSnapshot,
     prompt_entry::PromptEntry,
+    command_scope::CommandScope,
 };
 use vimrust_protocol::{
     CommandLineSelection, CommandListItemFrame, CommandUiAction, CommandUiFrame,
@@ -17,6 +18,7 @@ pub struct CommandUiState {
     keymap_list: KeymapList,
     focus_on_list: bool,
     prompt_kind: PromptKind,
+    command_scope: CommandScope,
 }
 
 impl CommandUiState {
@@ -27,11 +29,17 @@ impl CommandUiState {
             keymap_list: KeymapList::new(),
             focus_on_list: false,
             prompt_kind: PromptKind::Command,
+            command_scope: CommandScope::Normal,
         }
     }
 
     pub fn prompt_command(&mut self) {
+        self.prompt_command_for(CommandScope::Normal);
+    }
+
+    pub fn prompt_command_for(&mut self, scope: CommandScope) {
         self.prompt_kind = PromptKind::Command;
+        self.command_scope = scope;
         self.prompt_line.start_prompt(':');
         self.command_list.reset_selection();
         self.focus_on_list = false;
@@ -243,7 +251,7 @@ impl CommandUiState {
 
     fn list_filter(&self, query: &str) -> Vec<&dyn PromptEntry> {
         match self.prompt_kind {
-            PromptKind::Command => self.command_list.filter(query),
+            PromptKind::Command => self.command_list.filter(query, self.command_scope),
             PromptKind::Keymap => self.keymap_list.filter(query),
         }
     }

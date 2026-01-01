@@ -55,6 +55,7 @@ impl<'a> PromptListView<'a> {
                     PromptMode::Command => "COMMAND",
                     PromptMode::Normal => "NORMAL",
                     PromptMode::Edit => "EDIT",
+                    PromptMode::Visual => "VISUAL",
                     PromptMode::PromptCommand => "PROMPT_COMMAND",
                     PromptMode::PromptKeymap => "PROMPT_KEYMAP",
                 };
@@ -132,6 +133,7 @@ impl<'a> PromptListView<'a> {
                         PromptMode::Command => "COMMAND",
                         PromptMode::Normal => "NORMAL",
                         PromptMode::Edit => "EDIT",
+                        PromptMode::Visual => "VISUAL",
                         PromptMode::PromptCommand => "PROMPT_COMMAND",
                         PromptMode::PromptKeymap => "PROMPT_KEYMAP",
                     };

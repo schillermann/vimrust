@@ -175,6 +175,7 @@ impl UiFrameMode {
         match self.mode {
             vimrust_protocol::FrameMode::Normal => EditorMode::Normal,
             vimrust_protocol::FrameMode::Edit => EditorMode::Edit,
+            vimrust_protocol::FrameMode::Visual => EditorMode::Visual,
             vimrust_protocol::FrameMode::PromptCommand => EditorMode::PromptCommand,
             vimrust_protocol::FrameMode::PromptKeymap => EditorMode::PromptKeymap,
         }
@@ -184,6 +185,7 @@ impl UiFrameMode {
 pub struct ModeKeymap {
     normal: NormalModeInput,
     edit: EditModeInput,
+    visual: VisualModeInput,
     prompt_command: PromptCommandInput,
     prompt_keymap: PromptKeymapInput,
 }
@@ -193,6 +195,7 @@ impl ModeKeymap {
         Self {
             normal: NormalModeInput,
             edit: EditModeInput,
+            visual: VisualModeInput,
             prompt_command: PromptCommandInput,
             prompt_keymap: PromptKeymapInput,
         }
@@ -202,6 +205,7 @@ impl ModeKeymap {
         match mode {
             EditorMode::Normal => self.normal.action(code),
             EditorMode::Edit => self.edit.action(code),
+            EditorMode::Visual => self.visual.action(code),
             EditorMode::PromptCommand => self.prompt_command.action(code),
             EditorMode::PromptKeymap => self.prompt_keymap.action(code),
         }
@@ -216,6 +220,9 @@ impl NormalModeInput {
             KeyCode::Char('q') => ClientAction::Send(RpcRequest::EditorQuit),
             KeyCode::Char('e') => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Edit,
+            }),
+            KeyCode::Char('v') => ClientAction::Send(RpcRequest::ModeSet {
+                mode: RpcMode::Visual,
             }),
             KeyCode::Char('s') => ClientAction::Send(RpcRequest::FileSave),
             KeyCode::Char(':') => ClientAction::Send(RpcRequest::ModeSet {
@@ -270,6 +277,46 @@ impl EditModeInput {
             KeyCode::Enter => ClientAction::Send(RpcRequest::LineBreak),
             KeyCode::Char(ch) => ClientAction::Send(RpcRequest::TextInsert {
                 text: ch.to_string(),
+            }),
+            _ => ClientAction::Skip,
+        }
+    }
+}
+
+struct VisualModeInput;
+
+impl VisualModeInput {
+    fn action(&self, code: KeyCode) -> ClientAction {
+        match code {
+            KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
+                mode: RpcMode::Normal,
+            }),
+            KeyCode::Char(':') => ClientAction::Send(RpcRequest::ModeSet {
+                mode: RpcMode::PromptCommand,
+            }),
+            KeyCode::Char('h') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Left,
+            }),
+            KeyCode::Char('l') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Right,
+            }),
+            KeyCode::Char('k') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Up,
+            }),
+            KeyCode::Char('j') => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Down,
+            }),
+            KeyCode::PageUp => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::PageUp,
+            }),
+            KeyCode::PageDown => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::PageDown,
+            }),
+            KeyCode::Home => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::Home,
+            }),
+            KeyCode::End => ClientAction::Send(RpcRequest::CursorMove {
+                direction: MoveDirection::End,
             }),
             _ => ClientAction::Skip,
         }

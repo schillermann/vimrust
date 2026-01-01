@@ -21,7 +21,7 @@ use vimrust_protocol::{
 /// - line_break: {"type":"line_break"}
 /// - cursor_move: {"type":"cursor_move","direction":"left"|"right"|"up"|"down"|"page_up"|"page_down"|"home"|"end"}
 /// - command_ui: {"type":"command_ui","action":"insert_char","ch":"a"} (for command-line editing/navigation)
-/// - mode_set: {"type":"mode_set","mode":"normal"|"edit"|"prompt_command"|"prompt_keymap"}
+/// - mode_set: {"type":"mode_set","mode":"normal"|"edit"|"visual"|"prompt_command"|"prompt_keymap"}
 /// - state_get: {"type":"state_get"}
 /// - editor_quit: {"type":"editor_quit"}
 /// - command_execute: {"type":"command_execute","line":":s"} (execute entered command text; if
@@ -312,6 +312,7 @@ enum CommandRequest {
     SaveAndQuit,
     Quit,
     Open { path: CommandPath },
+    Kebab,
     Skip,
 }
 
@@ -372,6 +373,7 @@ impl CommandText {
             "sq" => CommandRequest::SaveAndQuit,
             "q" | "quit" => CommandRequest::Quit,
             "o" | "open" => CommandRequest::Open { path: parts.path },
+            "kebab" => CommandRequest::Kebab,
             _ => CommandRequest::Skip,
         }
     }
@@ -462,6 +464,7 @@ impl CommandExecuteAction {
                             command_ui.clear();
                         }
                         *mode = EditorMode::Normal;
+                        editor.visual_clear();
                         let ack = Ack::new(
                             AckKind::Save,
                             StatusMessage::Text { text: msg },
@@ -532,6 +535,14 @@ impl CommandExecuteAction {
                     }
                 },
             },
+            CommandRequest::Kebab => {
+                editor.kebab_selection();
+                if matches!(mode, EditorMode::PromptCommand) {
+                    command_ui.clear();
+                }
+                *mode = EditorMode::Normal;
+                RequestOutcome::Frame
+            }
             CommandRequest::Skip => match self.selection_signal {
                 FrameSignal::Frame => RequestOutcome::Frame,
                 FrameSignal::Skip => RequestOutcome::Skip,
@@ -700,11 +711,12 @@ impl RequestOutcomeRecord {
                         editor.snap_cursor_to_tab_start();
                         EditorMode::Edit
                     }
+                    RpcMode::Visual => EditorMode::Visual,
                     RpcMode::PromptCommand => EditorMode::PromptCommand,
                     RpcMode::PromptKeymap => EditorMode::PromptKeymap,
                 };
                 if *mode == EditorMode::PromptCommand && prev_mode != EditorMode::PromptCommand {
-                    command_ui.prompt_command();
+                    command_ui.prompt_command_for(editor.command_scope());
                 } else if *mode == EditorMode::PromptKeymap
                     && prev_mode != EditorMode::PromptKeymap
                 {
@@ -713,6 +725,12 @@ impl RequestOutcomeRecord {
                     && !matches!(*mode, EditorMode::PromptCommand | EditorMode::PromptKeymap)
                 {
                     command_ui.clear();
+                }
+                if matches!(*mode, EditorMode::Normal | EditorMode::Edit) {
+                    editor.visual_clear();
+                }
+                if *mode == EditorMode::Visual && !matches!(prev_mode, EditorMode::Visual) {
+                    editor.visual_begin();
                 }
                 if *mode != prev_mode || editor.cursor_position() != prev_cursor {
                     RequestOutcome::Frame
@@ -736,6 +754,7 @@ pub fn build_frame(
     let usable_rows = size.1.saturating_sub(2);
     let view = editor.view_with_scroll(size.0, usable_rows);
     let rows = editor.rows_render(&view, size.0, usable_rows);
+    let selection = editor.frame_selection(&view, size.0, usable_rows);
 
     let cursor_col = view
         .cursor_column()
@@ -756,6 +775,7 @@ pub fn build_frame(
         match mode {
             EditorMode::Normal => FrameMode::Normal,
             EditorMode::Edit => FrameMode::Edit,
+            EditorMode::Visual => FrameMode::Visual,
             EditorMode::PromptCommand => FrameMode::PromptCommand,
             EditorMode::PromptKeymap => FrameMode::PromptKeymap,
         },
@@ -766,6 +786,7 @@ pub fn build_frame(
         view.file_ref().path(),
         size,
         command_ui,
+        selection,
         ProtocolVersion::current(),
     )
 }
@@ -859,7 +880,12 @@ mod tests {
     }
 
     impl FrameRowSink for RowsProbe {
-        fn paint_row(&mut self, index: u16, row: &str) {
+        fn paint_row(
+            &mut self,
+            index: u16,
+            row: &str,
+            _selection: vimrust_protocol::RowSelection,
+        ) {
             if self.rows.len() <= index as usize {
                 self.rows
                     .resize_with(index.saturating_add(1) as usize, String::new);
@@ -916,7 +942,7 @@ mod tests {
 
         let frame = build_frame(&editor, &mode, &status, size, None);
         let mut rows = RowsProbe::new();
-        frame.rows().paint(size.1.saturating_sub(2), &mut rows);
+        frame.paint_rows(size.1.saturating_sub(2), &mut rows);
         rows.expect_row(0, "hi");
     }
 
@@ -938,7 +964,7 @@ mod tests {
 
         let frame = build_frame(&editor, &mode, &status, size, None);
         let mut rows = RowsProbe::new();
-        frame.rows().paint(size.1.saturating_sub(2), &mut rows);
+        frame.paint_rows(size.1.saturating_sub(2), &mut rows);
         rows.expect_row(0, "hello");
         rows.expect_row(1, " world");
     }

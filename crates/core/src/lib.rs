@@ -1,5 +1,6 @@
 mod prompt_line;
 mod command_list;
+mod command_scope;
 mod keymap_list;
 mod prompt_ui_state;
 mod prompt_ui_snapshot;

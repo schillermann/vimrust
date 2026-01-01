@@ -65,6 +65,7 @@ pub enum MoveDirection {
 pub enum RpcMode {
     Normal,
     Edit,
+    Visual,
     PromptCommand,
     PromptKeymap,
 }
