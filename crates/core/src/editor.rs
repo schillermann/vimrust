@@ -240,6 +240,13 @@ impl Editor {
             .camel(position, &mut self.file, &self.line_view, &mut update);
     }
 
+    pub fn selection_case_snake(&mut self) {
+        let position = self.cursor_position();
+        let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);
+        self.selection
+            .snake(position, &mut self.file, &self.line_view, &mut update);
+    }
+
     pub fn selection_case_pascal(&mut self) {
         let position = self.cursor_position();
         let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);

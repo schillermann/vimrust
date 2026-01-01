@@ -72,6 +72,11 @@ impl CommandRegistry {
                     mode: PromptMode::Visual,
                 },
                 CommandEntry {
+                    name: "case snake",
+                    description: "Convert selection to snake_case",
+                    mode: PromptMode::Visual,
+                },
+                CommandEntry {
                     name: "case pascal",
                     description: "Convert selection to PascalCase",
                     mode: PromptMode::Visual,

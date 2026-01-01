@@ -12,7 +12,7 @@ mod editor_selection_transform;
 
 use self::editor_selection_state::VisualSelection;
 use self::editor_selection_transform::{
-    CamelCaseTransform, KebabCaseTransform, PascalCaseTransform,
+    CamelCaseTransform, KebabCaseTransform, PascalCaseTransform, SnakeCaseTransform,
 };
 
 pub(super) struct EditorSelection {
@@ -76,6 +76,19 @@ impl EditorSelection {
     ) {
         let range = self.visual.range_for(cursor, file, line_view);
         let transform = CamelCaseTransform;
+        range.apply_to(file, line_view, cursor_update, &transform);
+        self.visual.clear();
+    }
+
+    pub(super) fn snake(
+        &mut self,
+        cursor: CursorPosition,
+        file: &mut File,
+        line_view: &LineView,
+        cursor_update: &mut CursorUpdate<'_>,
+    ) {
+        let range = self.visual.range_for(cursor, file, line_view);
+        let transform = SnakeCaseTransform;
         range.apply_to(file, line_view, cursor_update, &transform);
         self.visual.clear();
     }

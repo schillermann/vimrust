@@ -304,6 +304,7 @@ enum CommandPath {
 enum CaseStyle {
     Kebab,
     Camel,
+    Snake,
     Pascal,
 }
 
@@ -311,6 +312,7 @@ enum CaseStyleChoice {
     Missing,
     Kebab,
     Camel,
+    Snake,
     Pascal,
     Unknown,
 }
@@ -399,6 +401,9 @@ impl CommandText {
                     CaseStyleChoice::Camel => CommandRequest::Case {
                         style: CaseStyle::Camel,
                     },
+                    CaseStyleChoice::Snake => CommandRequest::Case {
+                        style: CaseStyle::Snake,
+                    },
                     CaseStyleChoice::Pascal => CommandRequest::Case {
                         style: CaseStyle::Pascal,
                     },
@@ -452,6 +457,7 @@ impl CaseArgument {
         match token.to_lowercase().as_str() {
             "kebab" => CaseStyleChoice::Kebab,
             "camel" => CaseStyleChoice::Camel,
+            "snake" => CaseStyleChoice::Snake,
             "pascal" => CaseStyleChoice::Pascal,
             _ => CaseStyleChoice::Unknown,
         }
@@ -589,6 +595,7 @@ impl CommandExecuteAction {
                 match style {
                     CaseStyle::Kebab => editor.selection_case_kebab(),
                     CaseStyle::Camel => editor.selection_case_camel(),
+                    CaseStyle::Snake => editor.selection_case_snake(),
                     CaseStyle::Pascal => editor.selection_case_pascal(),
                 }
                 if matches!(mode, EditorMode::PromptCommand) {
