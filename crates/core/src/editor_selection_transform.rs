@@ -50,3 +50,29 @@ impl SelectionTransform for CamelCaseTransform {
         output
     }
 }
+
+pub(super) struct PascalCaseTransform;
+
+impl SelectionTransform for PascalCaseTransform {
+    fn transform(&self, input: &str) -> String {
+        let mut output = String::new();
+        let mut prev_separator = true;
+
+        for ch in input.chars() {
+            if ch.is_ascii_alphanumeric() {
+                if output.is_empty() {
+                    output.push(ch.to_ascii_uppercase());
+                } else if prev_separator {
+                    output.push(ch.to_ascii_uppercase());
+                } else {
+                    output.push(ch.to_ascii_lowercase());
+                }
+                prev_separator = false;
+            } else {
+                prev_separator = true;
+            }
+        }
+
+        output
+    }
+}

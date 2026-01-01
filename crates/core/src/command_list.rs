@@ -71,6 +71,11 @@ impl CommandRegistry {
                     description: "Convert selection to camelCase",
                     mode: PromptMode::Visual,
                 },
+                CommandEntry {
+                    name: "case pascal",
+                    description: "Convert selection to PascalCase",
+                    mode: PromptMode::Visual,
+                },
             ],
         }
     }

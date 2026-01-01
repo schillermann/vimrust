@@ -11,7 +11,9 @@ mod editor_selection_state;
 mod editor_selection_transform;
 
 use self::editor_selection_state::VisualSelection;
-use self::editor_selection_transform::{CamelCaseTransform, KebabCaseTransform};
+use self::editor_selection_transform::{
+    CamelCaseTransform, KebabCaseTransform, PascalCaseTransform,
+};
 
 pub(super) struct EditorSelection {
     visual: VisualSelection,
@@ -74,6 +76,19 @@ impl EditorSelection {
     ) {
         let range = self.visual.range_for(cursor, file, line_view);
         let transform = CamelCaseTransform;
+        range.apply_to(file, line_view, cursor_update, &transform);
+        self.visual.clear();
+    }
+
+    pub(super) fn pascal(
+        &mut self,
+        cursor: CursorPosition,
+        file: &mut File,
+        line_view: &LineView,
+        cursor_update: &mut CursorUpdate<'_>,
+    ) {
+        let range = self.visual.range_for(cursor, file, line_view);
+        let transform = PascalCaseTransform;
         range.apply_to(file, line_view, cursor_update, &transform);
         self.visual.clear();
     }
