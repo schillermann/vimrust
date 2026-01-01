@@ -10,7 +10,7 @@ Conventional Commits.
 ### Added
 - Auto completion for file paths to open files in the command line prompt.
 - Reload the current file from disk with `:o`/`:open` when no filename is provided.
-- Visual mode with selectable ranges and a `:kebab` command for transforming selections.
+- Visual mode with selectable ranges and a `:case kebab`/`:case camel` command for transforming selections.
 
 ## [0.1.0] - 2025-12-30
 

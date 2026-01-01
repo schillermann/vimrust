@@ -12,9 +12,9 @@ mod editor_selection;
 #[path = "line_view.rs"]
 mod line_view;
 
-use crate::command_scope::CommandScope;
 use self::editor_selection::{CursorUpdate, EditorSelection};
 use self::line_view::LineView;
+use crate::command_scope::CommandScope;
 
 pub struct EditorVersion {
     label: &'static str,
@@ -209,7 +209,7 @@ impl Editor {
         self.selection.scope()
     }
 
-    pub fn frame_selection(
+    pub fn selection_frame(
         &self,
         view: &EditorView<'_>,
         number_of_columns: u16,
@@ -226,11 +226,18 @@ impl Editor {
         )
     }
 
-    pub fn kebab_selection(&mut self) {
+    pub fn selection_case_kebab(&mut self) {
         let position = self.cursor_position();
         let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);
         self.selection
             .kebab(position, &mut self.file, &self.line_view, &mut update);
+    }
+
+    pub fn selection_case_camel(&mut self) {
+        let position = self.cursor_position();
+        let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);
+        self.selection
+            .camel(position, &mut self.file, &self.line_view, &mut update);
     }
 
     fn scroll_offsets_compute(&self, number_of_columns: u16, number_of_rows: u16) -> (u16, u16) {
@@ -378,7 +385,6 @@ impl Editor {
                 .line_view
                 .snap_cursor_to_render_character(line, self.cursor_x);
         }
-
     }
 
     pub fn char_insert(&mut self, ch: char) {
@@ -386,7 +392,9 @@ impl Editor {
         self.file.line_ensure(target_line);
 
         let insert_at = match self.file.line_at(target_line) {
-            Some(line) => self.line_view.column_to_char_index_render(line, self.cursor_x),
+            Some(line) => self
+                .line_view
+                .column_to_char_index_render(line, self.cursor_x),
             None => 0,
         };
         let advance = self.line_view.char_render_width(ch, self.cursor_x);
@@ -408,7 +416,9 @@ impl Editor {
         self.file.line_ensure(target_line);
 
         let split_at = match self.file.line_at(target_line) {
-            Some(line) => self.line_view.column_to_char_index_render(line, self.cursor_x),
+            Some(line) => self
+                .line_view
+                .column_to_char_index_render(line, self.cursor_x),
             None => 0,
         };
 
@@ -475,7 +485,9 @@ impl Editor {
 
     pub fn under_cursor_delete(&mut self) {
         let delete_idx = match self.file.line_at(self.cursor_y as usize) {
-            Some(line) => self.line_view.column_to_char_index_render(line, self.cursor_x),
+            Some(line) => self
+                .line_view
+                .column_to_char_index_render(line, self.cursor_x),
             None => return,
         };
 
@@ -519,10 +531,8 @@ impl Editor {
 
         0
     }
-
 }
 
-#[derive(Copy, Clone)]
 #[cfg(test)]
 impl Editor {
     pub fn file_lines_replace(&mut self, lines: Vec<String>) {

@@ -2,12 +2,14 @@ use std::io;
 
 use crossterm::{
     cursor::MoveTo,
-    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
+    style::{
+        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+    },
     terminal::{Clear, ClearType},
 };
 
 use crate::terminal::Terminal;
-use vimrust_protocol::{PromptMode, CommandUiFrame};
+use vimrust_protocol::{CommandUiFrame, PromptMode};
 
 pub(crate) struct PromptListView<'a> {
     terminal: &'a mut Terminal,
@@ -137,10 +139,8 @@ impl<'a> PromptListView<'a> {
                         PromptMode::PromptCommand => "PROMPT_COMMAND",
                         PromptMode::PromptKeymap => "PROMPT_KEYMAP",
                     };
-                    let key_display =
-                        ColumnDisplay::new(entry.label(), key_col_width).render();
-                    let mode_display =
-                        ColumnDisplay::new(mode_label, mode_col_width).render();
+                    let key_display = ColumnDisplay::new(entry.label(), key_col_width).render();
+                    let mode_display = ColumnDisplay::new(mode_label, mode_col_width).render();
                     let desc_display = ColumnDisplay::new(entry.detail(), desc_col_width).render();
 
                     let mut mode_matches = Vec::new();
@@ -417,11 +417,7 @@ impl<'a> ColumnDisplay<'a> {
         if self.width == 0 {
             return String::new();
         }
-        let mut display: String = self
-            .content
-            .chars()
-            .take(self.width as usize)
-            .collect();
+        let mut display: String = self.content.chars().take(self.width as usize).collect();
         if display.len() < self.width as usize {
             display.push_str(&" ".repeat(self.width as usize - display.len()));
         }

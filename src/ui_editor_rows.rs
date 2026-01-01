@@ -62,7 +62,8 @@ impl<'a> FrameRowSink for EditorRowsPainter<'a> {
 impl<'a> EditorRowsPainter<'a> {
     fn using_row(&mut self, screen_row: u16, row: &str, selection: RowSelection) -> io::Result<()> {
         self.terminal.queue_add_command(MoveTo(0, screen_row))?;
-        self.terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
+        self.terminal
+            .queue_add_command(Clear(ClearType::CurrentLine))?;
 
         match selection {
             RowSelection::None => {

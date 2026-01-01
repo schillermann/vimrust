@@ -62,8 +62,13 @@ impl CommandRegistry {
                     mode: PromptMode::Command,
                 },
                 CommandEntry {
-                    name: "kebab",
-                    description: "Convert selection to kebab case",
+                    name: "case kebab",
+                    description: "Convert selection to kebab-case",
+                    mode: PromptMode::Visual,
+                },
+                CommandEntry {
+                    name: "case camel",
+                    description: "Convert selection to camelCase",
                     mode: PromptMode::Visual,
                 },
             ],

@@ -1,4 +1,4 @@
-use crate::{prompt_ui_state::CommandUiView, frame_signal::FrameSignal};
+use crate::{frame_signal::FrameSignal, prompt_ui_state::CommandUiView};
 use vimrust_protocol::CommandLineSelection;
 
 pub struct CommandUiSnapshot {

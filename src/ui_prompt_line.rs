@@ -2,7 +2,9 @@ use std::io;
 
 use crossterm::{
     cursor::MoveTo,
-    style::{Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor},
+    style::{
+        Attribute, Color, Print, ResetColor, SetAttribute, SetBackgroundColor, SetForegroundColor,
+    },
     terminal::{Clear, ClearType},
 };
 
@@ -52,11 +54,12 @@ impl<'a, 'b> CommandLinePanel<'a, 'b> {
         } else if visible.len() > target_width {
             visible.truncate(target_width);
         }
-        self.terminal.queue_add_command(SetBackgroundColor(Color::Rgb {
-            r: 27,
-            g: 27,
-            b: 27,
-        }))?;
+        self.terminal
+            .queue_add_command(SetBackgroundColor(Color::Rgb {
+                r: 27,
+                g: 27,
+                b: 27,
+            }))?;
         let highlight = CommandLineHighlight::new(self.selection.clone());
         let highlight_indices = highlight.visible_indices(display_content, inner_width);
         if highlight_indices.is_empty() {

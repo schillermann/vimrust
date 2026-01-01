@@ -3,15 +3,15 @@ use crate::editor::{CursorPosition, EditorView, LineView};
 use crate::file::File;
 use vimrust_protocol::FrameSelection;
 
-#[path = "editor_selection_state.rs"]
-mod editor_selection_state;
 #[path = "editor_selection_range.rs"]
 mod editor_selection_range;
+#[path = "editor_selection_state.rs"]
+mod editor_selection_state;
 #[path = "editor_selection_transform.rs"]
 mod editor_selection_transform;
 
 use self::editor_selection_state::VisualSelection;
-use self::editor_selection_transform::KebabCaseTransform;
+use self::editor_selection_transform::{CamelCaseTransform, KebabCaseTransform};
 
 pub(super) struct EditorSelection {
     visual: VisualSelection,
@@ -61,6 +61,19 @@ impl EditorSelection {
     ) {
         let range = self.visual.range_for(cursor, file, line_view);
         let transform = KebabCaseTransform;
+        range.apply_to(file, line_view, cursor_update, &transform);
+        self.visual.clear();
+    }
+
+    pub(super) fn camel(
+        &mut self,
+        cursor: CursorPosition,
+        file: &mut File,
+        line_view: &LineView,
+        cursor_update: &mut CursorUpdate<'_>,
+    ) {
+        let range = self.visual.range_for(cursor, file, line_view);
+        let transform = CamelCaseTransform;
         range.apply_to(file, line_view, cursor_update, &transform);
         self.visual.clear();
     }

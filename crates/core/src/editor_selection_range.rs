@@ -2,8 +2,8 @@ use crate::editor::{CursorPosition, EditorView, LineView};
 use crate::file::File;
 use vimrust_protocol::{Cursor, FrameSelection};
 
-use super::editor_selection_transform::SelectionTransform;
 use super::CursorUpdate;
+use super::editor_selection_transform::SelectionTransform;
 
 pub(super) struct SelectionRange {
     start: CursorPosition,

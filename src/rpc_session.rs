@@ -99,7 +99,7 @@ impl<'a> RpcSession<'a> {
         self.latest_frame = Some(frame);
         self.status_override = StatusMessage::Empty;
         if let Some(frame) = &self.latest_frame {
-        self.protocol_gate.observe(frame.protocol());
+            self.protocol_gate.observe(frame.protocol());
             self.protocol_gate.report();
             self.protocol_gate.result()?;
         }

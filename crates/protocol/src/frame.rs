@@ -164,12 +164,7 @@ impl FrameRows {
         Self(rows)
     }
 
-    pub fn paint(
-        &self,
-        usable_rows: u16,
-        selection: &FrameSelection,
-        sink: &mut dyn FrameRowSink,
-    ) {
+    pub fn paint(&self, usable_rows: u16, selection: &FrameSelection, sink: &mut dyn FrameRowSink) {
         let mut idx = 0usize;
         while idx < self.0.len() {
             if idx as u16 >= usable_rows {

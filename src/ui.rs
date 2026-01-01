@@ -6,8 +6,8 @@ use crate::{
     mode::EditorMode,
     status_line::StatusLine,
     terminal::Terminal,
-    ui_prompt_line::CommandLinePanel,
     ui_layout::{CursorPlacement, UiBody},
+    ui_prompt_line::CommandLinePanel,
 };
 use vimrust_protocol::{CommandUiAccess, Frame, RpcRequest, StatusMessage, ViewportSink};
 
@@ -89,7 +89,6 @@ impl<'a> Ui<'a> {
         frame.viewport().apply_to(&mut render);
         render.finish()
     }
-
 }
 
 pub enum UiQuitSignal {
@@ -143,9 +142,7 @@ impl<'a, 'b> FrameRender<'a, 'b> {
             }
 
             if number_of_rows > 1 {
-                self.ui
-                    .status_line
-                    .file_status_update(self.frame.status());
+                self.ui.status_line.file_status_update(self.frame.status());
                 self.ui.status_line.draw(
                     self.ui.terminal,
                     &self.ui.mode,
@@ -196,6 +193,11 @@ impl CommandInput {
         terminal: &'a mut Terminal,
         number_of_columns: u16,
     ) -> CommandLinePanel<'a, '_> {
-        CommandLinePanel::new(terminal, number_of_columns, &self.text, self.selection.clone())
+        CommandLinePanel::new(
+            terminal,
+            number_of_columns,
+            &self.text,
+            self.selection.clone(),
+        )
     }
 }

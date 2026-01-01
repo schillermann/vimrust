@@ -2,7 +2,7 @@ use crate::command_scope::CommandScope;
 use crate::editor::{CursorPosition, LineView};
 use crate::file::File;
 
-use super::editor_selection_range::{selection_end, SelectionRange};
+use super::editor_selection_range::{SelectionRange, selection_end};
 
 impl CursorPosition {
     fn order_to(&self, other: CursorPosition) -> PositionOrder {
@@ -74,7 +74,12 @@ impl SelectionAnchor {
         Self { position }
     }
 
-    fn range_to(&self, cursor: CursorPosition, file: &File, line_view: &LineView) -> SelectionRange {
+    fn range_to(
+        &self,
+        cursor: CursorPosition,
+        file: &File,
+        line_view: &LineView,
+    ) -> SelectionRange {
         match self.position.order_to(cursor) {
             PositionOrder::Earlier => {
                 SelectionRange::new(self.position, selection_end(file, line_view, cursor))

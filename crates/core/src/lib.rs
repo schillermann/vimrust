@@ -1,19 +1,19 @@
-mod prompt_line;
+mod command_completion;
 mod command_list;
 mod command_scope;
-mod keymap_list;
-mod prompt_ui_state;
-mod prompt_ui_snapshot;
 mod command_ui_placeholder;
-mod command_completion;
 mod editor;
-mod frame_signal;
 mod file;
+mod frame_signal;
+mod keymap_list;
 mod mode;
 mod prompt_entry;
+mod prompt_line;
+mod prompt_ui_snapshot;
+mod prompt_ui_state;
 mod rpc;
 
 pub use rpc::StdioSession;
 
-pub(crate) use mode::EditorMode;
 pub(crate) use frame_signal::FrameSignal;
+pub(crate) use mode::EditorMode;

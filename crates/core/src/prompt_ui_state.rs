@@ -1,12 +1,7 @@
 use crate::{
-    prompt_line::PromptLine,
-    command_list::CommandList,
-    keymap_list::KeymapList,
-    command_ui_placeholder::CommandPlaceholder,
-    command_completion::CommandCompletion,
-    prompt_ui_snapshot::CommandUiSnapshot,
-    prompt_entry::PromptEntry,
-    command_scope::CommandScope,
+    command_completion::CommandCompletion, command_list::CommandList, command_scope::CommandScope,
+    command_ui_placeholder::CommandPlaceholder, keymap_list::KeymapList, prompt_entry::PromptEntry,
+    prompt_line::PromptLine, prompt_ui_snapshot::CommandUiSnapshot,
 };
 use vimrust_protocol::{
     CommandLineSelection, CommandListItemFrame, CommandUiAction, CommandUiFrame,
@@ -179,8 +174,7 @@ impl CommandUiState {
                     let line = format!(":{}", entry_label);
                     let placeholder = CommandPlaceholder;
                     let selection = placeholder.selection_for(&line);
-                    self.prompt_line
-                        .set_content_with_selection(line, selection);
+                    self.prompt_line.set_content_with_selection(line, selection);
                     self.focus_on_list = false;
 
                     let updated_matches = self.list_filter(self.prompt_line.text());
@@ -286,8 +280,12 @@ impl CommandUiState {
 
     fn list_scroll_reconcile(&mut self, visible_rows: usize) {
         match self.prompt_kind {
-            PromptKind::Command => self.command_list.adjust_scroll_for_visible_rows(visible_rows),
-            PromptKind::Keymap => self.keymap_list.adjust_scroll_for_visible_rows(visible_rows),
+            PromptKind::Command => self
+                .command_list
+                .adjust_scroll_for_visible_rows(visible_rows),
+            PromptKind::Keymap => self
+                .keymap_list
+                .adjust_scroll_for_visible_rows(visible_rows),
         }
     }
 }
