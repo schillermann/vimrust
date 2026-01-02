@@ -149,3 +149,19 @@ impl SelectionTransform for TrainCaseTransform {
         output
     }
 }
+
+pub(super) struct FlatCaseTransform;
+
+impl SelectionTransform for FlatCaseTransform {
+    fn transform(&self, input: &str) -> String {
+        let mut output = String::new();
+
+        for ch in input.chars() {
+            if ch.is_ascii_alphanumeric() {
+                output.push(ch.to_ascii_lowercase());
+            }
+        }
+
+        output
+    }
+}

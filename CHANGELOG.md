@@ -17,6 +17,7 @@ Conventional Commits.
 - SCREAMING_SNAKE_CASE transformation command for visual selections via `:case screaming`.
 - PascalCase transformation command for visual selections via `:case pascal`.
 - Train-Case transformation command for visual selections via `:case train`.
+- flatcase transformation command for visual selections via `:case flat`.
 
 ## [0.1.0] - 2025-12-30
 

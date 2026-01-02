@@ -91,6 +91,11 @@ impl CommandRegistry {
                     description: "Convert selection to Train-Case",
                     mode: PromptMode::Visual,
                 },
+                CommandEntry {
+                    name: "case flat",
+                    description: "Convert selection to flatcase",
+                    mode: PromptMode::Visual,
+                },
             ],
         }
     }

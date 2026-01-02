@@ -308,6 +308,7 @@ enum CaseStyle {
     ScreamingSnake,
     Pascal,
     Train,
+    Flat,
 }
 
 enum CaseStyleChoice {
@@ -318,6 +319,7 @@ enum CaseStyleChoice {
     ScreamingSnake,
     Pascal,
     Train,
+    Flat,
     Unknown,
 }
 
@@ -417,6 +419,9 @@ impl CommandText {
                     CaseStyleChoice::Train => CommandRequest::Case {
                         style: CaseStyle::Train,
                     },
+                    CaseStyleChoice::Flat => CommandRequest::Case {
+                        style: CaseStyle::Flat,
+                    },
                     CaseStyleChoice::Missing | CaseStyleChoice::Unknown => CommandRequest::Skip,
                 }
             }
@@ -471,6 +476,7 @@ impl CaseArgument {
             "screaming" => CaseStyleChoice::ScreamingSnake,
             "pascal" => CaseStyleChoice::Pascal,
             "train" => CaseStyleChoice::Train,
+            "flat" => CaseStyleChoice::Flat,
             _ => CaseStyleChoice::Unknown,
         }
     }
@@ -611,6 +617,7 @@ impl CommandExecuteAction {
                     CaseStyle::ScreamingSnake => editor.selection_case_screaming_snake(),
                     CaseStyle::Pascal => editor.selection_case_pascal(),
                     CaseStyle::Train => editor.selection_case_train(),
+                    CaseStyle::Flat => editor.selection_case_flat(),
                 }
                 if matches!(mode, EditorMode::PromptCommand) {
                     command_ui.clear();
