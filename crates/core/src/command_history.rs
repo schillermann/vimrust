@@ -1,18 +1,23 @@
-use crate::prompt_line::PromptLine;
+use crate::{command_history_store::CommandHistoryStore, prompt_line::PromptLine};
 
 pub struct CommandHistory {
     entries: Vec<String>,
-    cursor: HistoryCursor,
-    draft: HistoryDraft,
+    cursor: CommandHistoryCursor,
+    draft: CommandHistoryDraft,
+    store: CommandHistoryStore,
 }
 
 impl CommandHistory {
     pub fn new() -> Self {
-        Self {
+        let store = CommandHistoryStore::new();
+        let mut history = Self {
             entries: Vec::new(),
-            cursor: HistoryCursor::Tail,
-            draft: HistoryDraft::Empty,
-        }
+            cursor: CommandHistoryCursor::Tail,
+            draft: CommandHistoryDraft::Empty,
+            store,
+        };
+        history.store.restore(&mut history.entries);
+        history
     }
 
     pub fn record(&mut self, line: &str) {
@@ -21,13 +26,14 @@ impl CommandHistory {
             return;
         }
         self.entries.push(line.to_string());
-        self.cursor = HistoryCursor::Tail;
-        self.draft = HistoryDraft::Empty;
+        self.store.append(line);
+        self.cursor = CommandHistoryCursor::Tail;
+        self.draft = CommandHistoryDraft::Empty;
     }
 
     pub fn reset_navigation(&mut self) {
-        self.cursor = HistoryCursor::Tail;
-        self.draft = HistoryDraft::Empty;
+        self.cursor = CommandHistoryCursor::Tail;
+        self.draft = CommandHistoryDraft::Empty;
     }
 
     pub fn recall_previous(&mut self, prompt_line: &mut PromptLine) {
@@ -35,20 +41,20 @@ impl CommandHistory {
             return;
         }
         match self.cursor {
-            HistoryCursor::Tail => {
+            CommandHistoryCursor::Tail => {
                 let draft = prompt_line.text().to_string();
-                self.draft = HistoryDraft::Stored { line: draft };
+                self.draft = CommandHistoryDraft::Stored { line: draft };
                 let index = self.entries.len().saturating_sub(1);
-                self.cursor = HistoryCursor::At { index };
+                self.cursor = CommandHistoryCursor::At { index };
                 self.apply_index(prompt_line, index);
             }
-            HistoryCursor::At { index } => {
+            CommandHistoryCursor::At { index } => {
                 if index == 0 {
                     self.apply_index(prompt_line, index);
                     return;
                 }
                 let next_index = index.saturating_sub(1);
-                self.cursor = HistoryCursor::At { index: next_index };
+                self.cursor = CommandHistoryCursor::At { index: next_index };
                 self.apply_index(prompt_line, next_index);
             }
         }
@@ -56,15 +62,15 @@ impl CommandHistory {
 
     pub fn recall_next(&mut self, prompt_line: &mut PromptLine) {
         match self.cursor {
-            HistoryCursor::Tail => {}
-            HistoryCursor::At { index } => {
+            CommandHistoryCursor::Tail => {}
+            CommandHistoryCursor::At { index } => {
                 let next_index = index.saturating_add(1);
                 if next_index < self.entries.len() {
-                    self.cursor = HistoryCursor::At { index: next_index };
+                    self.cursor = CommandHistoryCursor::At { index: next_index };
                     self.apply_index(prompt_line, next_index);
                     return;
                 }
-                self.cursor = HistoryCursor::Tail;
+                self.cursor = CommandHistoryCursor::Tail;
                 self.restore_draft(prompt_line);
             }
         }
@@ -78,21 +84,21 @@ impl CommandHistory {
 
     fn restore_draft(&mut self, prompt_line: &mut PromptLine) {
         match &self.draft {
-            HistoryDraft::Stored { line } => {
+            CommandHistoryDraft::Stored { line } => {
                 prompt_line.set_content(line.clone());
             }
-            HistoryDraft::Empty => {}
+            CommandHistoryDraft::Empty => {}
         }
-        self.draft = HistoryDraft::Empty;
+        self.draft = CommandHistoryDraft::Empty;
     }
 }
 
-enum HistoryCursor {
+enum CommandHistoryCursor {
     Tail,
     At { index: usize },
 }
 
-enum HistoryDraft {
+enum CommandHistoryDraft {
     Empty,
     Stored { line: String },
 }

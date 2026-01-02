@@ -203,22 +203,22 @@ impl KeymapRegistry {
                 KeymapEntry {
                     mode: PromptMode::PromptCommand,
                     key: "Ctrl+Up",
-                    description: "Recall previous command from history",
+                    description: "Move focus to command line",
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptCommand,
                     key: "Ctrl+Down",
-                    description: "Recall next command from history",
+                    description: "Move focus to command list",
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptCommand,
                     key: "Up",
-                    description: "Move selection up",
+                    description: "Recall previous command from history",
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptCommand,
                     key: "Down",
-                    description: "Move selection down",
+                    description: "Recall next command from history",
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptKeymap,
@@ -316,6 +316,10 @@ impl KeymapList {
     pub fn reset_selection(&mut self) {
         self.selected_index = None;
         self.scroll_offset = 0;
+    }
+
+    pub fn selection_clear(&mut self) {
+        self.selected_index = None;
     }
 
     pub fn selection(&self) -> Option<usize> {

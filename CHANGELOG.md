@@ -9,7 +9,9 @@ Conventional Commits.
 
 ### Added
 - Auto completion for file paths to open files in the command line prompt.
-- Command prompt history navigation with Ctrl-Up/Ctrl-Down.
+- Command prompt history navigation with `Up/Down`.
+- Jump between command line and list via `Ctrl-Up/Ctrl-Down`.
+- Persist command prompt history across sessions in the user state directory.
 - Reload the current file from disk with `:o`/`:open` when no filename is provided.
 - Visual mode with selectable ranges.
 - Kebab-case transformation command for visual selections via `:case kebab`.

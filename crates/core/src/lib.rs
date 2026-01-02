@@ -1,5 +1,11 @@
 mod command_completion;
 mod command_history;
+mod command_history_directory;
+mod command_history_environment;
+mod command_history_file;
+mod command_history_location;
+mod command_history_root;
+mod command_history_store;
 mod command_list;
 mod command_scope;
 mod command_ui_placeholder;

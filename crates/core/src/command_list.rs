@@ -147,6 +147,10 @@ impl CommandList {
         self.scroll_offset = 0;
     }
 
+    pub fn selection_clear(&mut self) {
+        self.selected_index = None;
+    }
+
     pub fn selection(&self) -> Option<usize> {
         self.selected_index
     }

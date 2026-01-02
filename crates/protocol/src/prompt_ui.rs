@@ -147,6 +147,7 @@ pub enum CommandUiAction {
     MoveHome,
     MoveEnd,
     Complete,
+    FocusPrompt,
     HistoryPrevious,
     HistoryNext,
     MoveSelectionUp,

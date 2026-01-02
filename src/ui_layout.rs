@@ -84,25 +84,13 @@ impl<'a> CursorPlacement<'a> {
         match self.mode {
             EditorMode::PromptCommand | EditorMode::PromptKeymap => match self.frame.command_ui() {
                 CommandUiAccess::Available(cmd_ui) => {
-                    let mut command_cursor = (
+                    let command_cursor = (
                         cmd_ui
                             .cursor_column()
                             .saturating_add(1)
                             .min(self.number_of_columns.saturating_sub(1)),
                         0,
                     );
-                    if cmd_ui.list_focus() {
-                        if let Some(selected) = cmd_ui.selected_item() {
-                            let relative_row =
-                                selected.saturating_sub(cmd_ui.scroll_position()) as u16;
-                            let list_row = 1u16
-                                .saturating_add(1)
-                                .saturating_add(2)
-                                .saturating_add(relative_row)
-                                .min(self.number_of_rows.saturating_sub(1));
-                            command_cursor = (0, list_row);
-                        }
-                    }
                     MoveTo(command_cursor.0, command_cursor.1)
                 }
                 CommandUiAccess::Missing => MoveTo(0, 0),

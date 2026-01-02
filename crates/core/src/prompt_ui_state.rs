@@ -130,54 +130,34 @@ impl CommandUiState {
                 self.focus_on_list = false;
                 self.command_history.reset_navigation();
             }
+            CommandUiAction::FocusPrompt => {
+                self.focus_on_list = false;
+                self.list_selection_clear();
+            }
             CommandUiAction::HistoryPrevious => {
                 if matches!(self.prompt_kind, PromptKind::Command) {
-                    self.command_history.recall_previous(&mut self.prompt_line);
-                    self.list_reset();
-                    self.focus_on_list = false;
+                    if self.focus_on_list {
+                        self.move_selection(CommandUiAction::MoveSelectionUp, list_rows);
+                    } else {
+                        self.command_history.recall_previous(&mut self.prompt_line);
+                        self.list_reset();
+                        self.focus_on_list = false;
+                    }
                 }
             }
             CommandUiAction::HistoryNext => {
                 if matches!(self.prompt_kind, PromptKind::Command) {
-                    self.command_history.recall_next(&mut self.prompt_line);
-                    self.list_reset();
-                    self.focus_on_list = false;
+                    if self.focus_on_list {
+                        self.move_selection(CommandUiAction::MoveSelectionDown, list_rows);
+                    } else {
+                        self.command_history.recall_next(&mut self.prompt_line);
+                        self.list_reset();
+                        self.focus_on_list = false;
+                    }
                 }
             }
             CommandUiAction::MoveSelectionUp | CommandUiAction::MoveSelectionDown => {
-                let match_count = {
-                    let matches = self.list_filter(self.prompt_line.text());
-                    matches.len()
-                };
-                if match_count == 0 {
-                    self.list_reset();
-                    self.focus_on_list = false;
-                    return;
-                }
-
-                self.focus_on_list = true;
-                match self.list_selection() {
-                    None => match action {
-                        CommandUiAction::MoveSelectionDown => self.list_select_index(0),
-                        CommandUiAction::MoveSelectionUp => {
-                            self.list_select_index(match_count.saturating_sub(1));
-                        }
-                        _ => {}
-                    },
-                    Some(current_index) => {
-                        let max_index = match_count.saturating_sub(1);
-                        match action {
-                            CommandUiAction::MoveSelectionUp if current_index > 0 => {
-                                self.list_select_index(current_index.saturating_sub(1));
-                            }
-                            CommandUiAction::MoveSelectionDown if current_index < max_index => {
-                                self.list_select_index(current_index.saturating_add(1));
-                            }
-                            _ => {}
-                        }
-                    }
-                }
-                self.list_scroll_adjust(list_rows);
+                self.move_selection(action, list_rows);
             }
             CommandUiAction::SelectFromList => {
                 if matches!(self.prompt_kind, PromptKind::Keymap) {
@@ -213,14 +193,50 @@ impl CommandUiState {
                         }
                         idx += 1;
                     }
-                    if let Some(updated_index) = updated_index {
-                        self.list_select_index(updated_index);
+                    if updated_index.is_some() {
                         self.list_scroll_adjust(list_rows);
                     }
+                    self.list_selection_clear();
                     return;
                 }
             }
         }
+    }
+
+    fn move_selection(&mut self, action: CommandUiAction, list_rows: usize) {
+        let match_count = {
+            let matches = self.list_filter(self.prompt_line.text());
+            matches.len()
+        };
+        if match_count == 0 {
+            self.list_reset();
+            self.focus_on_list = false;
+            return;
+        }
+
+        self.focus_on_list = true;
+        match self.list_selection() {
+            None => match action {
+                CommandUiAction::MoveSelectionDown => self.list_select_index(0),
+                CommandUiAction::MoveSelectionUp => {
+                    self.list_select_index(match_count.saturating_sub(1));
+                }
+                _ => {}
+            },
+            Some(current_index) => {
+                let max_index = match_count.saturating_sub(1);
+                match action {
+                    CommandUiAction::MoveSelectionUp if current_index > 0 => {
+                        self.list_select_index(current_index.saturating_sub(1));
+                    }
+                    CommandUiAction::MoveSelectionDown if current_index < max_index => {
+                        self.list_select_index(current_index.saturating_add(1));
+                    }
+                    _ => {}
+                }
+            }
+        }
+        self.list_scroll_adjust(list_rows);
     }
 
     pub fn remember_command(&mut self, line: &str) {
@@ -293,6 +309,13 @@ impl CommandUiState {
         match self.prompt_kind {
             PromptKind::Command => self.command_list.selection(),
             PromptKind::Keymap => self.keymap_list.selection(),
+        }
+    }
+
+    fn list_selection_clear(&mut self) {
+        match self.prompt_kind {
+            PromptKind::Command => self.command_list.selection_clear(),
+            PromptKind::Keymap => self.keymap_list.selection_clear(),
         }
     }
 
