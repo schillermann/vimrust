@@ -86,6 +86,11 @@ impl CommandRegistry {
                     description: "Convert selection to PascalCase",
                     mode: PromptMode::Visual,
                 },
+                CommandEntry {
+                    name: "case train",
+                    description: "Convert selection to Train-Case",
+                    mode: PromptMode::Visual,
+                },
             ],
         }
     }

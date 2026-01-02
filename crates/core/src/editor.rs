@@ -265,6 +265,13 @@ impl Editor {
             .pascal(position, &mut self.file, &self.line_view, &mut update);
     }
 
+    pub fn selection_case_train(&mut self) {
+        let position = self.cursor_position();
+        let mut update = CursorUpdate::new(&mut self.cursor_x, &mut self.cursor_y);
+        self.selection
+            .train(position, &mut self.file, &self.line_view, &mut update);
+    }
+
     fn scroll_offsets_compute(&self, number_of_columns: u16, number_of_rows: u16) -> (u16, u16) {
         if number_of_rows == 0 {
             return (self.columns_offset, self.rows_offset);
