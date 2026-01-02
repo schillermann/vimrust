@@ -13,7 +13,7 @@ impl CommandHistoryDirectory {
 
     pub fn file(self) -> CommandHistoryFile {
         let directory = self.path.join("vimrust");
-        let path = directory.join("history");
+        let path = directory.join("history-commands.txt");
         CommandHistoryFile::new(directory, path)
     }
 }

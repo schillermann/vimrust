@@ -328,6 +328,7 @@ enum CommandRequest {
     SaveAndQuit,
     Quit,
     Open { path: CommandPath },
+    History,
     Case { style: CaseStyle },
     Skip,
 }
@@ -396,6 +397,7 @@ impl CommandText {
                 };
                 CommandRequest::Open { path }
             }
+            "history" => CommandRequest::History,
             "case" => {
                 let argument = CaseArgument {
                     raw: parts.rest.clone(),
@@ -609,6 +611,30 @@ impl CommandExecuteAction {
                         RequestOutcome::Error(String::from("reload failed: no file path"))
                     }
                 },
+            },
+            CommandRequest::History => match command_ui.history() {
+                FilePath::Provided { path } => {
+                    let mut new_file = File::new(FilePath::Provided { path });
+                    if let Err(err) = new_file.read() {
+                        RequestOutcome::Error(format!("history open failed: {}", err))
+                    } else {
+                        *editor = Editor::new(new_file);
+                        *status = StatusMessage::Empty;
+                        if matches!(mode, EditorMode::PromptCommand) {
+                            command_ui.clear();
+                        }
+                        *mode = EditorMode::Normal;
+                        let ack = Ack::new(
+                            AckKind::Open,
+                            StatusMessage::Text {
+                                text: String::from("opened"),
+                            },
+                            editor.file_path(),
+                        );
+                        RequestOutcome::FrameAndAck(ack)
+                    }
+                }
+                FilePath::Missing => RequestOutcome::Error(String::from("history file missing")),
             },
             CommandRequest::Case { style } => {
                 match style {

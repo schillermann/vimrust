@@ -1,4 +1,5 @@
 use crate::{command_history_store::CommandHistoryStore, prompt_line::PromptLine};
+use vimrust_protocol::FilePath;
 
 pub struct CommandHistory {
     entries: Vec<String>,
@@ -21,12 +22,12 @@ impl CommandHistory {
     }
 
     pub fn record(&mut self, line: &str) {
-        let trimmed = line.trim();
+        let trimmed = line.trim_start_matches(':').trim();
         if trimmed.is_empty() || trimmed == ":" {
             return;
         }
-        self.entries.push(line.to_string());
-        self.store.append(line);
+        self.entries.push(trimmed.to_string());
+        self.store.append(trimmed);
         self.cursor = CommandHistoryCursor::Tail;
         self.draft = CommandHistoryDraft::Empty;
     }
@@ -34,6 +35,10 @@ impl CommandHistory {
     pub fn reset_navigation(&mut self) {
         self.cursor = CommandHistoryCursor::Tail;
         self.draft = CommandHistoryDraft::Empty;
+    }
+
+    pub fn file(&self) -> FilePath {
+        self.store.file()
     }
 
     pub fn recall_previous(&mut self, prompt_line: &mut PromptLine) {

@@ -62,6 +62,11 @@ impl CommandRegistry {
                     mode: PromptMode::Command,
                 },
                 CommandEntry {
+                    name: "history",
+                    description: "Open command prompt history",
+                    mode: PromptMode::Command,
+                },
+                CommandEntry {
                     name: "case kebab",
                     description: "Convert selection to kebab-case",
                     mode: PromptMode::Visual,

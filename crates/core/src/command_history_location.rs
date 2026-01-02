@@ -1,4 +1,5 @@
 use crate::command_history_file::CommandHistoryFile;
+use vimrust_protocol::FilePath;
 
 pub enum CommandHistoryLocation {
     Missing,
@@ -17,6 +18,13 @@ impl CommandHistoryLocation {
         match self {
             CommandHistoryLocation::Missing => {}
             CommandHistoryLocation::File { file } => file.append(line),
+        }
+    }
+
+    pub fn file(&self) -> FilePath {
+        match self {
+            CommandHistoryLocation::Missing => FilePath::Missing,
+            CommandHistoryLocation::File { file } => file.path(),
         }
     }
 }

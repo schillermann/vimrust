@@ -1,5 +1,7 @@
 use std::{fs, io::Write, path::PathBuf};
 
+use vimrust_protocol::FilePath;
+
 pub struct CommandHistoryFile {
     directory: PathBuf,
     path: PathBuf,
@@ -38,5 +40,11 @@ impl CommandHistoryFile {
             Err(_) => return,
         };
         let _ = writeln!(file, "{}", line);
+    }
+
+    pub fn path(&self) -> FilePath {
+        FilePath::Provided {
+            path: self.path.to_string_lossy().to_string(),
+        }
     }
 }

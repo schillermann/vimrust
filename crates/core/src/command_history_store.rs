@@ -2,6 +2,7 @@ use crate::{
     command_history_environment::CommandHistoryEnvironment,
     command_history_location::CommandHistoryLocation,
 };
+use vimrust_protocol::FilePath;
 
 pub struct CommandHistoryStore {
     location: CommandHistoryLocation,
@@ -20,5 +21,9 @@ impl CommandHistoryStore {
 
     pub fn append(&self, line: &str) {
         self.location.append(line);
+    }
+
+    pub fn file(&self) -> FilePath {
+        self.location.file()
     }
 }

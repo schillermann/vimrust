@@ -5,7 +5,7 @@ use crate::{
     prompt_line::PromptLine, prompt_ui_snapshot::CommandUiSnapshot,
 };
 use vimrust_protocol::{
-    CommandLineSelection, CommandListItemFrame, CommandUiAction, CommandUiFrame,
+    CommandLineSelection, CommandListItemFrame, CommandUiAction, CommandUiFrame, FilePath,
 };
 
 pub struct CommandUiState {
@@ -61,6 +61,10 @@ impl CommandUiState {
 
     pub fn command_text(&self) -> &str {
         self.prompt_line.text()
+    }
+
+    pub fn history(&self) -> FilePath {
+        self.command_history.file()
     }
 
     pub fn line_selection(&self) -> CommandLineSelection {
