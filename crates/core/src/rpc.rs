@@ -530,6 +530,7 @@ impl CommandExecuteAction {
             };
             return;
         }
+        command_ui.remember_command(&source_line);
         let command = CommandText { raw: source_line }.request();
         self.outcome = match command {
             CommandRequest::Save => {

@@ -1,4 +1,5 @@
 mod command_completion;
+mod command_history;
 mod command_list;
 mod command_scope;
 mod command_ui_placeholder;

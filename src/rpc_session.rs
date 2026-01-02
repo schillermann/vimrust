@@ -1,6 +1,6 @@
 use std::{io, time::Duration};
 
-use crossterm::event::{self, Event, KeyCode};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 use crate::{
     mode::EditorMode,
@@ -145,7 +145,7 @@ impl<'a> RpcSession<'a> {
                 Event::Key(key_event) => {
                     if let Some(ref mut frame) = self.latest_frame {
                         let mode = UiFrameMode::new(frame.mode()).editor_mode();
-                        let action = self.keymap.action_for(mode, key_event.code);
+                        let action = self.keymap.action_for(mode, key_event);
                         self.ui.status_clear();
                         action.apply(&mut self.client)?;
                     }
@@ -201,13 +201,13 @@ impl ModeKeymap {
         }
     }
 
-    fn action_for(&self, mode: EditorMode, code: KeyCode) -> ClientAction {
+    fn action_for(&self, mode: EditorMode, event: KeyEvent) -> ClientAction {
         match mode {
-            EditorMode::Normal => self.normal.action(code),
-            EditorMode::Edit => self.edit.action(code),
-            EditorMode::Visual => self.visual.action(code),
-            EditorMode::PromptCommand => self.prompt_command.action(code),
-            EditorMode::PromptKeymap => self.prompt_keymap.action(code),
+            EditorMode::Normal => self.normal.action(event),
+            EditorMode::Edit => self.edit.action(event),
+            EditorMode::Visual => self.visual.action(event),
+            EditorMode::PromptCommand => self.prompt_command.action(event),
+            EditorMode::PromptKeymap => self.prompt_keymap.action(event),
         }
     }
 }
@@ -215,8 +215,8 @@ impl ModeKeymap {
 struct NormalModeInput;
 
 impl NormalModeInput {
-    fn action(&self, code: KeyCode) -> ClientAction {
-        match code {
+    fn action(&self, event: KeyEvent) -> ClientAction {
+        match event.code {
             KeyCode::Char('q') => ClientAction::Send(RpcRequest::EditorQuit),
             KeyCode::Char('e') => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Edit,
@@ -263,8 +263,8 @@ impl NormalModeInput {
 struct EditModeInput;
 
 impl EditModeInput {
-    fn action(&self, code: KeyCode) -> ClientAction {
-        match code {
+    fn action(&self, event: KeyEvent) -> ClientAction {
+        match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Normal,
             }),
@@ -286,8 +286,8 @@ impl EditModeInput {
 struct VisualModeInput;
 
 impl VisualModeInput {
-    fn action(&self, code: KeyCode) -> ClientAction {
-        match code {
+    fn action(&self, event: KeyEvent) -> ClientAction {
+        match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Normal,
             }),
@@ -326,8 +326,23 @@ impl VisualModeInput {
 struct PromptCommandInput;
 
 impl PromptCommandInput {
-    fn action(&self, code: KeyCode) -> ClientAction {
-        match code {
+    fn action(&self, event: KeyEvent) -> ClientAction {
+        if event.modifiers.contains(KeyModifiers::CONTROL) {
+            match event.code {
+                KeyCode::Up => {
+                    return ClientAction::Send(RpcRequest::CommandUi {
+                        action: CommandUiAction::HistoryPrevious,
+                    });
+                }
+                KeyCode::Down => {
+                    return ClientAction::Send(RpcRequest::CommandUi {
+                        action: CommandUiAction::HistoryNext,
+                    });
+                }
+                _ => {}
+            }
+        }
+        match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Normal,
             }),
@@ -370,8 +385,8 @@ impl PromptCommandInput {
 struct PromptKeymapInput;
 
 impl PromptKeymapInput {
-    fn action(&self, code: KeyCode) -> ClientAction {
-        match code {
+    fn action(&self, event: KeyEvent) -> ClientAction {
+        match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Normal,
             }),

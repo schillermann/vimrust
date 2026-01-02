@@ -1,5 +1,6 @@
 use crate::{
-    command_completion::CommandCompletion, command_list::CommandList, command_scope::CommandScope,
+    command_completion::CommandCompletion, command_history::CommandHistory,
+    command_list::CommandList, command_scope::CommandScope,
     command_ui_placeholder::CommandPlaceholder, keymap_list::KeymapList, prompt_entry::PromptEntry,
     prompt_line::PromptLine, prompt_ui_snapshot::CommandUiSnapshot,
 };
@@ -11,6 +12,7 @@ pub struct CommandUiState {
     prompt_line: PromptLine,
     command_list: CommandList,
     keymap_list: KeymapList,
+    command_history: CommandHistory,
     focus_on_list: bool,
     prompt_kind: PromptKind,
     command_scope: CommandScope,
@@ -22,6 +24,7 @@ impl CommandUiState {
             prompt_line: PromptLine::new(),
             command_list: CommandList::new(),
             keymap_list: KeymapList::new(),
+            command_history: CommandHistory::new(),
             focus_on_list: false,
             prompt_kind: PromptKind::Command,
             command_scope: CommandScope::Normal,
@@ -38,6 +41,7 @@ impl CommandUiState {
         self.prompt_line.start_prompt(':');
         self.command_list.reset_selection();
         self.focus_on_list = false;
+        self.command_history.reset_navigation();
     }
 
     pub fn prompt_keymap(&mut self) {
@@ -45,12 +49,14 @@ impl CommandUiState {
         self.prompt_line.start_prompt(';');
         self.keymap_list.reset_selection();
         self.focus_on_list = false;
+        self.command_history.reset_navigation();
     }
 
     pub fn line_overwrite(&mut self, new_content: String) {
         self.prompt_line.set_content(new_content);
         self.list_reset();
         self.focus_on_list = false;
+        self.command_history.reset_navigation();
     }
 
     pub fn command_text(&self) -> &str {
@@ -65,6 +71,7 @@ impl CommandUiState {
         self.prompt_line.clear();
         self.list_reset();
         self.focus_on_list = false;
+        self.command_history.reset_navigation();
     }
 
     pub fn list_scroll_adjust(&mut self, visible_rows: usize) {
@@ -83,16 +90,19 @@ impl CommandUiState {
                 self.prompt_line.char_insert(ch);
                 self.list_reset();
                 self.focus_on_list = false;
+                self.command_history.reset_navigation();
             }
             CommandUiAction::Backspace => {
                 self.prompt_line.backspace();
                 self.list_reset();
                 self.focus_on_list = false;
+                self.command_history.reset_navigation();
             }
             CommandUiAction::Delete => {
                 self.prompt_line.delete();
                 self.list_reset();
                 self.focus_on_list = false;
+                self.command_history.reset_navigation();
             }
             CommandUiAction::MoveLeft => {
                 self.prompt_line.cursor_move_left();
@@ -118,6 +128,21 @@ impl CommandUiState {
                 completion.apply(&mut self.prompt_line);
                 self.list_reset();
                 self.focus_on_list = false;
+                self.command_history.reset_navigation();
+            }
+            CommandUiAction::HistoryPrevious => {
+                if matches!(self.prompt_kind, PromptKind::Command) {
+                    self.command_history.recall_previous(&mut self.prompt_line);
+                    self.list_reset();
+                    self.focus_on_list = false;
+                }
+            }
+            CommandUiAction::HistoryNext => {
+                if matches!(self.prompt_kind, PromptKind::Command) {
+                    self.command_history.recall_next(&mut self.prompt_line);
+                    self.list_reset();
+                    self.focus_on_list = false;
+                }
             }
             CommandUiAction::MoveSelectionUp | CommandUiAction::MoveSelectionDown => {
                 let match_count = {
@@ -176,6 +201,7 @@ impl CommandUiState {
                     let selection = placeholder.selection_for(&line);
                     self.prompt_line.set_content_with_selection(line, selection);
                     self.focus_on_list = false;
+                    self.command_history.reset_navigation();
 
                     let updated_matches = self.list_filter(self.prompt_line.text());
                     let mut updated_index = None;
@@ -194,6 +220,12 @@ impl CommandUiState {
                     return;
                 }
             }
+        }
+    }
+
+    pub fn remember_command(&mut self, line: &str) {
+        if matches!(self.prompt_kind, PromptKind::Command) {
+            self.command_history.record(line);
         }
     }
 

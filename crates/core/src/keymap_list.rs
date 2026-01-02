@@ -202,6 +202,16 @@ impl KeymapRegistry {
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptCommand,
+                    key: "Ctrl+Up",
+                    description: "Recall previous command from history",
+                },
+                KeymapEntry {
+                    mode: PromptMode::PromptCommand,
+                    key: "Ctrl+Down",
+                    description: "Recall next command from history",
+                },
+                KeymapEntry {
+                    mode: PromptMode::PromptCommand,
                     key: "Up",
                     description: "Move selection up",
                 },
