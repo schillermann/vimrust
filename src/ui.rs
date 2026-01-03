@@ -3,6 +3,7 @@ use std::io;
 use crossterm::cursor::{Hide, Show};
 
 use crate::{
+    help_line::HelpLine,
     mode::EditorMode,
     status_line::StatusLine,
     terminal::Terminal,
@@ -15,6 +16,7 @@ use vimrust_protocol::{CommandUiAccess, Frame, RpcRequest, StatusMessage, Viewpo
 pub struct Ui<'a> {
     terminal: &'a mut Terminal,
     status_line: StatusLine,
+    help_line: HelpLine,
     updated: bool,
     quit: bool,
     mode: EditorMode,
@@ -25,6 +27,7 @@ impl<'a> Ui<'a> {
         Self {
             terminal,
             status_line: StatusLine::new(),
+            help_line: HelpLine::new(),
             updated: false,
             quit: false,
             mode: EditorMode::Normal,
@@ -120,7 +123,7 @@ impl<'a, 'b> FrameRender<'a, 'b> {
             return Ok(());
         }
 
-        let usable_rows = number_of_rows.saturating_sub(2);
+        let usable_rows = number_of_rows.saturating_sub(3);
 
         self.ui.terminal.clear_buffer();
         {
@@ -141,7 +144,7 @@ impl<'a, 'b> FrameRender<'a, 'b> {
                 body.paint(self.ui.terminal)?;
             }
 
-            if number_of_rows > 1 {
+            if number_of_rows > 2 {
                 self.ui.status_line.file_status_update(self.frame.status());
                 self.ui.status_line.draw(
                     self.ui.terminal,
@@ -150,6 +153,15 @@ impl<'a, 'b> FrameRender<'a, 'b> {
                     self.frame.position(),
                     number_of_columns,
                     number_of_rows,
+                )?;
+            }
+
+            if number_of_rows > 1 {
+                self.ui.help_line.draw(
+                    self.ui.terminal,
+                    number_of_columns,
+                    number_of_rows,
+                    &self.ui.mode,
                 )?;
             }
 
