@@ -257,6 +257,16 @@ impl KeymapRegistry {
                 },
                 KeymapEntry {
                     mode: PromptMode::PromptKeymap,
+                    key: "Ctrl+Up",
+                    description: "Move focus to keymap input",
+                },
+                KeymapEntry {
+                    mode: PromptMode::PromptKeymap,
+                    key: "Ctrl+Down",
+                    description: "Move focus to keymap list",
+                },
+                KeymapEntry {
+                    mode: PromptMode::PromptKeymap,
                     key: "Up",
                     description: "Move selection up",
                 },

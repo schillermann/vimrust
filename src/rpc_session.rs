@@ -399,6 +399,21 @@ struct PromptKeymapInput;
 
 impl PromptKeymapInput {
     fn action(&self, event: KeyEvent) -> ClientAction {
+        if event.modifiers.contains(KeyModifiers::CONTROL) {
+            match event.code {
+                KeyCode::Up => {
+                    return ClientAction::Send(RpcRequest::CommandUi {
+                        action: CommandUiAction::FocusPrompt,
+                    });
+                }
+                KeyCode::Down => {
+                    return ClientAction::Send(RpcRequest::CommandUi {
+                        action: CommandUiAction::MoveSelectionDown,
+                    });
+                }
+                _ => {}
+            }
+        }
         match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
                 mode: RpcMode::Normal,

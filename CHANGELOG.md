@@ -11,6 +11,7 @@ Conventional Commits.
 - Auto completion for file paths to open files in the command line prompt.
 - Command prompt history navigation with `Up/Down`.
 - Jump between command line and list via `Ctrl-Up/Ctrl-Down`.
+- Jump between keymap input and list via `Ctrl-Up/Ctrl-Down`.
 - Open the command prompt history file via `:history`.
 - Persist command prompt history across sessions in the user state directory.
 - Store command history in a `history-commands.txt` file.
