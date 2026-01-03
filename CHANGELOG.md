@@ -8,6 +8,7 @@ Conventional Commits.
 ## [Unreleased]
 
 ### Added
+- Help line footer with mode-aware shortcuts and key highlighting.
 - Auto completion for file paths to open files in the command line prompt.
 - Command prompt line text is white when the focus is on it, otherwise it is dimmed.
 - Command prompt history navigation with `Up/Down`.

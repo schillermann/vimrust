@@ -766,7 +766,7 @@ impl RequestOutcomeRecord {
                 action.outcome()
             }
             RpcRequest::CursorMove { direction } => {
-                let usable_rows = size.1.saturating_sub(2);
+                let usable_rows = size.1.saturating_sub(3);
                 let mut action = CursorMoveAction {
                     direction,
                     usable_rows,
@@ -860,7 +860,7 @@ pub fn build_frame(
     size: (u16, u16),
     command_ui: Option<PromptUiFrame>,
 ) -> Frame {
-    let usable_rows = size.1.saturating_sub(2);
+    let usable_rows = size.1.saturating_sub(3);
     let view = editor.view_with_scroll(size.0, usable_rows);
     let rows = editor.rows_render(&view, size.0, usable_rows);
     let selection = editor.selection_frame(&view, size.0, usable_rows);
@@ -929,7 +929,7 @@ impl<'a> ResponseWriter<'a> {
 
 fn command_list_rows(size: (u16, u16)) -> usize {
     size.1
-        .saturating_sub(2) // command line + status line
+        .saturating_sub(3) // command line + status line + help line
         .saturating_sub(3) as usize // blank + header + divider rows
 }
 
@@ -1050,7 +1050,7 @@ mod tests {
 
         let frame = build_frame(&editor, &mode, &status, size, None);
         let mut rows = RowsProbe::new();
-        frame.paint_rows(size.1.saturating_sub(2), &mut rows);
+        frame.paint_rows(size.1.saturating_sub(3), &mut rows);
         rows.expect_row(0, "hi");
     }
 
@@ -1077,7 +1077,7 @@ mod tests {
 
         let frame = build_frame(&editor, &mode, &status, size, None);
         let mut rows = RowsProbe::new();
-        frame.paint_rows(size.1.saturating_sub(2), &mut rows);
+        frame.paint_rows(size.1.saturating_sub(3), &mut rows);
         rows.expect_row(0, "hello");
         rows.expect_row(1, " world");
     }
