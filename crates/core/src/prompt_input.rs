@@ -1,17 +1,17 @@
-use vimrust_protocol::CommandLineSelection;
+use vimrust_protocol::CommandSelection;
 
-pub struct PromptLine {
+pub struct PromptInput {
     content: String,
     cursor_x: u16,
-    selection: CommandLineSelection,
+    selection: CommandSelection,
 }
 
-impl PromptLine {
+impl PromptInput {
     pub fn new() -> Self {
         Self {
             content: String::new(),
             cursor_x: 0,
-            selection: CommandLineSelection::None,
+            selection: CommandSelection::None,
         }
     }
 
@@ -34,11 +34,7 @@ impl PromptLine {
         self.selection.clear();
     }
 
-    pub fn set_content_with_selection(
-        &mut self,
-        new_content: String,
-        selection: CommandLineSelection,
-    ) {
+    pub fn set_content_with_selection(&mut self, new_content: String, selection: CommandSelection) {
         self.content = new_content;
         self.selection = selection;
         self.cursor_x = self.selection_start().min(self.content.len() as u16);
@@ -52,7 +48,7 @@ impl PromptLine {
         self.cursor_x
     }
 
-    pub fn selection(&self) -> CommandLineSelection {
+    pub fn selection(&self) -> CommandSelection {
         self.selection.clone()
     }
 
@@ -146,15 +142,15 @@ impl PromptLine {
 
     fn selection_active(&self) -> bool {
         match self.selection {
-            CommandLineSelection::None => false,
-            CommandLineSelection::Range { start, end } => start < end,
+            CommandSelection::None => false,
+            CommandSelection::Range { start, end } => start < end,
         }
     }
 
     fn selection_range(&self) -> (usize, usize) {
         match self.selection {
-            CommandLineSelection::None => (0, 0),
-            CommandLineSelection::Range { start, end } => {
+            CommandSelection::None => (0, 0),
+            CommandSelection::Range { start, end } => {
                 let max = self.content.len() as u16;
                 let start = start.min(max);
                 let end = end.min(max).max(start);
@@ -165,8 +161,8 @@ impl PromptLine {
 
     fn selection_start(&self) -> u16 {
         match self.selection {
-            CommandLineSelection::None => self.content.len() as u16,
-            CommandLineSelection::Range { start, .. } => start,
+            CommandSelection::None => self.content.len() as u16,
+            CommandSelection::Range { start, .. } => start,
         }
     }
 }

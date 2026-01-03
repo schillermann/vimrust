@@ -10,7 +10,7 @@ pub struct ProtocolVersion {
 
 impl ProtocolVersion {
     pub fn current() -> Self {
-        Self { value: 3 }
+        Self { value: 2 }
     }
 }
 

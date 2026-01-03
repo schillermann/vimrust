@@ -1,11 +1,11 @@
 use crate::{frame_signal::FrameSignal, prompt_ui_state::CommandUiView};
-use vimrust_protocol::CommandLineSelection;
+use vimrust_protocol::CommandSelection;
 
 pub struct CommandUiSnapshot {
     command_text: String,
     cursor_column: u16,
-    line_selection: CommandLineSelection,
-    focus_on_list: bool,
+    line_selection: CommandSelection,
+    line_focus: bool,
     selection: Option<usize>,
     scroll_offset: usize,
 }
@@ -14,8 +14,8 @@ impl CommandUiSnapshot {
     pub(crate) fn new(
         command_text: String,
         cursor_column: u16,
-        line_selection: CommandLineSelection,
-        focus_on_list: bool,
+        line_selection: CommandSelection,
+        line_focus: bool,
         selection: Option<usize>,
         scroll_offset: usize,
     ) -> Self {
@@ -23,7 +23,7 @@ impl CommandUiSnapshot {
             command_text,
             cursor_column,
             line_selection,
-            focus_on_list,
+            line_focus,
             selection,
             scroll_offset,
         }
@@ -33,7 +33,7 @@ impl CommandUiSnapshot {
         let same_text = self.command_text == view.text;
         let same_cursor = self.cursor_column == view.cursor;
         let same_line_selection = self.line_selection == view.selection;
-        let same_focus = self.focus_on_list == view.focus_on_list;
+        let same_focus = self.line_focus == view.line_focus;
         let same_selection = self.selection == view.selection_index;
         let same_scroll = self.scroll_offset == view.scroll_offset;
         if same_text

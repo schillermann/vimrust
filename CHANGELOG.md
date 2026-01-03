@@ -9,6 +9,7 @@ Conventional Commits.
 
 ### Added
 - Auto completion for file paths to open files in the command line prompt.
+- Command prompt line text is white when the focus is on it, otherwise it is dimmed.
 - Command prompt history navigation with `Up/Down`.
 - Jump between command line and list via `Ctrl-Up/Ctrl-Down`.
 - Jump between keymap input and list via `Ctrl-Up/Ctrl-Down`.

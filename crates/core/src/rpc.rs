@@ -1,9 +1,9 @@
 use std::io::{self, BufRead, Write};
 
-use crate::{EditorMode, FrameSignal, editor::Editor, file::File, prompt_ui_state::CommandUiState};
+use crate::{EditorMode, FrameSignal, editor::Editor, file::File, prompt_ui_state::PromptUiState};
 use vimrust_protocol::{
-    Ack, AckKind, CommandLineSelection, CommandUiAction, CommandUiFrame, Cursor, DeleteKind,
-    FilePath, Frame, FrameMode, MoveDirection, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
+    Ack, AckKind, CommandSelection, Cursor, DeleteKind, FilePath, Frame, FrameMode, MoveDirection,
+    PromptUiAction, PromptUiFrame, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
     StatusMessage, StatusPosition,
 };
 
@@ -50,7 +50,7 @@ impl StdioSession {
         let mut mode = EditorMode::Normal;
         let mut status_message = StatusMessage::Empty;
         let mut size: (u16, u16) = (80, 24);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
 
         for line in lines {
             let line = line?;
@@ -144,7 +144,7 @@ struct RequestContext<'a> {
     mode: &'a mut EditorMode,
     status: &'a mut StatusMessage,
     size: &'a mut (u16, u16),
-    command_ui: &'a mut CommandUiState,
+    command_ui: &'a mut PromptUiState,
 }
 
 impl<'a> RequestContext<'a> {
@@ -153,7 +153,7 @@ impl<'a> RequestContext<'a> {
         mode: &'a mut EditorMode,
         status: &'a mut StatusMessage,
         size: &'a mut (u16, u16),
-        command_ui: &'a mut CommandUiState,
+        command_ui: &'a mut PromptUiState,
     ) -> Self {
         Self {
             editor,
@@ -269,14 +269,14 @@ impl CursorMoveAction {
     }
 }
 
-struct CommandUiActionRequest {
-    action: CommandUiAction,
+struct PromptUiActionRequest {
+    action: PromptUiAction,
     list_rows: usize,
     signal: FrameSignal,
 }
 
-impl CommandUiActionRequest {
-    fn apply(&mut self, command_ui: &mut CommandUiState) {
+impl PromptUiActionRequest {
+    fn apply(&mut self, command_ui: &mut PromptUiState) {
         let snapshot = command_ui.snapshot();
         command_ui.apply_action(self.action, self.list_rows);
         let view = command_ui.view();
@@ -358,15 +358,15 @@ impl<'a> CommandPlaceholderProbe<'a> {
 }
 
 struct CommandExecutionGate {
-    selection: CommandLineSelection,
+    selection: CommandSelection,
     placeholder: PlaceholderPresence,
 }
 
 impl CommandExecutionGate {
     fn decision(&self) -> CommandExecutionDecision {
         match self.selection {
-            CommandLineSelection::Range { .. } => CommandExecutionDecision::Block,
-            CommandLineSelection::None => match self.placeholder {
+            CommandSelection::Range { .. } => CommandExecutionDecision::Block,
+            CommandSelection::None => match self.placeholder {
                 PlaceholderPresence::Found => CommandExecutionDecision::Block,
                 PlaceholderPresence::Missing => CommandExecutionDecision::Allow,
             },
@@ -497,13 +497,13 @@ impl CommandExecuteAction {
         editor: &mut Editor,
         mode: &mut EditorMode,
         status: &mut StatusMessage,
-        command_ui: &mut CommandUiState,
+        command_ui: &mut PromptUiState,
     ) {
         self.selection_signal = FrameSignal::Skip;
         match &self.line {
             CommandLineRequest::FromUi => {
                 let snapshot = command_ui.snapshot();
-                command_ui.apply_action(CommandUiAction::SelectFromList, self.list_rows);
+                command_ui.apply_action(PromptUiAction::SelectFromList, self.list_rows);
                 let view = command_ui.view();
                 self.selection_signal = snapshot.frame_signal(&view);
             }
@@ -780,7 +780,7 @@ impl RequestOutcomeRecord {
                     RequestOutcome::Skip
                 } else {
                     let list_rows = command_list_rows(*size);
-                    let mut request = CommandUiActionRequest {
+                    let mut request = PromptUiActionRequest {
                         action,
                         list_rows,
                         signal: FrameSignal::Skip,
@@ -858,7 +858,7 @@ pub fn build_frame(
     mode: &EditorMode,
     status: &StatusMessage,
     size: (u16, u16),
-    command_ui: Option<CommandUiFrame>,
+    command_ui: Option<PromptUiFrame>,
 ) -> Frame {
     let usable_rows = size.1.saturating_sub(2);
     let view = editor.view_with_scroll(size.0, usable_rows);
@@ -951,7 +951,7 @@ mod tests {
             mode: &'a mut EditorMode,
             status: &'a mut StatusMessage,
             size: &'a mut (u16, u16),
-            command_ui: &'a mut CommandUiState,
+            command_ui: &'a mut PromptUiState,
         ) -> Self {
             Self {
                 record: RequestOutcomeRecord::new(),
@@ -1033,7 +1033,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1062,7 +1062,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1089,7 +1089,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1111,7 +1111,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1136,7 +1136,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1161,7 +1161,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 8);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1177,7 +1177,7 @@ mod tests {
         assert!(matches!(outcome, RequestOutcome::Frame));
 
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 'x' },
+            action: PromptUiAction::InsertChar { ch: 'x' },
         });
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
@@ -1197,7 +1197,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1207,7 +1207,7 @@ mod tests {
         );
 
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 'x' },
+            action: PromptUiAction::InsertChar { ch: 'x' },
         });
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
@@ -1220,7 +1220,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1242,7 +1242,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1272,7 +1272,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1326,7 +1326,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1370,7 +1370,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1383,7 +1383,7 @@ mod tests {
             mode: RpcMode::PromptCommand,
         });
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 's' },
+            action: PromptUiAction::InsertChar { ch: 's' },
         });
 
         harness.accept(RpcRequest::CommandExecute { line: None });
@@ -1416,7 +1416,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1430,7 +1430,7 @@ mod tests {
         });
 
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::MoveSelectionDown,
+            action: PromptUiAction::MoveSelectionDown,
         });
 
         harness.accept(RpcRequest::CommandExecute { line: None });
@@ -1457,7 +1457,7 @@ mod tests {
         let mut mode = EditorMode::PromptCommand;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1471,20 +1471,20 @@ mod tests {
         });
 
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 'o' },
+            action: PromptUiAction::InsertChar { ch: 'o' },
         });
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 'p' },
+            action: PromptUiAction::InsertChar { ch: 'p' },
         });
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 'e' },
+            action: PromptUiAction::InsertChar { ch: 'e' },
         });
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 'n' },
+            action: PromptUiAction::InsertChar { ch: 'n' },
         });
 
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::MoveSelectionDown,
+            action: PromptUiAction::MoveSelectionDown,
         });
 
         harness.accept(RpcRequest::CommandExecute { line: None });
@@ -1505,7 +1505,7 @@ mod tests {
         let mut mode = EditorMode::PromptCommand;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1534,7 +1534,7 @@ mod tests {
         let mut mode = EditorMode::PromptCommand;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1556,7 +1556,7 @@ mod tests {
         let mut mode = EditorMode::PromptCommand;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1592,7 +1592,7 @@ mod tests {
         let mut mode = EditorMode::PromptCommand;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1616,7 +1616,7 @@ mod tests {
         let mut mode = EditorMode::PromptCommand;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1639,7 +1639,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1661,7 +1661,7 @@ mod tests {
         let mut mode = EditorMode::PromptKeymap;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1684,7 +1684,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1706,7 +1706,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1719,10 +1719,10 @@ mod tests {
             mode: RpcMode::PromptCommand,
         });
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::InsertChar { ch: 's' },
+            action: PromptUiAction::InsertChar { ch: 's' },
         });
         harness.accept(RpcRequest::CommandUi {
-            action: CommandUiAction::MoveSelectionDown,
+            action: PromptUiAction::MoveSelectionDown,
         });
 
         let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
@@ -1732,7 +1732,7 @@ mod tests {
         };
         assert_eq!(command_ui_frame.command_text(), ":s");
         assert_eq!(command_ui_frame.cursor_column(), 2);
-        assert!(command_ui_frame.list_focus());
+        assert_eq!(command_ui_frame.line_focus(), false);
         assert!(command_ui_frame.selected_item().is_some());
         assert!(!command_ui_frame.command_items().is_empty());
     }
@@ -1743,7 +1743,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,
@@ -1804,7 +1804,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         {
             let mut harness = RequestHarness::new(
                 &mut editor,
@@ -1856,7 +1856,7 @@ mod tests {
         let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
-        let mut command_ui = CommandUiState::new();
+        let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
             &mut mode,

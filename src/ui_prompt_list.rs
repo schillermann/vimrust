@@ -9,11 +9,11 @@ use crossterm::{
 };
 
 use crate::terminal::Terminal;
-use vimrust_protocol::{CommandUiFrame, PromptMode};
+use vimrust_protocol::{PromptMode, PromptUiFrame};
 
 pub(crate) struct PromptListView<'a> {
     terminal: &'a mut Terminal,
-    cmd_ui: &'a CommandUiFrame,
+    cmd_ui: &'a PromptUiFrame,
     number_of_columns: u16,
     start_row: u16,
     number_of_rows: u16,
@@ -22,7 +22,7 @@ pub(crate) struct PromptListView<'a> {
 impl<'a> PromptListView<'a> {
     pub(crate) fn new(
         terminal: &'a mut Terminal,
-        cmd_ui: &'a CommandUiFrame,
+        cmd_ui: &'a PromptUiFrame,
         number_of_columns: u16,
         start_row: u16,
         number_of_rows: u16,

@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{CommandUiAction, FilePath, Frame, StatusMessage};
+use crate::{FilePath, Frame, PromptUiAction, StatusMessage};
 
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -28,7 +28,7 @@ pub enum RpcRequest {
         direction: MoveDirection,
     },
     CommandUi {
-        action: CommandUiAction,
+        action: PromptUiAction,
     },
     ModeSet {
         mode: RpcMode,

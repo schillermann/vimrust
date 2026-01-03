@@ -23,3 +23,23 @@
 - Protocol definitions: `crates/protocol/src`.
 - Core behavior: `crates/core/src`.
 - UI and RPC session: `src/rpc_session.rs`, `src/ui.rs`.
+
+## Protocol module map
+```
+crates/protocol/src
+├─ lib.rs (re-exports)
+├─ frame.rs
+│  ├─ uses: prompt_ui.rs (CommandUiFrame)
+│  ├─ uses: status.rs (StatusMessage)
+│  ├─ uses: path.rs (FilePath)
+│  └─ uses: version.rs (ProtocolVersion)
+├─ rpc.rs
+│  ├─ uses: prompt_ui.rs (CommandUiAction)
+│  ├─ uses: frame.rs (Frame)
+│  ├─ uses: status.rs (StatusMessage)
+│  └─ uses: path.rs (FilePath)
+├─ prompt_ui.rs (CommandUiFrame, CommandUiAction, CommandLineSelection, PromptMode)
+├─ status.rs (StatusMessage)
+├─ path.rs (FilePath)
+└─ version.rs (ProtocolVersion)
+```

@@ -383,8 +383,8 @@ impl KeymapList {
         false
     }
 
-    fn query_from_input(prompt_line: &str) -> String {
-        let trimmed = prompt_line
+    fn query_from_input(prompt_input: &str) -> String {
+        let trimmed = prompt_input
             .trim_start_matches(':')
             .trim_start_matches(';')
             .trim();

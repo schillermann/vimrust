@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{CommandUiFrame, FilePath, ProtocolVersion, StatusMessage};
+use crate::{FilePath, PromptUiFrame, ProtocolVersion, StatusMessage};
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -22,7 +22,7 @@ pub struct Frame {
     status_position: StatusPosition,
     file_path: FilePath,
     size: Viewport,
-    command_ui: Option<CommandUiFrame>,
+    command_ui: Option<PromptUiFrame>,
     #[serde(default)]
     selection: FrameSelection,
     #[serde(default)]
@@ -38,7 +38,7 @@ impl Frame {
         status_position: StatusPosition,
         file_path: FilePath,
         size: (u16, u16),
-        command_ui: Option<CommandUiFrame>,
+        command_ui: Option<PromptUiFrame>,
         selection: FrameSelection,
         protocol_version: ProtocolVersion,
     ) -> Self {
@@ -193,7 +193,7 @@ impl Viewport {
 }
 
 pub enum CommandUiAccess {
-    Available(CommandUiFrame),
+    Available(PromptUiFrame),
     Missing,
 }
 

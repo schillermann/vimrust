@@ -9,13 +9,14 @@ use crossterm::{
 };
 
 use crate::terminal::Terminal;
-use vimrust_protocol::CommandLineSelection;
+use vimrust_protocol::CommandSelection;
 
 pub(crate) struct CommandLinePanel<'a, 'b> {
     terminal: &'a mut Terminal,
     number_of_columns: u16,
     content: &'b str,
-    selection: CommandLineSelection,
+    selection: CommandSelection,
+    focus: CommandLineFocus,
 }
 
 impl<'a, 'b> CommandLinePanel<'a, 'b> {
@@ -23,13 +24,15 @@ impl<'a, 'b> CommandLinePanel<'a, 'b> {
         terminal: &'a mut Terminal,
         number_of_columns: u16,
         content: &'b str,
-        selection: CommandLineSelection,
+        selection: CommandSelection,
+        focus: bool,
     ) -> Self {
         Self {
             terminal,
             number_of_columns,
             content,
             selection,
+            focus: CommandLineFocus { on_prompt: focus },
         }
     }
 
@@ -38,7 +41,7 @@ impl<'a, 'b> CommandLinePanel<'a, 'b> {
         self.terminal
             .queue_add_command(Clear(ClearType::CurrentLine))?;
         let placeholder = CommandLinePlaceholder::new();
-        let display = placeholder.display_for(self.content);
+        let display = placeholder.display_for(self.content, &self.focus);
         let display_content = display.text();
 
         // Leave one column of padding on both sides of the command line.
@@ -94,17 +97,17 @@ impl CommandLinePlaceholder {
         }
     }
 
-    fn display_for(&self, content: &str) -> CommandLineDisplay {
+    fn display_for(&self, content: &str, focus: &CommandLineFocus) -> CommandLineDisplay {
         if content.is_empty() {
-            return CommandLineDisplay::placeholder(self.empty_text);
+            return CommandLineDisplay::placeholder(self.empty_text, focus);
         }
         if content == ":" {
-            return CommandLineDisplay::placeholder(self.command_text);
+            return CommandLineDisplay::placeholder(self.command_text, focus);
         }
         if content == ";" {
-            return CommandLineDisplay::placeholder(self.keymap_text);
+            return CommandLineDisplay::placeholder(self.keymap_text, focus);
         }
-        CommandLineDisplay::content(content)
+        CommandLineDisplay::content(content, focus)
     }
 }
 
@@ -114,17 +117,17 @@ struct CommandLineDisplay {
 }
 
 impl CommandLineDisplay {
-    fn placeholder(text: &str) -> Self {
+    fn placeholder(text: &str, focus: &CommandLineFocus) -> Self {
         Self {
             text: text.to_string(),
-            color: Color::DarkGrey,
+            color: focus.placeholder_foreground(),
         }
     }
 
-    fn content(text: &str) -> Self {
+    fn content(text: &str, focus: &CommandLineFocus) -> Self {
         Self {
             text: text.to_string(),
-            color: Color::Grey,
+            color: focus.content_foreground(),
         }
     }
 
@@ -137,12 +140,34 @@ impl CommandLineDisplay {
     }
 }
 
+struct CommandLineFocus {
+    on_prompt: bool,
+}
+
+impl CommandLineFocus {
+    fn placeholder_foreground(&self) -> Color {
+        if self.on_prompt {
+            Color::White
+        } else {
+            Color::DarkGrey
+        }
+    }
+
+    fn content_foreground(&self) -> Color {
+        if self.on_prompt {
+            Color::White
+        } else {
+            Color::DarkGrey
+        }
+    }
+}
+
 struct CommandLineHighlight {
-    selection: CommandLineSelection,
+    selection: CommandSelection,
 }
 
 impl CommandLineHighlight {
-    fn new(selection: CommandLineSelection) -> Self {
+    fn new(selection: CommandSelection) -> Self {
         Self { selection }
     }
 

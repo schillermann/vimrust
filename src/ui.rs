@@ -126,7 +126,7 @@ impl<'a, 'b> FrameRender<'a, 'b> {
         {
             self.ui.terminal.queue_add_command(Hide)?;
 
-            let mut command_input = CommandInput::new();
+            let mut command_input = PromptInput::new();
             match self.frame.command_ui() {
                 CommandUiAccess::Available(command_ui) => {
                     command_input.use_frame(&command_ui);
@@ -170,22 +170,25 @@ impl<'a, 'b> ViewportSink for FrameRender<'a, 'b> {
     }
 }
 
-struct CommandInput {
+struct PromptInput {
     text: String,
-    selection: vimrust_protocol::CommandLineSelection,
+    selection: vimrust_protocol::CommandSelection,
+    focus: bool,
 }
 
-impl CommandInput {
+impl PromptInput {
     fn new() -> Self {
         Self {
             text: String::new(),
-            selection: vimrust_protocol::CommandLineSelection::None,
+            selection: vimrust_protocol::CommandSelection::None,
+            focus: false,
         }
     }
 
-    fn use_frame(&mut self, command_ui: &vimrust_protocol::CommandUiFrame) {
+    fn use_frame(&mut self, command_ui: &vimrust_protocol::PromptUiFrame) {
         self.text = command_ui.command_text().to_string();
         self.selection = command_ui.command_selection();
+        self.focus = command_ui.line_focus();
     }
 
     fn panel<'a>(
@@ -198,6 +201,7 @@ impl CommandInput {
             number_of_columns,
             &self.text,
             self.selection.clone(),
+            self.focus,
         )
     }
 }

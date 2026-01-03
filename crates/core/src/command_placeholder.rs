@@ -1,21 +1,21 @@
-use vimrust_protocol::CommandLineSelection;
+use vimrust_protocol::CommandSelection;
 
 pub struct CommandPlaceholder;
 
 impl CommandPlaceholder {
-    pub fn selection_for(&self, line: &str) -> CommandLineSelection {
+    pub fn selection_for(&self, line: &str) -> CommandSelection {
         let start = match line.find('{') {
             Some(start) => start,
-            None => return CommandLineSelection::None,
+            None => return CommandSelection::None,
         };
         let tail = &line[start..];
         let end = match tail.find('}') {
             Some(offset) => start.saturating_add(offset).saturating_add(1),
-            None => return CommandLineSelection::None,
+            None => return CommandSelection::None,
         };
         if end <= start {
-            return CommandLineSelection::None;
+            return CommandSelection::None;
         }
-        CommandLineSelection::range(start as u16, end as u16)
+        CommandSelection::range(start as u16, end as u16)
     }
 }

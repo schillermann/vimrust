@@ -9,7 +9,7 @@ use crate::{
     ui::Ui,
 };
 use vimrust_protocol::{
-    CommandUiAccess, CommandUiAction, DeleteKind, Frame, MoveDirection, RpcMode, RpcRequest,
+    CommandUiAccess, DeleteKind, Frame, MoveDirection, PromptUiAction, RpcMode, RpcRequest,
     RpcResponse, StatusMessage,
 };
 
@@ -145,7 +145,7 @@ impl<'a> RpcSession<'a> {
                 Event::Key(key_event) => {
                     if let Some(ref mut frame) = self.latest_frame {
                         let mode = UiFrameMode::new(frame.mode()).editor_mode();
-                        let focus = PromptListFocus::new(frame);
+                        let focus = PromptFocus::new(frame);
                         let action = self.keymap.action_for(mode, key_event, focus);
                         self.ui.status_clear();
                         action.apply(&mut self.client)?;
@@ -187,7 +187,7 @@ pub struct ModeKeymap {
     normal: NormalModeInput,
     edit: EditModeInput,
     visual: VisualModeInput,
-    prompt_command: PromptCommandInput,
+    prompt_command: PromptPromptInput,
     prompt_keymap: PromptKeymapInput,
 }
 
@@ -197,17 +197,12 @@ impl ModeKeymap {
             normal: NormalModeInput,
             edit: EditModeInput,
             visual: VisualModeInput,
-            prompt_command: PromptCommandInput,
+            prompt_command: PromptPromptInput,
             prompt_keymap: PromptKeymapInput,
         }
     }
 
-    fn action_for(
-        &self,
-        mode: EditorMode,
-        event: KeyEvent,
-        focus: PromptListFocus,
-    ) -> ClientAction {
+    fn action_for(&self, mode: EditorMode, event: KeyEvent, focus: PromptFocus) -> ClientAction {
         match mode {
             EditorMode::Normal => self.normal.action(event),
             EditorMode::Edit => self.edit.action(event),
@@ -329,20 +324,20 @@ impl VisualModeInput {
     }
 }
 
-struct PromptCommandInput;
+struct PromptPromptInput;
 
-impl PromptCommandInput {
-    fn action(&self, event: KeyEvent, focus: PromptListFocus) -> ClientAction {
+impl PromptPromptInput {
+    fn action(&self, event: KeyEvent, focus: PromptFocus) -> ClientAction {
         if event.modifiers.contains(KeyModifiers::CONTROL) {
             match event.code {
                 KeyCode::Up => {
                     return ClientAction::Send(RpcRequest::CommandUi {
-                        action: CommandUiAction::FocusPrompt,
+                        action: PromptUiAction::FocusPrompt,
                     });
                 }
                 KeyCode::Down => {
                     return ClientAction::Send(RpcRequest::CommandUi {
-                        action: CommandUiAction::MoveSelectionDown,
+                        action: PromptUiAction::MoveSelectionDown,
                     });
                 }
                 _ => {}
@@ -353,42 +348,40 @@ impl PromptCommandInput {
                 mode: RpcMode::Normal,
             }),
             KeyCode::Enter => match focus {
-                PromptListFocus::List => ClientAction::Send(RpcRequest::CommandUi {
-                    action: CommandUiAction::SelectFromList,
+                PromptFocus::List => ClientAction::Send(RpcRequest::CommandUi {
+                    action: PromptUiAction::SelectFromList,
                 }),
-                PromptListFocus::Prompt => {
-                    ClientAction::Send(RpcRequest::CommandExecute { line: None })
-                }
+                PromptFocus::Input => ClientAction::Send(RpcRequest::CommandExecute { line: None }),
             },
             KeyCode::Backspace => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::Backspace,
+                action: PromptUiAction::Backspace,
             }),
             KeyCode::Delete => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::Delete,
+                action: PromptUiAction::Delete,
             }),
             KeyCode::Left => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveLeft,
+                action: PromptUiAction::MoveLeft,
             }),
             KeyCode::Right => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveRight,
+                action: PromptUiAction::MoveRight,
             }),
             KeyCode::Home => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveHome,
+                action: PromptUiAction::MoveHome,
             }),
             KeyCode::End => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveEnd,
+                action: PromptUiAction::MoveEnd,
             }),
             KeyCode::Tab => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::Complete,
+                action: PromptUiAction::Complete,
             }),
             KeyCode::Up => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::HistoryPrevious,
+                action: PromptUiAction::HistoryPrevious,
             }),
             KeyCode::Down => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::HistoryNext,
+                action: PromptUiAction::HistoryNext,
             }),
             KeyCode::Char(ch) => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch },
+                action: PromptUiAction::InsertChar { ch },
             }),
             _ => ClientAction::Skip,
         }
@@ -403,12 +396,12 @@ impl PromptKeymapInput {
             match event.code {
                 KeyCode::Up => {
                     return ClientAction::Send(RpcRequest::CommandUi {
-                        action: CommandUiAction::FocusPrompt,
+                        action: PromptUiAction::FocusPrompt,
                     });
                 }
                 KeyCode::Down => {
                     return ClientAction::Send(RpcRequest::CommandUi {
-                        action: CommandUiAction::MoveSelectionDown,
+                        action: PromptUiAction::MoveSelectionDown,
                     });
                 }
                 _ => {}
@@ -419,31 +412,31 @@ impl PromptKeymapInput {
                 mode: RpcMode::Normal,
             }),
             KeyCode::Backspace => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::Backspace,
+                action: PromptUiAction::Backspace,
             }),
             KeyCode::Delete => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::Delete,
+                action: PromptUiAction::Delete,
             }),
             KeyCode::Left => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveLeft,
+                action: PromptUiAction::MoveLeft,
             }),
             KeyCode::Right => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveRight,
+                action: PromptUiAction::MoveRight,
             }),
             KeyCode::Home => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveHome,
+                action: PromptUiAction::MoveHome,
             }),
             KeyCode::End => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveEnd,
+                action: PromptUiAction::MoveEnd,
             }),
             KeyCode::Up => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveSelectionUp,
+                action: PromptUiAction::MoveSelectionUp,
             }),
             KeyCode::Down => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::MoveSelectionDown,
+                action: PromptUiAction::MoveSelectionDown,
             }),
             KeyCode::Char(ch) => ClientAction::Send(RpcRequest::CommandUi {
-                action: CommandUiAction::InsertChar { ch },
+                action: PromptUiAction::InsertChar { ch },
             }),
             _ => ClientAction::Skip,
         }
@@ -464,16 +457,19 @@ impl ClientAction {
     }
 }
 
-enum PromptListFocus {
-    Prompt,
+enum PromptFocus {
+    Input,
     List,
 }
 
-impl PromptListFocus {
+impl PromptFocus {
     fn new(frame: &Frame) -> Self {
         match frame.command_ui() {
-            CommandUiAccess::Available(cmd_ui) if cmd_ui.list_focus() => PromptListFocus::List,
-            _ => PromptListFocus::Prompt,
+            CommandUiAccess::Available(cmd_ui) => match cmd_ui.line_focus() {
+                true => PromptFocus::Input,
+                false => PromptFocus::List,
+            },
+            CommandUiAccess::Missing => PromptFocus::Input,
         }
     }
 }

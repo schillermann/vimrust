@@ -1,31 +1,31 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct CommandUiFrame {
+pub struct PromptUiFrame {
     line: String,
     cursor_x: u16,
-    line_selection: CommandLineSelection,
-    focus_on_list: bool,
-    list_items: Vec<CommandListItemFrame>,
+    line_selection: CommandSelection,
+    line_focus: bool,
+    list_items: Vec<PromptListItemFrame>,
     selected_index: Option<usize>,
     scroll_offset: usize,
 }
 
-impl CommandUiFrame {
+impl PromptUiFrame {
     pub fn new(
         line: String,
+        line_focus: bool,
         cursor_x: u16,
-        line_selection: CommandLineSelection,
-        focus_on_list: bool,
-        list_items: Vec<CommandListItemFrame>,
+        line_selection: CommandSelection,
+        list_items: Vec<PromptListItemFrame>,
         selected_index: Option<usize>,
         scroll_offset: usize,
     ) -> Self {
         Self {
             line,
+            line_focus,
             cursor_x,
             line_selection,
-            focus_on_list,
             list_items,
             selected_index,
             scroll_offset,
@@ -40,15 +40,15 @@ impl CommandUiFrame {
         self.cursor_x
     }
 
-    pub fn command_selection(&self) -> CommandLineSelection {
+    pub fn command_selection(&self) -> CommandSelection {
         self.line_selection.clone()
     }
 
-    pub fn list_focus(&self) -> bool {
-        self.focus_on_list
+    pub fn line_focus(&self) -> bool {
+        self.line_focus
     }
 
-    pub fn command_items(&self) -> &[CommandListItemFrame] {
+    pub fn command_items(&self) -> &[PromptListItemFrame] {
         &self.list_items
     }
 
@@ -63,24 +63,24 @@ impl CommandUiFrame {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CommandLineSelection {
+pub enum CommandSelection {
     None,
     Range { start: u16, end: u16 },
 }
 
-impl CommandLineSelection {
+impl CommandSelection {
     pub fn range(start: u16, end: u16) -> Self {
         Self::Range { start, end }
     }
 
     pub fn clear(&mut self) {
-        *self = CommandLineSelection::None;
+        *self = CommandSelection::None;
     }
 
     pub fn indices(&self) -> Vec<usize> {
         match self {
-            CommandLineSelection::None => Vec::new(),
-            CommandLineSelection::Range { start, end } => {
+            CommandSelection::None => Vec::new(),
+            CommandSelection::Range { start, end } => {
                 let mut indices = Vec::new();
                 let mut idx = *start as usize;
                 let end = (*end).max(*start) as usize;
@@ -106,13 +106,13 @@ pub enum PromptMode {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct CommandListItemFrame {
+pub struct PromptListItemFrame {
     name: String,
     description: String,
     mode: PromptMode,
 }
 
-impl CommandListItemFrame {
+impl PromptListItemFrame {
     pub fn new(name: String, description: String, mode: PromptMode) -> Self {
         Self {
             name,
@@ -136,7 +136,7 @@ impl CommandListItemFrame {
 
 #[derive(Deserialize, Serialize, Clone, Copy)]
 #[serde(tag = "action", rename_all = "snake_case")]
-pub enum CommandUiAction {
+pub enum PromptUiAction {
     StartPrompt,
     Clear,
     InsertChar { ch: char },

@@ -1,6 +1,6 @@
 use std::{fs, path::PathBuf};
 
-use crate::prompt_line::PromptLine;
+use crate::prompt_input::PromptInput;
 
 pub struct CommandCompletion {
     line: String,
@@ -12,9 +12,9 @@ impl CommandCompletion {
         Self { line, cursor }
     }
 
-    pub fn apply(self, prompt_line: &mut PromptLine) {
+    pub fn apply(self, prompt_input: &mut PromptInput) {
         let target = CompletionTarget::new(self.line, self.cursor);
-        target.apply(prompt_line);
+        target.apply(prompt_input);
     }
 }
 
@@ -61,9 +61,9 @@ impl CompletionTarget {
         CompletionTarget::Open(OpenPathTarget::new(prefix, path))
     }
 
-    fn apply(self, prompt_line: &mut PromptLine) {
+    fn apply(self, prompt_input: &mut PromptInput) {
         match self {
-            CompletionTarget::Open(target) => target.apply(prompt_line),
+            CompletionTarget::Open(target) => target.apply(prompt_input),
             CompletionTarget::Skip => {}
         }
     }
@@ -79,11 +79,11 @@ impl OpenPathTarget {
         Self { prefix, path }
     }
 
-    fn apply(self, prompt_line: &mut PromptLine) {
+    fn apply(self, prompt_input: &mut PromptInput) {
         let working_dir = WorkingDirectory::new();
         let request = PathCompletionRequest::new(working_dir.path(), self.path);
         let completion = request.resolve();
-        completion.apply(prompt_line, self.prefix);
+        completion.apply(prompt_input, self.prefix);
     }
 }
 
@@ -263,10 +263,10 @@ enum PathCompletion {
 }
 
 impl PathCompletion {
-    fn apply(self, prompt_line: &mut PromptLine, prefix: String) {
+    fn apply(self, prompt_input: &mut PromptInput, prefix: String) {
         match self {
             PathCompletion::Replace { value } => {
-                prompt_line.set_content(format!("{}{}", prefix, value));
+                prompt_input.set_content(format!("{}{}", prefix, value));
             }
             PathCompletion::NoChange => {}
         }
