@@ -23,4 +23,4 @@ mod rpc;
 pub use rpc::StdioSession;
 
 pub(crate) use frame_signal::FrameSignal;
-pub(crate) use mode::EditorMode;
+pub(crate) use mode::{EditorMode, EditorModeState};

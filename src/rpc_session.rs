@@ -9,8 +9,8 @@ use crate::{
     ui::Ui,
 };
 use vimrust_protocol::{
-    CommandUiAccess, DeleteKind, Frame, MoveDirection, PromptUiAction, RpcMode, RpcRequest,
-    RpcResponse, StatusMessage,
+    CommandUiAccess, DeleteKind, Frame, MoveDirection, PromptUiAction, RequestEditorMode,
+    RpcRequest, RpcResponse, StatusMessage,
 };
 
 // `'a` is the lifetime of the borrowed terminal inside Ui.
@@ -124,7 +124,7 @@ impl<'a> RpcSession<'a> {
 
     fn render(&mut self) -> io::Result<()> {
         if let Some(frame) = &self.latest_frame {
-            let mode = UiFrameMode::new(frame.mode()).editor_mode();
+            let mode = UiFrameEditorMode::new(frame.mode()).editor_mode();
             let mut frame_to_render = frame.clone();
             self.ui.mode_apply(mode);
             // Prefer explicit status message if set by ack/error.
@@ -144,7 +144,7 @@ impl<'a> RpcSession<'a> {
             match event::read()? {
                 Event::Key(key_event) => {
                     if let Some(ref mut frame) = self.latest_frame {
-                        let mode = UiFrameMode::new(frame.mode()).editor_mode();
+                        let mode = UiFrameEditorMode::new(frame.mode()).editor_mode();
                         let focus = PromptFocus::new(frame);
                         let action = self.keymap.action_for(mode, key_event, focus);
                         self.ui.status_clear();
@@ -163,22 +163,22 @@ impl<'a> RpcSession<'a> {
     }
 }
 
-struct UiFrameMode {
-    mode: vimrust_protocol::FrameMode,
+struct UiFrameEditorMode {
+    mode: vimrust_protocol::FrameEditorMode,
 }
 
-impl UiFrameMode {
-    fn new(mode: vimrust_protocol::FrameMode) -> Self {
+impl UiFrameEditorMode {
+    fn new(mode: vimrust_protocol::FrameEditorMode) -> Self {
         Self { mode }
     }
 
     fn editor_mode(&self) -> EditorMode {
         match self.mode {
-            vimrust_protocol::FrameMode::Normal => EditorMode::Normal,
-            vimrust_protocol::FrameMode::Edit => EditorMode::Edit,
-            vimrust_protocol::FrameMode::Visual => EditorMode::Visual,
-            vimrust_protocol::FrameMode::PromptCommand => EditorMode::PromptCommand,
-            vimrust_protocol::FrameMode::PromptKeymap => EditorMode::PromptKeymap,
+            vimrust_protocol::FrameEditorMode::Normal => EditorMode::Normal,
+            vimrust_protocol::FrameEditorMode::Edit => EditorMode::Edit,
+            vimrust_protocol::FrameEditorMode::Visual => EditorMode::Visual,
+            vimrust_protocol::FrameEditorMode::PromptCommand => EditorMode::PromptCommand,
+            vimrust_protocol::FrameEditorMode::PromptKeymap => EditorMode::PromptKeymap,
         }
     }
 }
@@ -220,17 +220,17 @@ impl NormalModeInput {
         match event.code {
             KeyCode::Char('q') => ClientAction::Send(RpcRequest::EditorQuit),
             KeyCode::Char('e') => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::Edit,
+                mode: RequestEditorMode::Edit,
             }),
             KeyCode::Char('v') => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::Visual,
+                mode: RequestEditorMode::Visual,
             }),
             KeyCode::Char('s') => ClientAction::Send(RpcRequest::FileSave),
             KeyCode::Char(':') => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::PromptCommand,
+                mode: RequestEditorMode::PromptCommand,
             }),
             KeyCode::Char(';') => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::PromptKeymap,
+                mode: RequestEditorMode::PromptKeymap,
             }),
             KeyCode::Char('h') => ClientAction::Send(RpcRequest::CursorMove {
                 direction: MoveDirection::Left,
@@ -267,7 +267,7 @@ impl EditModeInput {
     fn action(&self, event: KeyEvent) -> ClientAction {
         match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::Normal,
+                mode: RequestEditorMode::Normal,
             }),
             KeyCode::Delete => ClientAction::Send(RpcRequest::TextDelete {
                 kind: DeleteKind::Under,
@@ -290,10 +290,10 @@ impl VisualModeInput {
     fn action(&self, event: KeyEvent) -> ClientAction {
         match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::Normal,
+                mode: RequestEditorMode::Normal,
             }),
             KeyCode::Char(':') => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::PromptCommand,
+                mode: RequestEditorMode::PromptCommand,
             }),
             KeyCode::Char('h') => ClientAction::Send(RpcRequest::CursorMove {
                 direction: MoveDirection::Left,
@@ -345,7 +345,7 @@ impl PromptPromptInput {
         }
         match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::Normal,
+                mode: RequestEditorMode::Normal,
             }),
             KeyCode::Enter => match focus {
                 PromptFocus::List => ClientAction::Send(RpcRequest::CommandUi {
@@ -409,7 +409,7 @@ impl PromptKeymapInput {
         }
         match event.code {
             KeyCode::Esc => ClientAction::Send(RpcRequest::ModeSet {
-                mode: RpcMode::Normal,
+                mode: RequestEditorMode::Normal,
             }),
             KeyCode::Backspace => ClientAction::Send(RpcRequest::CommandUi {
                 action: PromptUiAction::Backspace,

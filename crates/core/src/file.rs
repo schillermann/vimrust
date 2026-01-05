@@ -1,6 +1,6 @@
 use std::{fs, io};
 
-use vimrust_protocol::FilePath;
+use vimrust_protocol::{FilePath, StatusMessage};
 
 pub struct File {
     path: FilePath,
@@ -80,6 +80,25 @@ impl File {
         self.changed = false;
         self.change_token = FileChangeToken::new();
         Ok(String::from("saved"))
+    }
+
+    pub fn message_lock(&self) -> StatusMessage {
+        match &self.path {
+            FilePath::Missing => StatusMessage::Empty,
+            FilePath::Provided { path } => {
+                let readonly = match fs::metadata(path) {
+                    Ok(metadata) => metadata.permissions().readonly(),
+                    Err(_) => false,
+                };
+                if readonly {
+                    StatusMessage::Text {
+                        text: String::from("locked"),
+                    }
+                } else {
+                    StatusMessage::Empty
+                }
+            }
+        }
     }
 
     pub fn line_at(&self, index: usize) -> Option<&String> {

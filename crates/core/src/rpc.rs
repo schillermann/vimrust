@@ -1,10 +1,13 @@
 use std::io::{self, BufRead, Write};
 
-use crate::{EditorMode, FrameSignal, editor::Editor, file::File, prompt_ui_state::PromptUiState};
+use crate::{
+    EditorMode, EditorModeState, FrameSignal, editor::Editor, file::File,
+    prompt_ui_state::PromptUiState,
+};
 use vimrust_protocol::{
-    Ack, AckKind, CommandSelection, Cursor, DeleteKind, FilePath, Frame, FrameMode, MoveDirection,
-    PromptUiAction, PromptUiFrame, ProtocolVersion, RpcMode, RpcRequest, RpcResponse,
-    StatusMessage, StatusPosition,
+    Ack, AckKind, CommandSelection, Cursor, DeleteKind, FilePath, Frame, FrameEditorMode,
+    MoveDirection, PromptUiAction, PromptUiFrame, ProtocolVersion, RequestEditorMode, RpcRequest,
+    RpcResponse, StatusMessage, StatusPosition,
 };
 
 /// Line-delimited JSON RPC session for driving the editor core without the terminal UI.
@@ -45,9 +48,9 @@ impl StdioSession {
         let mut responder = ResponseWriter::new(&mut stdout);
 
         let file = File::new(self.file_path.clone());
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(file);
         editor.file_read()?;
-        let mut mode = EditorMode::Normal;
         let mut status_message = StatusMessage::Empty;
         let mut size: (u16, u16) = (80, 24);
         let mut command_ui = PromptUiState::new();
@@ -69,7 +72,7 @@ impl StdioSession {
             let mut record = RequestOutcomeRecord::new();
             let mut context = RequestContext::new(
                 &mut editor,
-                &mut mode,
+                &mut editor_mode,
                 &mut status_message,
                 &mut size,
                 &mut command_ui,
@@ -79,10 +82,10 @@ impl StdioSession {
                 RequestOutcome::Frame => {
                     let frame = build_frame(
                         &editor,
-                        &mode,
+                        &editor_mode,
                         &status_message,
                         size,
-                        if matches!(mode, EditorMode::PromptCommand | EditorMode::PromptKeymap) {
+                        if editor_mode.prompt() {
                             Some(command_ui.frame())
                         } else {
                             None
@@ -104,10 +107,10 @@ impl StdioSession {
                     }
                     let frame = build_frame(
                         &editor,
-                        &mode,
+                        &editor_mode,
                         &status_message,
                         size,
-                        if matches!(mode, EditorMode::PromptCommand | EditorMode::PromptKeymap) {
+                        if editor_mode.prompt() {
                             Some(command_ui.frame())
                         } else {
                             None
@@ -141,7 +144,7 @@ pub enum RequestOutcome {
 
 struct RequestContext<'a> {
     editor: &'a mut Editor,
-    mode: &'a mut EditorMode,
+    editor_mode: &'a mut EditorMode,
     status: &'a mut StatusMessage,
     size: &'a mut (u16, u16),
     command_ui: &'a mut PromptUiState,
@@ -150,14 +153,14 @@ struct RequestContext<'a> {
 impl<'a> RequestContext<'a> {
     fn new(
         editor: &'a mut Editor,
-        mode: &'a mut EditorMode,
+        editor_mode: &'a mut EditorMode,
         status: &'a mut StatusMessage,
         size: &'a mut (u16, u16),
         command_ui: &'a mut PromptUiState,
     ) -> Self {
         Self {
             editor,
-            mode,
+            editor_mode,
             status,
             size,
             command_ui,
@@ -495,7 +498,7 @@ impl CommandExecuteAction {
     fn apply(
         &mut self,
         editor: &mut Editor,
-        mode: &mut EditorMode,
+        editor_mode: &mut EditorMode,
         status: &mut StatusMessage,
         command_ui: &mut PromptUiState,
     ) {
@@ -540,10 +543,11 @@ impl CommandExecuteAction {
                 match editor.file_save(&mut saved_path) {
                     Ok(msg) => {
                         *status = StatusMessage::Text { text: msg.clone() };
-                        if matches!(mode, EditorMode::PromptCommand) {
+                        if editor_mode.prompt_command() {
                             command_ui.clear();
                         }
-                        *mode = EditorMode::Normal;
+                        let path = editor.file_path();
+                        editor_mode.transition(RequestEditorMode::Normal, &path);
                         editor.visual_clear();
                         let ack =
                             Ack::new(AckKind::Save, StatusMessage::Text { text: msg }, saved_path);
@@ -569,12 +573,14 @@ impl CommandExecuteAction {
                     if let Err(err) = new_file.read() {
                         RequestOutcome::Error(format!("open failed: {}", err))
                     } else {
+                        *editor_mode = EditorMode::new();
                         *editor = Editor::new(new_file);
                         *status = StatusMessage::Empty;
-                        if matches!(mode, EditorMode::PromptCommand) {
+                        if editor_mode.prompt_command() {
                             command_ui.clear();
                         }
-                        *mode = EditorMode::Normal;
+                        let path = editor.file_path();
+                        editor_mode.transition(RequestEditorMode::Normal, &path);
                         let ack = Ack::new(
                             AckKind::Open,
                             StatusMessage::Text {
@@ -591,12 +597,14 @@ impl CommandExecuteAction {
                         if let Err(err) = new_file.read() {
                             RequestOutcome::Error(format!("reload failed: {}", err))
                         } else {
+                            *editor_mode = EditorMode::new();
                             *editor = Editor::new(new_file);
                             *status = StatusMessage::Empty;
-                            if matches!(mode, EditorMode::PromptCommand) {
+                            if editor_mode.prompt_command() {
                                 command_ui.clear();
                             }
-                            *mode = EditorMode::Normal;
+                            let path = editor.file_path();
+                            editor_mode.transition(RequestEditorMode::Normal, &path);
                             let ack = Ack::new(
                                 AckKind::Open,
                                 StatusMessage::Text {
@@ -618,12 +626,14 @@ impl CommandExecuteAction {
                     if let Err(err) = new_file.read() {
                         RequestOutcome::Error(format!("history open failed: {}", err))
                     } else {
+                        *editor_mode = EditorMode::new();
                         *editor = Editor::new(new_file);
                         *status = StatusMessage::Empty;
-                        if matches!(mode, EditorMode::PromptCommand) {
+                        if editor_mode.prompt_command() {
                             command_ui.clear();
                         }
-                        *mode = EditorMode::Normal;
+                        let path = editor.file_path();
+                        editor_mode.transition(RequestEditorMode::Normal, &path);
                         let ack = Ack::new(
                             AckKind::Open,
                             StatusMessage::Text {
@@ -646,10 +656,11 @@ impl CommandExecuteAction {
                     CaseStyle::Train => editor.selection_case_train(),
                     CaseStyle::Flat => editor.selection_case_flat(),
                 }
-                if matches!(mode, EditorMode::PromptCommand) {
+                if editor_mode.prompt_command() {
                     command_ui.clear();
                 }
-                *mode = EditorMode::Normal;
+                let path = editor.file_path();
+                editor_mode.transition(RequestEditorMode::Normal, &path);
                 RequestOutcome::Frame
             }
             CommandRequest::Skip => match self.selection_signal {
@@ -667,7 +678,7 @@ impl CommandExecuteAction {
 impl RequestOutcomeRecord {
     fn accept(&mut self, request: RpcRequest, context: &mut RequestContext<'_>) {
         let editor = &mut *context.editor;
-        let mode = &mut *context.mode;
+        let editor_mode = &mut *context.editor_mode;
         let status = &mut *context.status;
         let size = &mut *context.size;
         let command_ui = &mut *context.command_ui;
@@ -680,7 +691,7 @@ impl RequestOutcomeRecord {
             } => {
                 let prev = *size;
                 *size = (cols, rows);
-                if matches!(mode, EditorMode::PromptCommand | EditorMode::PromptKeymap) {
+                if editor_mode.prompt() {
                     let list_rows = command_list_rows(*size);
                     command_ui.list_scroll_adjust(list_rows);
                 }
@@ -695,9 +706,9 @@ impl RequestOutcomeRecord {
                 if let Err(err) = new_file.read() {
                     RequestOutcome::Error(format!("open failed: {}", err))
                 } else {
+                    *editor_mode = EditorMode::new();
                     *editor = Editor::new(new_file);
                     *status = StatusMessage::Empty;
-                    *mode = EditorMode::Normal;
                     let ack = Ack::new(
                         AckKind::Open,
                         StatusMessage::Text {
@@ -730,6 +741,7 @@ impl RequestOutcomeRecord {
                 new_file.lines_replace(editor.file_lines_snapshot());
                 match new_file.save() {
                     Ok(msg) => {
+                        *editor_mode = EditorMode::new();
                         *editor = Editor::new(new_file);
                         *status = StatusMessage::Text { text: msg.clone() };
                         let ack = Ack::new(
@@ -776,7 +788,7 @@ impl RequestOutcomeRecord {
                 action.outcome()
             }
             RpcRequest::CommandUi { action } => {
-                if !matches!(mode, EditorMode::PromptCommand | EditorMode::PromptKeymap) {
+                if !editor_mode.prompt() {
                     RequestOutcome::Skip
                 } else {
                     let list_rows = command_list_rows(*size);
@@ -790,7 +802,7 @@ impl RequestOutcomeRecord {
                 }
             }
             RpcRequest::CommandExecute { line } => {
-                if !matches!(mode, EditorMode::PromptCommand) {
+                if !editor_mode.prompt_command() {
                     RequestOutcome::Skip
                 } else {
                     let list_rows = command_list_rows(*size);
@@ -804,44 +816,47 @@ impl RequestOutcomeRecord {
                         selection_signal: FrameSignal::Skip,
                         outcome: RequestOutcome::Skip,
                     };
-                    request.apply(editor, mode, status, command_ui);
+                    request.apply(editor, editor_mode, status, command_ui);
                     request.finish()
                 }
             }
             RpcRequest::ModeSet { mode: new_mode } => {
-                let prev_mode = *mode;
+                let prev_mode = editor_mode.mode();
                 let prev_cursor = editor.cursor_position();
-                *mode = match new_mode {
-                    RpcMode::Normal => EditorMode::Normal,
-                    RpcMode::Edit => {
-                        editor.snap_cursor_to_tab_start();
-                        EditorMode::Edit
-                    }
-                    RpcMode::Visual => EditorMode::Visual,
-                    RpcMode::PromptCommand => EditorMode::PromptCommand,
-                    RpcMode::PromptKeymap => EditorMode::PromptKeymap,
-                };
-                if *mode == EditorMode::PromptCommand && prev_mode != EditorMode::PromptCommand {
+                let path = editor.file_path();
+                editor_mode.transition(new_mode, &path);
+                let next_mode = editor_mode.mode();
+                if matches!(next_mode, EditorModeState::Edit)
+                    && !matches!(prev_mode, EditorModeState::Edit)
+                {
+                    editor.snap_cursor_to_tab_start();
+                }
+                if next_mode == EditorModeState::PromptCommand
+                    && prev_mode != EditorModeState::PromptCommand
+                {
                     command_ui.prompt_command_for(editor.command_scope());
-                } else if *mode == EditorMode::PromptKeymap && prev_mode != EditorMode::PromptKeymap
+                } else if next_mode == EditorModeState::PromptKeymap
+                    && prev_mode != EditorModeState::PromptKeymap
                 {
                     command_ui.prompt_keymap();
                 } else if matches!(
                     prev_mode,
-                    EditorMode::PromptCommand | EditorMode::PromptKeymap
+                    EditorModeState::PromptCommand | EditorModeState::PromptKeymap
                 ) && !matches!(
-                    *mode,
-                    EditorMode::PromptCommand | EditorMode::PromptKeymap
+                    next_mode,
+                    EditorModeState::PromptCommand | EditorModeState::PromptKeymap
                 ) {
                     command_ui.clear();
                 }
-                if matches!(*mode, EditorMode::Normal | EditorMode::Edit) {
+                if matches!(next_mode, EditorModeState::Normal | EditorModeState::Edit) {
                     editor.visual_clear();
                 }
-                if *mode == EditorMode::Visual && !matches!(prev_mode, EditorMode::Visual) {
+                if next_mode == EditorModeState::Visual
+                    && !matches!(prev_mode, EditorModeState::Visual)
+                {
                     editor.visual_begin();
                 }
-                if *mode != prev_mode || editor.cursor_position() != prev_cursor {
+                if next_mode != prev_mode || editor.cursor_position() != prev_cursor {
                     RequestOutcome::Frame
                 } else {
                     RequestOutcome::Skip
@@ -855,7 +870,7 @@ impl RequestOutcomeRecord {
 
 pub fn build_frame(
     editor: &Editor,
-    mode: &EditorMode,
+    editor_mode: &EditorMode,
     status: &StatusMessage,
     size: (u16, u16),
     command_ui: Option<PromptUiFrame>,
@@ -876,16 +891,17 @@ pub fn build_frame(
     let cursor_row = base_row.max(1).min(size.1.saturating_sub(1).max(1));
 
     let status = editor.change_status().status_or(status);
+    let status = editor.message_lock().or(status);
     let total_rows = view.file_ref().line_total();
     let status_position = StatusPosition::new(view.cursor_column(), view.cursor_row(), total_rows);
 
     Frame::new(
-        match mode {
-            EditorMode::Normal => FrameMode::Normal,
-            EditorMode::Edit => FrameMode::Edit,
-            EditorMode::Visual => FrameMode::Visual,
-            EditorMode::PromptCommand => FrameMode::PromptCommand,
-            EditorMode::PromptKeymap => FrameMode::PromptKeymap,
+        match editor_mode.mode() {
+            EditorModeState::Normal => FrameEditorMode::Normal,
+            EditorModeState::Edit => FrameEditorMode::Edit,
+            EditorModeState::Visual => FrameEditorMode::Visual,
+            EditorModeState::PromptCommand => FrameEditorMode::PromptCommand,
+            EditorModeState::PromptKeymap => FrameEditorMode::PromptKeymap,
         },
         Cursor::new(cursor_col, cursor_row),
         rows,
@@ -948,14 +964,14 @@ mod tests {
     impl<'a> RequestHarness<'a> {
         fn new(
             editor: &'a mut Editor,
-            mode: &'a mut EditorMode,
+            editor_mode: &'a mut EditorMode,
             status: &'a mut StatusMessage,
             size: &'a mut (u16, u16),
             command_ui: &'a mut PromptUiState,
         ) -> Self {
             Self {
                 record: RequestOutcomeRecord::new(),
-                context: RequestContext::new(editor, mode, status, size, command_ui),
+                context: RequestContext::new(editor, editor_mode, status, size, command_ui),
             }
         }
 
@@ -1029,14 +1045,14 @@ mod tests {
 
     #[test]
     fn insert_request_updates_rows() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1048,7 +1064,7 @@ mod tests {
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
 
-        let frame = build_frame(&editor, &mode, &status, size, None);
+        let frame = build_frame(&editor, &editor_mode, &status, size, None);
         let mut rows = RowsProbe::new();
         frame.paint_rows(size.1.saturating_sub(3), &mut rows);
         rows.expect_row(0, "hi");
@@ -1056,16 +1072,16 @@ mod tests {
 
     #[test]
     fn line_break_splits_line_at_cursor() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
         editor.file_lines_replace(vec![String::from("hello world")]);
         editor.cursor_position_store(CursorPosition::new(5, 0));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1075,7 +1091,7 @@ mod tests {
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
 
-        let frame = build_frame(&editor, &mode, &status, size, None);
+        let frame = build_frame(&editor, &editor_mode, &status, size, None);
         let mut rows = RowsProbe::new();
         frame.paint_rows(size.1.saturating_sub(3), &mut rows);
         rows.expect_row(0, "hello");
@@ -1084,15 +1100,15 @@ mod tests {
 
     #[test]
     fn noop_cursor_move_skips_frame() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
         editor.file_lines_replace(vec![String::new()]);
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1107,14 +1123,14 @@ mod tests {
 
     #[test]
     fn resize_with_suppress_frame_skips() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1132,14 +1148,14 @@ mod tests {
 
     #[test]
     fn resize_same_size_without_suppress_skips() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1157,21 +1173,21 @@ mod tests {
 
     #[test]
     fn command_ui_request_updates_state_and_frame() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 8);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::PromptCommand,
+            mode: RequestEditorMode::PromptCommand,
         });
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
@@ -1182,7 +1198,13 @@ mod tests {
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Frame));
 
-        let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
+        let frame = build_frame(
+            &editor,
+            &editor_mode,
+            &status,
+            size,
+            Some(command_ui.frame()),
+        );
         let command_ui_frame = match frame.command_ui() {
             CommandUiAccess::Available(command_ui) => command_ui,
             CommandUiAccess::Missing => panic!("expected command ui frame"),
@@ -1193,14 +1215,14 @@ mod tests {
 
     #[test]
     fn command_ui_outside_command_mode_skips() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1215,15 +1237,15 @@ mod tests {
 
     #[test]
     fn noop_delete_under_cursor_skips_frame() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
         editor.file_lines_replace(vec![String::new()]);
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1238,14 +1260,14 @@ mod tests {
 
     #[test]
     fn file_open_missing_path_returns_error() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1267,15 +1289,15 @@ mod tests {
 
     #[test]
     fn save_as_writes_file_and_updates_status() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
         editor.file_lines_replace(vec![String::from("hello")]);
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1319,24 +1341,24 @@ mod tests {
         let path = std::env::temp_dir().join("vimrust_rpc_command_save.txt");
         let _ = fs::remove_file(&path);
 
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
         editor.file_lines_replace(vec![String::from("changed")]);
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::PromptCommand,
+            mode: RequestEditorMode::PromptCommand,
         });
 
         harness.accept(RpcRequest::CommandExecute {
@@ -1345,7 +1367,7 @@ mod tests {
         let outcome = harness.decision();
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind(), AckKind::Save);
-            assert!(matches!(mode, EditorMode::Normal));
+            assert!(matches!(editor_mode.mode(), EditorModeState::Normal));
             assert_eq!(
                 status,
                 StatusMessage::Text {
@@ -1363,24 +1385,24 @@ mod tests {
         let path = std::env::temp_dir().join("vimrust_rpc_command_save_no_line.txt");
         let _ = fs::remove_file(&path);
 
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
         editor.file_lines_replace(vec![String::from("changed")]);
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::PromptCommand,
+            mode: RequestEditorMode::PromptCommand,
         });
         harness.accept(RpcRequest::CommandUi {
             action: PromptUiAction::InsertChar { ch: 's' },
@@ -1390,7 +1412,7 @@ mod tests {
         let outcome = harness.decision();
         if let RequestOutcome::FrameAndAck(ack) = outcome {
             assert_eq!(ack.kind(), AckKind::Save);
-            assert!(matches!(mode, EditorMode::Normal));
+            assert!(matches!(editor_mode.mode(), EditorModeState::Normal));
             assert_eq!(
                 status,
                 StatusMessage::Text {
@@ -1409,24 +1431,24 @@ mod tests {
         let path = std::env::temp_dir().join("vimrust_rpc_command_save_from_list.txt");
         let _ = fs::remove_file(&path);
 
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
         editor.file_lines_replace(vec![String::from("changed")]);
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::PromptCommand,
+            mode: RequestEditorMode::PromptCommand,
         });
 
         harness.accept(RpcRequest::CommandUi {
@@ -1443,7 +1465,7 @@ mod tests {
                     text: String::from("saved"),
                 }
             );
-            assert!(matches!(mode, EditorMode::Normal));
+            assert!(matches!(editor_mode.mode(), EditorModeState::Normal));
         } else {
             panic!("expected frame and ack");
         }
@@ -1453,21 +1475,23 @@ mod tests {
 
     #[test]
     fn command_execute_list_placeholder_skips_execution_for_open_query() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::PromptCommand;
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptCommand, &path);
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::PromptCommand,
+            mode: RequestEditorMode::PromptCommand,
         });
 
         harness.accept(RpcRequest::CommandUi {
@@ -1496,19 +1520,21 @@ mod tests {
             }
             RequestOutcome::Frame | RequestOutcome::Skip | RequestOutcome::Error(_) => {}
         }
-        assert!(matches!(mode, EditorMode::PromptCommand));
+        assert!(editor_mode.prompt_command());
     }
 
     #[test]
     fn command_execute_placeholder_line_skips_execution() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::PromptCommand;
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptCommand, &path);
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1525,19 +1551,21 @@ mod tests {
             }
             RequestOutcome::Frame | RequestOutcome::Skip | RequestOutcome::Error(_) => {}
         }
-        assert!(matches!(mode, EditorMode::PromptCommand));
+        assert!(editor_mode.prompt_command());
     }
 
     #[test]
     fn command_execute_quit_requests_quit_outcome() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::PromptCommand;
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptCommand, &path);
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1552,14 +1580,16 @@ mod tests {
 
     #[test]
     fn command_execute_open_reads_file_and_emits_ack() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::PromptCommand;
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptCommand, &path);
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1585,17 +1615,19 @@ mod tests {
     fn command_execute_reload_reads_current_file() {
         let path = std::env::temp_dir().join("vimrust_rpc_command_reload.txt");
         let _ = fs::write(&path, "disk");
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
         editor.file_lines_replace(vec![String::from("memory")]);
-        let mut mode = EditorMode::PromptCommand;
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptCommand, &path);
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1612,14 +1644,16 @@ mod tests {
 
     #[test]
     fn command_execute_unknown_command_skips() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::PromptCommand;
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptCommand, &path);
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1630,19 +1664,19 @@ mod tests {
         });
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
-        assert!(matches!(mode, EditorMode::PromptCommand));
+        assert!(editor_mode.prompt_command());
     }
 
     #[test]
     fn command_execute_outside_command_mode_skips() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1657,14 +1691,16 @@ mod tests {
 
     #[test]
     fn command_execute_in_keymap_prompt_skips() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::PromptKeymap;
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptKeymap, &path);
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
@@ -1675,48 +1711,83 @@ mod tests {
         });
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
-        assert!(matches!(mode, EditorMode::PromptKeymap));
+        assert!(matches!(editor_mode.mode(), EditorModeState::PromptKeymap));
     }
 
     #[test]
     fn mode_set_same_mode_skips() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::Normal,
+            mode: RequestEditorMode::Normal,
         });
         let outcome = harness.decision();
         assert!(matches!(outcome, RequestOutcome::Skip));
     }
 
     #[test]
-    fn command_ui_frame_includes_line_and_selection() {
-        let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
+    fn mode_set_edit_skips_on_locked_file() {
+        let path = std::env::temp_dir().join("vimrust_mode_set_locked.txt");
+        let _ = fs::write(&path, "locked");
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions).expect("set permissions");
+
+        let mut editor_mode = EditorMode::new();
+        let mut editor = Editor::new(File::new(FilePath::Provided {
+            path: path.to_string_lossy().to_string(),
+        }));
         let mut status = StatusMessage::Empty;
-        let mut size = (20, 10);
+        let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::PromptCommand,
+            mode: RequestEditorMode::Edit,
+        });
+        let outcome = harness.decision();
+        assert!(matches!(outcome, RequestOutcome::Skip));
+        assert!(matches!(editor_mode.mode(), EditorModeState::Normal));
+
+        let mut permissions = fs::metadata(&path).expect("metadata").permissions();
+        permissions.set_readonly(false);
+        let _ = fs::set_permissions(&path, permissions);
+    }
+
+    #[test]
+    fn command_ui_frame_includes_line_and_selection() {
+        let mut editor_mode = EditorMode::new();
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 10);
+        let mut command_ui = PromptUiState::new();
+        let mut harness = RequestHarness::new(
+            &mut editor,
+            &mut editor_mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        harness.accept(RpcRequest::ModeSet {
+            mode: RequestEditorMode::PromptCommand,
         });
         harness.accept(RpcRequest::CommandUi {
             action: PromptUiAction::InsertChar { ch: 's' },
@@ -1725,7 +1796,13 @@ mod tests {
             action: PromptUiAction::MoveSelectionDown,
         });
 
-        let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
+        let frame = build_frame(
+            &editor,
+            &editor_mode,
+            &status,
+            size,
+            Some(command_ui.frame()),
+        );
         let command_ui_frame = match frame.command_ui() {
             CommandUiAccess::Available(command_ui) => command_ui,
             CommandUiAccess::Missing => panic!("expected command ui frame"),
@@ -1739,24 +1816,30 @@ mod tests {
 
     #[test]
     fn prompt_keymap_frame_includes_keymap_entries() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (20, 10);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,
         );
 
         harness.accept(RpcRequest::ModeSet {
-            mode: RpcMode::PromptKeymap,
+            mode: RequestEditorMode::PromptKeymap,
         });
 
-        let frame = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
+        let frame = build_frame(
+            &editor,
+            &editor_mode,
+            &status,
+            size,
+            Some(command_ui.frame()),
+        );
         let command_ui_frame = match frame.command_ui() {
             CommandUiAccess::Available(command_ui) => command_ui,
             CommandUiAccess::Missing => panic!("expected command ui frame"),
@@ -1779,6 +1862,7 @@ mod tests {
 
     #[test]
     fn frame_cursor_positions_respect_offsets() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
         editor.file_lines_replace(vec![
             String::from("aaa"),
@@ -1788,37 +1872,45 @@ mod tests {
         ]);
         editor.cursor_position_store(CursorPosition::new(5, 3));
 
-        let mode = EditorMode::Normal;
         let status = StatusMessage::Empty;
         let size = (10, 6);
 
-        let frame = build_frame(&editor, &mode, &status, size, None);
+        let frame = build_frame(&editor, &editor_mode, &status, size, None);
         let mut cursor = CursorProbe::new();
         frame.cursor().place_on(&mut cursor);
-        cursor.expect_position(5, 4);
+        cursor.expect_position(5, 3);
     }
 
     #[test]
     fn mode_transitions_toggle_command_ui_frame() {
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         {
             let mut harness = RequestHarness::new(
                 &mut editor,
-                &mut mode,
+                &mut editor_mode,
                 &mut status,
                 &mut size,
                 &mut command_ui,
             );
             harness.accept(RpcRequest::ModeSet {
-                mode: RpcMode::PromptCommand,
+                mode: RequestEditorMode::PromptCommand,
             });
         }
-        let frame_command = build_frame(&editor, &mode, &status, size, Some(command_ui.frame()));
-        assert!(matches!(frame_command.mode(), FrameMode::PromptCommand));
+        let frame_command = build_frame(
+            &editor,
+            &editor_mode,
+            &status,
+            size,
+            Some(command_ui.frame()),
+        );
+        assert!(matches!(
+            frame_command.mode(),
+            FrameEditorMode::PromptCommand
+        ));
         match frame_command.command_ui() {
             CommandUiAccess::Available(_) => {}
             CommandUiAccess::Missing => panic!("expected command ui frame"),
@@ -1827,17 +1919,17 @@ mod tests {
         {
             let mut harness = RequestHarness::new(
                 &mut editor,
-                &mut mode,
+                &mut editor_mode,
                 &mut status,
                 &mut size,
                 &mut command_ui,
             );
             harness.accept(RpcRequest::ModeSet {
-                mode: RpcMode::Normal,
+                mode: RequestEditorMode::Normal,
             });
         }
-        let frame_normal = build_frame(&editor, &mode, &status, size, None);
-        assert!(matches!(frame_normal.mode(), FrameMode::Normal));
+        let frame_normal = build_frame(&editor, &editor_mode, &status, size, None);
+        assert!(matches!(frame_normal.mode(), FrameEditorMode::Normal));
         match frame_normal.command_ui() {
             CommandUiAccess::Available(_) => panic!("expected command ui to be missing"),
             CommandUiAccess::Missing => {}
@@ -1849,17 +1941,17 @@ mod tests {
         let path = std::env::temp_dir().join("vimrust_rpc_save_exists.txt");
         let _ = fs::write(&path, "existing");
 
+        let mut editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Provided {
             path: path.to_string_lossy().to_string(),
         }));
         editor.file_lines_replace(vec![String::from("changed")]);
-        let mut mode = EditorMode::Normal;
         let mut status = StatusMessage::Empty;
         let mut size = (10, 5);
         let mut command_ui = PromptUiState::new();
         let mut harness = RequestHarness::new(
             &mut editor,
-            &mut mode,
+            &mut editor_mode,
             &mut status,
             &mut size,
             &mut command_ui,

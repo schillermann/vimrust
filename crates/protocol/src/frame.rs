@@ -4,7 +4,7 @@ use crate::{FilePath, PromptUiFrame, ProtocolVersion, StatusMessage};
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum FrameMode {
+pub enum FrameEditorMode {
     Normal,
     Edit,
     Visual,
@@ -14,7 +14,7 @@ pub enum FrameMode {
 
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Frame {
-    mode: FrameMode,
+    mode: FrameEditorMode,
     cursor: Cursor,
     rows: FrameRows,
     status: StatusMessage,
@@ -31,7 +31,7 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(
-        mode: FrameMode,
+        mode: FrameEditorMode,
         cursor: Cursor,
         rows: Vec<String>,
         status: StatusMessage,
@@ -56,7 +56,7 @@ impl Frame {
         }
     }
 
-    pub fn mode(&self) -> FrameMode {
+    pub fn mode(&self) -> FrameEditorMode {
         self.mode
     }
 

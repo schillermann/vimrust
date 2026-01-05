@@ -31,7 +31,7 @@ pub enum RpcRequest {
         action: PromptUiAction,
     },
     ModeSet {
-        mode: RpcMode,
+        mode: RequestEditorMode,
     },
     StateGet,
     EditorQuit,
@@ -62,7 +62,7 @@ pub enum MoveDirection {
 
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub enum RpcMode {
+pub enum RequestEditorMode {
     Normal,
     Edit,
     Visual,

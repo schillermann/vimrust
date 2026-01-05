@@ -172,6 +172,10 @@ impl Editor {
         self.file.path()
     }
 
+    pub fn message_lock(&self) -> StatusMessage {
+        self.file.message_lock()
+    }
+
     pub fn file_lines_snapshot(&self) -> Vec<String> {
         self.file.lines_snapshot()
     }
@@ -317,7 +321,8 @@ impl Editor {
 
             if file_line_number >= view.file_ref().line_count() {
                 let mut line = String::from("~");
-                let welcome = self.welcome_line(view, number_of_columns, row_number, number_of_rows);
+                let welcome =
+                    self.welcome_line(view, number_of_columns, row_number, number_of_rows);
                 line.push_str(&welcome);
                 if line.len() > number_of_columns as usize {
                     line.truncate(number_of_columns as usize);
