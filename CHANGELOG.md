@@ -8,6 +8,7 @@ Conventional Commits.
 ## [Unreleased]
 
 ### Added
+- Welcome banner with editor name and version when the buffer has no text.
 - Help line footer with mode-aware shortcuts and key highlighting.
 - Auto completion for file paths to open files in the command line prompt.
 - Command prompt line text is white when the focus is on it, otherwise it is dimmed.

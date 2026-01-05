@@ -317,20 +317,8 @@ impl Editor {
 
             if file_line_number >= view.file_ref().line_count() {
                 let mut line = String::from("~");
-                if view.file_ref().line_count() == 0 && row_number == number_of_rows / 3 {
-                    let mut welcome = String::from("VimRust -- version ");
-                    self.version.append_to(&mut welcome);
-                    if welcome.len() > number_of_columns as usize {
-                        welcome.truncate(number_of_columns as usize);
-                    }
-                    let padding = number_of_columns
-                        .saturating_sub(welcome.len() as u16)
-                        .saturating_div(2);
-                    if padding > 1 {
-                        line.push_str(&" ".repeat(padding.saturating_sub(1) as usize));
-                    }
-                    line.push_str(&welcome);
-                }
+                let welcome = self.welcome_line(view, number_of_columns, row_number, number_of_rows);
+                line.push_str(&welcome);
                 if line.len() > number_of_columns as usize {
                     line.truncate(number_of_columns as usize);
                 }
@@ -347,6 +335,51 @@ impl Editor {
         }
 
         rows
+    }
+
+    fn welcome_line(
+        &self,
+        view: &EditorView<'_>,
+        number_of_columns: u16,
+        row_number: u16,
+        number_of_rows: u16,
+    ) -> String {
+        if row_number != number_of_rows / 3 {
+            return String::new();
+        }
+
+        let file = view.file_ref();
+        let mut has_text = false;
+        let mut index = 0;
+        let total = file.line_count();
+        while index < total {
+            if let Some(line) = file.line_at(index) {
+                if line.len() > 0 {
+                    has_text = true;
+                    break;
+                }
+            }
+            index = index.saturating_add(1);
+        }
+
+        if has_text {
+            return String::new();
+        }
+
+        let mut welcome = String::from("VimRust -- version ");
+        self.version.append_to(&mut welcome);
+        if welcome.len() > number_of_columns as usize {
+            welcome.truncate(number_of_columns as usize);
+        }
+        let padding = number_of_columns
+            .saturating_sub(welcome.len() as u16)
+            .saturating_div(2);
+        let mut line = String::new();
+        if padding > 1 {
+            line.push_str(&" ".repeat(padding.saturating_sub(1) as usize));
+        }
+        line.push_str(&welcome);
+        line
     }
 
     pub fn cursor_move(&mut self, direction: MoveDirection, usable_rows: u16) {
