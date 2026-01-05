@@ -57,13 +57,15 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 - Returns a value.
 - Has **no observable side effects**.
 - Does **not** change object state.
-- Returns **objects**, not primitives or booleans.
+- Returns **objects** when possible; boolean queries are allowed when they are named as nouns or adjectives.
 - Method names describe **what the object provides**, not *how it is computed*.
 - Examples:
   - `message() -> Message`
   - `client() -> Client`
   - `frame() -> Frame`
   - `state() -> State`
+  - `prompt() -> bool`
+  - `prompted() -> bool`
 
 #### Command
 - Performs a domain action.
@@ -78,7 +80,6 @@ As specified by **Yegor Bugayenko**, a method must be **either** a command **or*
 
 #### Forbidden
 - Methods that return a value **and** mutate state.
-- Methods that return booleans or status codes.
 - Predicate-style methods such as:
   - `hasX()`
   - `isY()`
