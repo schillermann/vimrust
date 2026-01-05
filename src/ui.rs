@@ -136,7 +136,8 @@ impl<'a, 'b> FrameRender<'a, 'b> {
                 }
                 CommandUiAccess::Missing => {}
             }
-            let mut command_line = command_input.panel(self.ui.terminal, number_of_columns);
+            let mut command_line =
+                command_input.panel(self.ui.terminal, number_of_columns, self.ui.mode);
             command_line.paint()?;
 
             if usable_rows > 0 {
@@ -207,6 +208,7 @@ impl PromptInput {
         &self,
         terminal: &'a mut Terminal,
         number_of_columns: u16,
+        mode: EditorMode,
     ) -> CommandLinePanel<'a, '_> {
         CommandLinePanel::new(
             terminal,
@@ -214,6 +216,7 @@ impl PromptInput {
             &self.text,
             self.selection.clone(),
             self.focus,
+            mode,
         )
     }
 }

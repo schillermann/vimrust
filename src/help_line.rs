@@ -76,8 +76,8 @@ impl ModeHelpMessage {
         Self {
             normal: "[h] [j] [k] [l] move  [e] edit  [v] select  [s] save  [q] quit",
             edit: "[Esc] normal  [Enter] newline  [Backspace]/[Delete] remove",
-            visual: "[Esc] normal  [h] [j] [k] [l] move  [:] command",
-            prompt_command: "[Esc] normal  [Enter] execute  [Ctrl+Down] list  [Ctrl+Up] input  [Down] next command  [Up] previous command",
+            visual: "[Esc] normal  [h] [j] [k] [l] move  [:] visual commands",
+            prompt_command: "[Esc] normal  [Enter] execute  [Down] next command  [Up] previous command  [Ctrl+Down] list  [Ctrl+Up] input",
             prompt_keymap: "[Esc] normal  [Ctrl+Down] list  [Ctrl+Up] input",
         }
     }

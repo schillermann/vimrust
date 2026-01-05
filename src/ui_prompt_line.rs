@@ -8,7 +8,7 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 
-use crate::terminal::Terminal;
+use crate::{mode::EditorMode, terminal::Terminal};
 use vimrust_protocol::CommandSelection;
 
 pub(crate) struct CommandLinePanel<'a, 'b> {
@@ -17,6 +17,7 @@ pub(crate) struct CommandLinePanel<'a, 'b> {
     content: &'b str,
     selection: CommandSelection,
     focus: CommandLineFocus,
+    mode: EditorMode,
 }
 
 impl<'a, 'b> CommandLinePanel<'a, 'b> {
@@ -26,6 +27,7 @@ impl<'a, 'b> CommandLinePanel<'a, 'b> {
         content: &'b str,
         selection: CommandSelection,
         focus: bool,
+        mode: EditorMode,
     ) -> Self {
         Self {
             terminal,
@@ -33,6 +35,7 @@ impl<'a, 'b> CommandLinePanel<'a, 'b> {
             content,
             selection,
             focus: CommandLineFocus { on_prompt: focus },
+            mode,
         }
     }
 
@@ -40,7 +43,14 @@ impl<'a, 'b> CommandLinePanel<'a, 'b> {
         self.terminal.queue_add_command(MoveTo(0, 0))?;
         self.terminal
             .queue_add_command(Clear(ClearType::CurrentLine))?;
-        let placeholder = CommandLinePlaceholder::new();
+        let placeholder = CommandLinePlaceholder {
+            mode: self.mode,
+            empty_text: "Press : for commands or ; for keymaps",
+            visual_text: "Press : for visual commands or ; for keymaps",
+            edit_text: "Press Esc to return to normal mode",
+            command_text: ": type a command",
+            keymap_text: "; filter keymaps",
+        };
         let display = placeholder.display_for(self.content, &self.focus);
         let display_content = display.text();
 
@@ -83,23 +93,23 @@ impl<'a, 'b> CommandLinePanel<'a, 'b> {
 }
 
 struct CommandLinePlaceholder {
+    mode: EditorMode,
     empty_text: &'static str,
+    visual_text: &'static str,
+    edit_text: &'static str,
     command_text: &'static str,
     keymap_text: &'static str,
 }
 
 impl CommandLinePlaceholder {
-    fn new() -> Self {
-        Self {
-            empty_text: "Press : for commands or ; for keymaps",
-            command_text: ": type a command",
-            keymap_text: "; filter keymaps",
-        }
-    }
-
     fn display_for(&self, content: &str, focus: &CommandLineFocus) -> CommandLineDisplay {
         if content.is_empty() {
-            return CommandLineDisplay::placeholder(self.empty_text, focus);
+            let message = match self.mode {
+                EditorMode::Edit => self.edit_text,
+                EditorMode::Visual => self.visual_text,
+                _ => self.empty_text,
+            };
+            return CommandLineDisplay::placeholder(message, focus);
         }
         if content == ":" {
             return CommandLineDisplay::placeholder(self.command_text, focus);
