@@ -11,7 +11,7 @@ pub use frame::{
 };
 pub use path::FilePath;
 pub use prompt_ui::{
-    CommandSelection, PromptListItemFrame, PromptMode, PromptUiAction, PromptUiFrame,
+    PromptInputSelection, PromptListItemFrame, PromptMode, PromptUiAction, PromptUiFrame,
 };
 pub use rpc::{
     Ack, AckKind, DeleteKind, MoveDirection, RequestEditorMode, RpcRequest, RpcResponse,

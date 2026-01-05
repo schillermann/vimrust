@@ -8,7 +8,7 @@ use crate::{
     status_line::StatusLine,
     terminal::Terminal,
     ui_layout::{CursorPlacement, UiBody},
-    ui_prompt_line::CommandLinePanel,
+    ui_prompt_line::PromptLine,
 };
 use vimrust_protocol::{CommandUiAccess, Frame, RpcRequest, StatusMessage, ViewportSink};
 
@@ -129,13 +129,14 @@ impl<'a, 'b> FrameRender<'a, 'b> {
         {
             self.ui.terminal.queue_add_command(Hide)?;
 
-            let mut command_input = PromptInput::new();
-            match self.frame.command_ui() {
-                CommandUiAccess::Available(command_ui) => {
-                    command_input.use_frame(&command_ui);
-                }
-                CommandUiAccess::Missing => {}
-            }
+            let command_input = match self.frame.command_ui() {
+                CommandUiAccess::Available(command_ui) => PromptInput {
+                    text: command_ui.command_text().to_string(),
+                    selection: command_ui.command_selection(),
+                    focus: command_ui.line_focus(),
+                },
+                CommandUiAccess::Missing => PromptInput::new(),
+            };
             let mut command_line =
                 command_input.panel(self.ui.terminal, number_of_columns, self.ui.mode);
             command_line.paint()?;
@@ -185,7 +186,7 @@ impl<'a, 'b> ViewportSink for FrameRender<'a, 'b> {
 
 struct PromptInput {
     text: String,
-    selection: vimrust_protocol::CommandSelection,
+    selection: vimrust_protocol::PromptInputSelection,
     focus: bool,
 }
 
@@ -193,15 +194,9 @@ impl PromptInput {
     fn new() -> Self {
         Self {
             text: String::new(),
-            selection: vimrust_protocol::CommandSelection::None,
+            selection: vimrust_protocol::PromptInputSelection::None,
             focus: false,
         }
-    }
-
-    fn use_frame(&mut self, command_ui: &vimrust_protocol::PromptUiFrame) {
-        self.text = command_ui.command_text().to_string();
-        self.selection = command_ui.command_selection();
-        self.focus = command_ui.line_focus();
     }
 
     fn panel<'a>(
@@ -209,8 +204,8 @@ impl PromptInput {
         terminal: &'a mut Terminal,
         number_of_columns: u16,
         mode: EditorMode,
-    ) -> CommandLinePanel<'a, '_> {
-        CommandLinePanel::new(
+    ) -> PromptLine<'a, '_> {
+        PromptLine::new(
             terminal,
             number_of_columns,
             &self.text,

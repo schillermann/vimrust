@@ -1,11 +1,11 @@
 use crate::{
     command_completion::CommandCompletion, command_history::CommandHistory,
-    command_list::CommandList, command_placeholder::CommandPlaceholder,
+    command_list::CommandList, prompt_input_placeholder::PromptInputPlaceholder,
     command_scope::CommandScope, keymap_list::KeymapList, prompt_entry::PromptEntry,
     prompt_input::PromptInput, prompt_ui_snapshot::CommandUiSnapshot,
 };
 use vimrust_protocol::{
-    CommandSelection, FilePath, PromptListItemFrame, PromptUiAction, PromptUiFrame,
+    PromptInputSelection, FilePath, PromptListItemFrame, PromptUiAction, PromptUiFrame,
 };
 
 pub struct PromptUiState {
@@ -67,7 +67,7 @@ impl PromptUiState {
         self.history_command.file()
     }
 
-    pub fn line_selection(&self) -> CommandSelection {
+    pub fn line_selection(&self) -> PromptInputSelection {
         self.line.selection()
     }
 
@@ -179,7 +179,7 @@ impl PromptUiState {
                 };
                 if let Some(entry_label) = selected_label {
                     let line = format!(":{}", entry_label);
-                    let placeholder = CommandPlaceholder;
+                    let placeholder = PromptInputPlaceholder;
                     let selection = placeholder.selection_for(&line);
                     self.line.set_content_with_selection(line, selection);
                     self.line_focus = true;
@@ -362,7 +362,7 @@ enum PromptKind {
 pub(crate) struct CommandUiView<'a> {
     pub(crate) text: &'a str,
     pub(crate) cursor: u16,
-    pub(crate) selection: CommandSelection,
+    pub(crate) selection: PromptInputSelection,
     pub(crate) line_focus: bool,
     pub(crate) selection_index: Option<usize>,
     pub(crate) scroll_offset: usize,

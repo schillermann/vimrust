@@ -12,6 +12,10 @@ mod ui;
 mod ui_editor_rows;
 mod ui_layout;
 mod ui_prompt_line;
+mod ui_prompt_line_display;
+mod ui_prompt_line_focus;
+mod ui_prompt_line_highlight;
+mod ui_prompt_line_placeholder;
 mod ui_prompt_list;
 
 use protocol_guard::ProtocolGate;

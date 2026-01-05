@@ -38,7 +38,7 @@ crates/protocol/src
 │  ├─ uses: frame.rs (Frame)
 │  ├─ uses: status.rs (StatusMessage)
 │  └─ uses: path.rs (FilePath)
-├─ prompt_ui.rs (CommandUiFrame, CommandUiAction, CommandLineSelection, PromptMode)
+├─ prompt_ui.rs (CommandUiFrame, CommandUiAction, PromptInputSelection, PromptMode)
 ├─ status.rs (StatusMessage)
 ├─ path.rs (FilePath)
 └─ version.rs (ProtocolVersion)

@@ -7,7 +7,7 @@ mod command_history_location;
 mod command_history_root;
 mod command_history_store;
 mod command_list;
-mod command_placeholder;
+mod prompt_input_placeholder;
 mod command_scope;
 mod editor;
 mod file;

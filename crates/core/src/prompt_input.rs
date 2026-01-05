@@ -1,9 +1,9 @@
-use vimrust_protocol::CommandSelection;
+use vimrust_protocol::PromptInputSelection;
 
 pub struct PromptInput {
     content: String,
     cursor_x: u16,
-    selection: CommandSelection,
+    selection: PromptInputSelection,
 }
 
 impl PromptInput {
@@ -11,7 +11,7 @@ impl PromptInput {
         Self {
             content: String::new(),
             cursor_x: 0,
-            selection: CommandSelection::None,
+            selection: PromptInputSelection::None,
         }
     }
 
@@ -34,7 +34,7 @@ impl PromptInput {
         self.selection.clear();
     }
 
-    pub fn set_content_with_selection(&mut self, new_content: String, selection: CommandSelection) {
+    pub fn set_content_with_selection(&mut self, new_content: String, selection: PromptInputSelection) {
         self.content = new_content;
         self.selection = selection;
         self.cursor_x = self.selection_start().min(self.content.len() as u16);
@@ -48,7 +48,7 @@ impl PromptInput {
         self.cursor_x
     }
 
-    pub fn selection(&self) -> CommandSelection {
+    pub fn selection(&self) -> PromptInputSelection {
         self.selection.clone()
     }
 
@@ -142,15 +142,15 @@ impl PromptInput {
 
     fn selection_active(&self) -> bool {
         match self.selection {
-            CommandSelection::None => false,
-            CommandSelection::Range { start, end } => start < end,
+            PromptInputSelection::None => false,
+            PromptInputSelection::Range { start, end } => start < end,
         }
     }
 
     fn selection_range(&self) -> (usize, usize) {
         match self.selection {
-            CommandSelection::None => (0, 0),
-            CommandSelection::Range { start, end } => {
+            PromptInputSelection::None => (0, 0),
+            PromptInputSelection::Range { start, end } => {
                 let max = self.content.len() as u16;
                 let start = start.min(max);
                 let end = end.min(max).max(start);
@@ -161,8 +161,8 @@ impl PromptInput {
 
     fn selection_start(&self) -> u16 {
         match self.selection {
-            CommandSelection::None => self.content.len() as u16,
-            CommandSelection::Range { start, .. } => start,
+            PromptInputSelection::None => self.content.len() as u16,
+            PromptInputSelection::Range { start, .. } => start,
         }
     }
 }

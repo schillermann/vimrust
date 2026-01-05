@@ -5,7 +5,7 @@ use crate::{
     prompt_ui_state::PromptUiState,
 };
 use vimrust_protocol::{
-    Ack, AckKind, CommandSelection, Cursor, DeleteKind, FilePath, Frame, FrameEditorMode,
+    Ack, AckKind, PromptInputSelection, Cursor, DeleteKind, FilePath, Frame, FrameEditorMode,
     MoveDirection, PromptUiAction, PromptUiFrame, ProtocolVersion, RequestEditorMode, RpcRequest,
     RpcResponse, StatusMessage, StatusPosition,
 };
@@ -346,11 +346,11 @@ enum PlaceholderPresence {
     Missing,
 }
 
-struct CommandPlaceholderProbe<'a> {
+struct PromptInputPlaceholderProbe<'a> {
     line: &'a str,
 }
 
-impl<'a> CommandPlaceholderProbe<'a> {
+impl<'a> PromptInputPlaceholderProbe<'a> {
     fn presence(&self) -> PlaceholderPresence {
         if self.line.contains('{') && self.line.contains('}') {
             PlaceholderPresence::Found
@@ -361,15 +361,15 @@ impl<'a> CommandPlaceholderProbe<'a> {
 }
 
 struct CommandExecutionGate {
-    selection: CommandSelection,
+    selection: PromptInputSelection,
     placeholder: PlaceholderPresence,
 }
 
 impl CommandExecutionGate {
     fn decision(&self) -> CommandExecutionDecision {
         match self.selection {
-            CommandSelection::Range { .. } => CommandExecutionDecision::Block,
-            CommandSelection::None => match self.placeholder {
+            PromptInputSelection::Range { .. } => CommandExecutionDecision::Block,
+            PromptInputSelection::None => match self.placeholder {
                 PlaceholderPresence::Found => CommandExecutionDecision::Block,
                 PlaceholderPresence::Missing => CommandExecutionDecision::Allow,
             },
@@ -520,7 +520,7 @@ impl CommandExecuteAction {
             }
             CommandLineRequest::FromUi => command_ui.command_text().to_string(),
         };
-        let placeholder = CommandPlaceholderProbe {
+        let placeholder = PromptInputPlaceholderProbe {
             line: source_line.as_str(),
         }
         .presence();
@@ -1862,7 +1862,7 @@ mod tests {
 
     #[test]
     fn frame_cursor_positions_respect_offsets() {
-        let mut editor_mode = EditorMode::new();
+        let editor_mode = EditorMode::new();
         let mut editor = Editor::new(File::new(FilePath::Missing));
         editor.file_lines_replace(vec![
             String::from("aaa"),

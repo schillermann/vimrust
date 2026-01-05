@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 pub struct PromptUiFrame {
     line: String,
     cursor_x: u16,
-    line_selection: CommandSelection,
+    line_selection: PromptInputSelection,
     line_focus: bool,
     list_items: Vec<PromptListItemFrame>,
     selected_index: Option<usize>,
@@ -16,7 +16,7 @@ impl PromptUiFrame {
         line: String,
         line_focus: bool,
         cursor_x: u16,
-        line_selection: CommandSelection,
+        line_selection: PromptInputSelection,
         list_items: Vec<PromptListItemFrame>,
         selected_index: Option<usize>,
         scroll_offset: usize,
@@ -40,7 +40,7 @@ impl PromptUiFrame {
         self.cursor_x
     }
 
-    pub fn command_selection(&self) -> CommandSelection {
+    pub fn command_selection(&self) -> PromptInputSelection {
         self.line_selection.clone()
     }
 
@@ -63,24 +63,24 @@ impl PromptUiFrame {
 
 #[derive(Serialize, Deserialize, Clone, PartialEq)]
 #[serde(tag = "kind", rename_all = "snake_case")]
-pub enum CommandSelection {
+pub enum PromptInputSelection {
     None,
     Range { start: u16, end: u16 },
 }
 
-impl CommandSelection {
+impl PromptInputSelection {
     pub fn range(start: u16, end: u16) -> Self {
         Self::Range { start, end }
     }
 
     pub fn clear(&mut self) {
-        *self = CommandSelection::None;
+        *self = PromptInputSelection::None;
     }
 
     pub fn indices(&self) -> Vec<usize> {
         match self {
-            CommandSelection::None => Vec::new(),
-            CommandSelection::Range { start, end } => {
+            PromptInputSelection::None => Vec::new(),
+            PromptInputSelection::Range { start, end } => {
                 let mut indices = Vec::new();
                 let mut idx = *start as usize;
                 let end = (*end).max(*start) as usize;
