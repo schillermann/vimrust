@@ -301,7 +301,35 @@ enum CommandLineRequest {
 
 enum CommandPath {
     Missing,
-    Provided(String),
+    Provided(OpenTarget),
+}
+
+struct OpenTarget {
+    path: String,
+    position: OpenPosition,
+}
+
+enum OpenPosition {
+    Missing,
+    Line { line: u16 },
+    LineColumn { line: u16, column: u16 },
+}
+
+impl OpenPosition {
+    fn place_on(&self, editor: &mut Editor) {
+        match self {
+            OpenPosition::Missing => {}
+            OpenPosition::Line { line } => {
+                let row = line.saturating_sub(1);
+                editor.cursor_place(crate::editor::CursorPosition::new(0, row));
+            }
+            OpenPosition::LineColumn { line, column } => {
+                let row = line.saturating_sub(1);
+                let col = column.saturating_sub(1);
+                editor.cursor_place(crate::editor::CursorPosition::new(col, row));
+            }
+        }
+    }
 }
 
 enum CaseStyle {
@@ -393,10 +421,65 @@ impl CommandText {
             "sq" => CommandRequest::SaveAndQuit,
             "q" | "quit" => CommandRequest::Quit,
             "o" | "open" => {
-                let path = if parts.rest.is_empty() {
+                let raw = parts.rest.trim_end().to_string();
+                let path = if raw.is_empty() {
                     CommandPath::Missing
                 } else {
-                    CommandPath::Provided(parts.rest.clone())
+                    let mut path_value = raw.clone();
+                    let mut position = OpenPosition::Missing;
+                    if let Some(column_split) = raw.rfind(':') {
+                        let tail = &raw[column_split.saturating_add(1)..];
+                        let mut digits_ok = !tail.is_empty();
+                        let mut value: u32 = 0;
+                        for ch in tail.chars() {
+                            match ch.to_digit(10) {
+                                Some(digit) => {
+                                    value = value.saturating_mul(10).saturating_add(digit);
+                                }
+                                None => {
+                                    digits_ok = false;
+                                    break;
+                                }
+                            }
+                        }
+                        if digits_ok {
+                            let column = value.min(u16::MAX as u32) as u16;
+                            let head = &raw[..column_split];
+                            if let Some(line_split) = head.rfind(':') {
+                                let line_tail = &head[line_split.saturating_add(1)..];
+                                let mut line_digits_ok = !line_tail.is_empty();
+                                let mut line_value: u32 = 0;
+                                for ch in line_tail.chars() {
+                                    match ch.to_digit(10) {
+                                        Some(digit) => {
+                                            line_value = line_value
+                                                .saturating_mul(10)
+                                                .saturating_add(digit);
+                                        }
+                                        None => {
+                                            line_digits_ok = false;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if line_digits_ok {
+                                    let line = line_value.min(u16::MAX as u32) as u16;
+                                    position = OpenPosition::LineColumn { line, column };
+                                    path_value = head[..line_split].to_string();
+                                } else {
+                                    position = OpenPosition::Line { line: column };
+                                    path_value = head.to_string();
+                                }
+                            } else {
+                                position = OpenPosition::Line { line: column };
+                                path_value = head.to_string();
+                            }
+                        }
+                    }
+                    CommandPath::Provided(OpenTarget {
+                        path: path_value,
+                        position,
+                    })
                 };
                 CommandRequest::Open { path }
             }
@@ -568,13 +651,14 @@ impl CommandExecuteAction {
             }
             CommandRequest::Quit => RequestOutcome::Quit,
             CommandRequest::Open { path } => match path {
-                CommandPath::Provided(path) => {
+                CommandPath::Provided(OpenTarget { path, position }) => {
                     let mut new_file = File::new(FilePath::Provided { path });
                     if let Err(err) = new_file.read() {
                         RequestOutcome::Error(format!("open failed: {}", err))
                     } else {
                         *editor_mode = EditorMode::new();
                         *editor = Editor::new(new_file);
+                        position.place_on(editor);
                         *status = StatusMessage::Empty;
                         if editor_mode.prompt_command() {
                             command_ui.clear();
@@ -1278,7 +1362,10 @@ mod tests {
             CommandUiAccess::Missing => panic!("expected command ui frame"),
         };
         assert!(list_has_label(command_ui_frame.command_items(), ":"));
-        assert!(!list_has_label(command_ui_frame.command_items(), "o {filename}"));
+        assert!(!list_has_label(
+            command_ui_frame.command_items(),
+            "o {path[:line[:column]]}"
+        ));
     }
 
     #[test]
@@ -1325,7 +1412,10 @@ mod tests {
             CommandUiAccess::Available(command_ui) => command_ui,
             CommandUiAccess::Missing => panic!("expected command ui frame"),
         };
-        assert!(list_has_label(command_ui_frame.command_items(), "o {filename}"));
+        assert!(list_has_label(
+            command_ui_frame.command_items(),
+            "o {path[:line[:column]]}"
+        ));
         assert!(!list_has_label(command_ui_frame.command_items(), "Ctrl+Down"));
     }
 
@@ -1657,7 +1747,7 @@ mod tests {
         );
 
         harness.accept(RpcRequest::CommandExecute {
-            line: Some(":o {filename}".to_string()),
+            line: Some(":o {path[:line[:column]]}".to_string()),
         });
         let outcome = harness.decision();
 
@@ -1725,6 +1815,34 @@ mod tests {
                 path: path.to_string_lossy().to_string()
             }
         );
+    }
+
+    #[test]
+    fn command_execute_open_places_cursor_at_line_and_column() {
+        let mut editor_mode = EditorMode::new();
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        let path = editor.file_path();
+        editor_mode.transition(RequestEditorMode::PromptCommand, &path);
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 10);
+        let mut command_ui = PromptUiState::new();
+        let mut harness = RequestHarness::new(
+            &mut editor,
+            &mut editor_mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+        let path = std::env::temp_dir().join("vimrust_rpc_command_open_location.txt");
+        let _ = fs::write(&path, "first\nsecond\nthird\n");
+
+        harness.accept(RpcRequest::CommandExecute {
+            line: Some(format!(":o {}:2:3", path.to_string_lossy())),
+        });
+        let outcome = harness.decision();
+
+        assert!(matches!(outcome, RequestOutcome::FrameAndAck(_)));
+        assert_eq!(editor.cursor_position(), CursorPosition::new(2, 1));
     }
 
     #[test]

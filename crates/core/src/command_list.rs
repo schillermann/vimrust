@@ -42,7 +42,7 @@ impl CommandRegistry {
                     mode: PromptMode::Command,
                 },
                 CommandEntry {
-                    name: "o {filename}",
+                    name: "o {path[:line[:column]]}",
                     description: "Open a file",
                     mode: PromptMode::Command,
                 },
@@ -52,7 +52,7 @@ impl CommandRegistry {
                     mode: PromptMode::Command,
                 },
                 CommandEntry {
-                    name: "open {filename}",
+                    name: "open {path[:line[:column]]}",
                     description: "Open a file",
                     mode: PromptMode::Command,
                 },

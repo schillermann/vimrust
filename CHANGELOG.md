@@ -20,6 +20,7 @@ Conventional Commits.
 - Persist command prompt history across sessions in the user state directory.
 - Store command history in a `history-commands.txt` file.
 - Reload the current file from disk with `:o`/`:open` when no filename is provided.
+- Open a file at a specific line and column using `:o path:line:column` or `:open path:line:column`.
 - Visual mode with selectable ranges.
 - Kebab-case transformation command for visual selections via `:case kebab`.
 - CamelCase transformation command for visual selections via `:case camel`.

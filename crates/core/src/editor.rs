@@ -460,6 +460,30 @@ impl Editor {
         }
     }
 
+    pub fn cursor_place(&mut self, position: CursorPosition) {
+        self.cursor_x = position.column;
+        self.cursor_y = position.row;
+
+        let max_row = self
+            .file
+            .line_count()
+            .saturating_sub(1)
+            .min(u16::MAX as usize) as u16;
+        if self.cursor_y > max_row {
+            self.cursor_y = max_row;
+        }
+
+        let line_length = self.file_line_length(self.cursor_y);
+        if self.cursor_x > line_length {
+            self.cursor_x = line_length;
+        }
+        if let Some(line) = self.file.line_at(self.cursor_y as usize) {
+            self.cursor_x = self
+                .line_view
+                .snap_cursor_to_render_character(line, self.cursor_x);
+        }
+    }
+
     pub fn char_insert(&mut self, ch: char) {
         let target_line = self.cursor_y as usize;
         self.file.line_ensure(target_line);

@@ -416,7 +416,7 @@ mod tests {
 
         let frame = prompt.frame();
         assert!(label_present(frame.command_items(), ":"));
-        assert!(!label_present(frame.command_items(), "o {filename}"));
+        assert!(!label_present(frame.command_items(), "o {path[:line[:column]]}"));
     }
 
     #[test]
@@ -427,7 +427,7 @@ mod tests {
         prompt.apply_action(PromptUiAction::InsertChar { ch: ':' }, 10);
 
         let frame = prompt.frame();
-        assert!(label_present(frame.command_items(), "o {filename}"));
+        assert!(label_present(frame.command_items(), "o {path[:line[:column]]}"));
         assert!(!label_present(frame.command_items(), "Ctrl+Down"));
     }
 }
