@@ -83,7 +83,8 @@ impl CommandHistory {
 
     fn apply_index(&self, prompt_input: &mut PromptInput, index: usize) {
         if index < self.entries.len() {
-            prompt_input.set_content(self.entries[index].clone());
+            let line = format!(":{}", self.entries[index]);
+            prompt_input.set_content(line);
         }
     }
 
