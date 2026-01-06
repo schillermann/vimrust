@@ -22,7 +22,7 @@ pub struct EditorVersion {
 
 impl EditorVersion {
     pub fn current() -> Self {
-        Self { label: "0.1.0" }
+        Self { label: "0.2.0" }
     }
 
     pub fn append_to(&self, target: &mut String) {

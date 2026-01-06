@@ -7,6 +7,8 @@ Conventional Commits.
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-01-06
+
 ### Added
 - Welcome banner with editor name and version when the buffer has no text.
 - Help line footer with mode-aware shortcuts and key highlighting.
