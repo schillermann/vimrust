@@ -1,11 +1,12 @@
 use crate::{
     command_completion::CommandCompletion, command_history::CommandHistory,
-    command_list::CommandList, prompt_input_placeholder::PromptInputPlaceholder,
-    command_scope::CommandScope, keymap_list::KeymapList, prompt_entry::PromptEntry,
-    prompt_input::PromptInput, prompt_ui_snapshot::CommandUiSnapshot,
+    command_list::CommandList, command_scope::CommandScope, keymap_list::KeymapList,
+    mode::EditorMode, prompt_entry::PromptEntry, prompt_input::PromptInput,
+    prompt_input_placeholder::PromptInputPlaceholder, prompt_ui_snapshot::CommandUiSnapshot,
 };
 use vimrust_protocol::{
-    PromptInputSelection, FilePath, PromptListItemFrame, PromptUiAction, PromptUiFrame,
+    FilePath, PromptInputSelection, PromptListItemFrame, PromptUiAction, PromptUiFrame,
+    RequestEditorMode,
 };
 
 pub struct PromptUiState {
@@ -57,6 +58,7 @@ impl PromptUiState {
         self.list_reset();
         self.line_focus = true;
         self.history_command.reset_navigation();
+        self.prefix_switch();
     }
 
     pub fn command_text(&self) -> &str {
@@ -78,6 +80,14 @@ impl PromptUiState {
         self.history_command.reset_navigation();
     }
 
+    pub fn prompt_mode_sync(&self, editor_mode: &mut EditorMode, path: &FilePath) {
+        let requested = match self.prompt_kind {
+            PromptKind::Command => RequestEditorMode::PromptCommand,
+            PromptKind::Keymap => RequestEditorMode::PromptKeymap,
+        };
+        editor_mode.transition(requested, path);
+    }
+
     pub fn list_scroll_adjust(&mut self, visible_rows: usize) {
         self.list_scroll_reconcile(visible_rows);
     }
@@ -95,18 +105,21 @@ impl PromptUiState {
                 self.list_reset();
                 self.line_focus = true;
                 self.history_command.reset_navigation();
+                self.prefix_switch();
             }
             PromptUiAction::Backspace => {
                 self.line.backspace();
                 self.list_reset();
                 self.line_focus = true;
                 self.history_command.reset_navigation();
+                self.prefix_switch();
             }
             PromptUiAction::Delete => {
                 self.line.delete();
                 self.list_reset();
                 self.line_focus = true;
                 self.history_command.reset_navigation();
+                self.prefix_switch();
             }
             PromptUiAction::MoveLeft => {
                 self.line.cursor_move_left();
@@ -131,6 +144,7 @@ impl PromptUiState {
                 self.list_reset();
                 self.line_focus = true;
                 self.history_command.reset_navigation();
+                self.prefix_switch();
             }
             PromptUiAction::FocusPrompt => {
                 self.line_focus = true;
@@ -142,6 +156,7 @@ impl PromptUiState {
                         self.history_command.recall_previous(&mut self.line);
                         self.list_reset();
                         self.line_focus = true;
+                        self.prefix_switch();
                     } else {
                         self.move_selection(PromptUiAction::MoveSelectionUp, list_rows);
                     }
@@ -153,6 +168,7 @@ impl PromptUiState {
                         self.history_command.recall_next(&mut self.line);
                         self.list_reset();
                         self.line_focus = true;
+                        self.prefix_switch();
                     } else {
                         self.move_selection(PromptUiAction::MoveSelectionDown, list_rows);
                     }
@@ -184,6 +200,7 @@ impl PromptUiState {
                     self.line.set_content_with_selection(line, selection);
                     self.line_focus = true;
                     self.history_command.reset_navigation();
+                    self.prefix_switch();
 
                     let updated_matches = self.list_filter(self.line.text());
                     let mut updated_index = None;
@@ -239,6 +256,27 @@ impl PromptUiState {
             }
         }
         self.list_scroll_adjust(list_rows);
+    }
+
+    fn prefix_switch(&mut self) {
+        let mut chars = self.line.text().chars();
+        match chars.next() {
+            Some(';') => self.prompt_kind_change(PromptKind::Keymap),
+            Some(':') => self.prompt_kind_change(PromptKind::Command),
+            _ => {}
+        }
+    }
+
+    fn prompt_kind_change(&mut self, target: PromptKind) {
+        match (self.prompt_kind, target) {
+            (PromptKind::Command, PromptKind::Command) => return,
+            (PromptKind::Keymap, PromptKind::Keymap) => return,
+            _ => {}
+        }
+        self.prompt_kind = target;
+        self.list_reset();
+        self.line_focus = true;
+        self.history_command.reset_navigation();
     }
 
     pub fn remember_command(&mut self, line: &str) {
@@ -350,6 +388,47 @@ impl PromptUiState {
 impl Default for PromptUiState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PromptUiState;
+    use vimrust_protocol::{PromptListItemFrame, PromptUiAction};
+
+    fn label_present(items: &[PromptListItemFrame], label: &str) -> bool {
+        let mut idx = 0;
+        while idx < items.len() {
+            if items[idx].label() == label {
+                return true;
+            }
+            idx = idx.saturating_add(1);
+        }
+        false
+    }
+
+    #[test]
+    fn prompt_switches_to_keymap_on_semicolon_prefix() {
+        let mut prompt = PromptUiState::new();
+        prompt.prompt_command();
+        prompt.apply_action(PromptUiAction::Backspace, 10);
+        prompt.apply_action(PromptUiAction::InsertChar { ch: ';' }, 10);
+
+        let frame = prompt.frame();
+        assert!(label_present(frame.command_items(), ":"));
+        assert!(!label_present(frame.command_items(), "o {filename}"));
+    }
+
+    #[test]
+    fn prompt_switches_to_command_on_colon_prefix() {
+        let mut prompt = PromptUiState::new();
+        prompt.prompt_keymap();
+        prompt.apply_action(PromptUiAction::Backspace, 10);
+        prompt.apply_action(PromptUiAction::InsertChar { ch: ':' }, 10);
+
+        let frame = prompt.frame();
+        assert!(label_present(frame.command_items(), "o {filename}"));
+        assert!(!label_present(frame.command_items(), "Ctrl+Down"));
     }
 }
 

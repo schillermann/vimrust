@@ -792,13 +792,20 @@ impl RequestOutcomeRecord {
                     RequestOutcome::Skip
                 } else {
                     let list_rows = command_list_rows(*size);
+                    let prev_mode = editor_mode.mode();
                     let mut request = PromptUiActionRequest {
                         action,
                         list_rows,
                         signal: FrameSignal::Skip,
                     };
                     request.apply(command_ui);
-                    request.outcome()
+                    let path = editor.file_path();
+                    command_ui.prompt_mode_sync(editor_mode, &path);
+                    if editor_mode.mode() != prev_mode {
+                        RequestOutcome::Frame
+                    } else {
+                        request.outcome()
+                    }
                 }
             }
             RpcRequest::CommandExecute { line } => {
@@ -954,7 +961,9 @@ mod tests {
     use super::*;
     use crate::editor::CursorPosition;
     use std::fs;
-    use vimrust_protocol::{CommandUiAccess, CursorSink, FrameRowSink, MoveDirection};
+    use vimrust_protocol::{
+        CommandUiAccess, CursorSink, FrameRowSink, MoveDirection, PromptListItemFrame,
+    };
 
     struct RequestHarness<'a> {
         record: RequestOutcomeRecord,
@@ -1011,6 +1020,17 @@ mod tests {
             }
             self.rows[index as usize] = row.to_string();
         }
+    }
+
+    fn list_has_label(items: &[PromptListItemFrame], label: &str) -> bool {
+        let mut idx = 0;
+        while idx < items.len() {
+            if items[idx].label() == label {
+                return true;
+            }
+            idx = idx.saturating_add(1);
+        }
+        false
     }
 
     struct CursorProbe {
@@ -1211,6 +1231,102 @@ mod tests {
         };
         assert_eq!(command_ui_frame.command_text(), ":x");
         assert_eq!(command_ui_frame.cursor_column(), 2);
+    }
+
+    #[test]
+    fn command_ui_prefix_switches_to_keymap_prompt() {
+        let mut editor_mode = EditorMode::new();
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 8);
+        let mut command_ui = PromptUiState::new();
+        let mut harness = RequestHarness::new(
+            &mut editor,
+            &mut editor_mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        harness.accept(RpcRequest::ModeSet {
+            mode: RequestEditorMode::PromptCommand,
+        });
+        let outcome = harness.decision();
+        assert!(matches!(outcome, RequestOutcome::Frame));
+
+        harness.accept(RpcRequest::CommandUi {
+            action: PromptUiAction::Backspace,
+        });
+        let _ = harness.decision();
+
+        harness.accept(RpcRequest::CommandUi {
+            action: PromptUiAction::InsertChar { ch: ';' },
+        });
+        let outcome = harness.decision();
+        assert!(matches!(outcome, RequestOutcome::Frame));
+        assert!(matches!(editor_mode.mode(), EditorModeState::PromptKeymap));
+
+        let frame = build_frame(
+            &editor,
+            &editor_mode,
+            &status,
+            size,
+            Some(command_ui.frame()),
+        );
+        let command_ui_frame = match frame.command_ui() {
+            CommandUiAccess::Available(command_ui) => command_ui,
+            CommandUiAccess::Missing => panic!("expected command ui frame"),
+        };
+        assert!(list_has_label(command_ui_frame.command_items(), ":"));
+        assert!(!list_has_label(command_ui_frame.command_items(), "o {filename}"));
+    }
+
+    #[test]
+    fn keymap_ui_prefix_switches_to_command_prompt() {
+        let mut editor_mode = EditorMode::new();
+        let mut editor = Editor::new(File::new(FilePath::Missing));
+        let mut status = StatusMessage::Empty;
+        let mut size = (20, 8);
+        let mut command_ui = PromptUiState::new();
+        let mut harness = RequestHarness::new(
+            &mut editor,
+            &mut editor_mode,
+            &mut status,
+            &mut size,
+            &mut command_ui,
+        );
+
+        harness.accept(RpcRequest::ModeSet {
+            mode: RequestEditorMode::PromptKeymap,
+        });
+        let outcome = harness.decision();
+        assert!(matches!(outcome, RequestOutcome::Frame));
+
+        harness.accept(RpcRequest::CommandUi {
+            action: PromptUiAction::Backspace,
+        });
+        let _ = harness.decision();
+
+        harness.accept(RpcRequest::CommandUi {
+            action: PromptUiAction::InsertChar { ch: ':' },
+        });
+        let outcome = harness.decision();
+        assert!(matches!(outcome, RequestOutcome::Frame));
+        assert!(matches!(editor_mode.mode(), EditorModeState::PromptCommand));
+
+        let frame = build_frame(
+            &editor,
+            &editor_mode,
+            &status,
+            size,
+            Some(command_ui.frame()),
+        );
+        let command_ui_frame = match frame.command_ui() {
+            CommandUiAccess::Available(command_ui) => command_ui,
+            CommandUiAccess::Missing => panic!("expected command ui frame"),
+        };
+        assert!(list_has_label(command_ui_frame.command_items(), "o {filename}"));
+        assert!(!list_has_label(command_ui_frame.command_items(), "Ctrl+Down"));
     }
 
     #[test]

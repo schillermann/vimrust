@@ -28,6 +28,7 @@ Conventional Commits.
 - PascalCase transformation command for visual selections via `:case pascal`.
 - Train-Case transformation command for visual selections via `:case train`.
 - flatcase transformation command for visual selections via `:case flat`.
+- Switch between command and keymap prompts by typing `:` or `;` as the prompt prefix.
 
 ## [0.1.0] - 2025-12-30
 
