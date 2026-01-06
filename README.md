@@ -49,6 +49,7 @@ cargo run my_file.txt
 - [Protocol component notes](docs/components/protocol.md)
 - [Decisions (ADRs)](docs/decisions/README.md)
 - [Constraints](docs/constraints.md)
+- [Commands](docs/commands.md)
 - [Glossary](docs/glossary.md)
 
 ### RPC protocol
