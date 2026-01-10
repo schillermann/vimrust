@@ -6,56 +6,54 @@ use crossterm::{
     terminal::{Clear, ClearType},
 };
 
-use crate::{mode::EditorMode, terminal::Terminal};
-use vimrust_protocol::{FilePath, StatusMessage, StatusPosition};
+use crate::{file::File, mode::EditorMode, terminal::Terminal};
+use vimrust_protocol::{StatusMessage, StatusPosition};
 
-pub struct StatusLine {
+pub struct StatusLine<'a> {
     file_status: StatusMessage,
+    file: Box<dyn File>,
+    terminal: &'a mut Terminal,
+    mode: EditorMode,
+    position: StatusPosition,
 }
 
-impl StatusLine {
-    pub fn new() -> Self {
-        Self {
-            file_status: StatusMessage::Empty,
-        }
-    }
-
-    pub fn file_status_clear(&mut self) {
-        self.file_status.clear();
-    }
-
-    pub fn file_status_update(&mut self, new_message: StatusMessage) {
-        if self.file_status != new_message {
-            self.file_status = new_message;
-        }
-    }
-
-    pub fn draw(
-        &self,
-        terminal: &mut Terminal,
-        mode: &EditorMode,
-        file_path: &FilePath,
+impl<'a> StatusLine<'a> {
+    pub fn new(
+        terminal: &'a mut Terminal,
+        file: Box<dyn File>,
+        mode: EditorMode,
         position: StatusPosition,
-        number_of_columns: u16,
-        number_of_rows: u16,
-    ) -> io::Result<()> {
+        file_status: StatusMessage,
+    ) -> Self {
+        Self {
+            file_status,
+            file,
+            terminal,
+            mode,
+            position,
+        }
+    }
+
+    pub fn draw(self, number_of_columns: u16, number_of_rows: u16) -> io::Result<()> {
         // Leave one column of padding on both sides of the status line.
         let inner_width = number_of_columns.saturating_sub(2);
         let mut status = String::new();
-        mode.append_to(&mut status);
+        self.mode.append_to(&mut status);
         status.push_str(" > ");
-        status.push_str(&format!("{}", file_path));
+        self.file.append_to(&mut status);
         self.file_status.append_to_status_line(&mut status);
         let mut position_label = String::new();
-        position.append_to(&mut position_label);
+        self.position.append_to(&mut position_label);
         let status_line = self.compose_line(&status, &position_label, inner_width as usize);
         let status = format!(" {} ", status_line);
-        terminal.queue_add_command(MoveTo(0, number_of_rows.saturating_sub(2)))?;
-        terminal.queue_add_command(Clear(ClearType::CurrentLine))?;
-        terminal.queue_add_command(SetBackgroundColor(Color::Grey))?;
-        terminal.queue_add_command(SetForegroundColor(Color::Black))?;
-        terminal.queue_add_command(Print(status))?;
-        terminal.queue_add_command(ResetColor)?;
+        self.terminal
+            .queue_add_command(MoveTo(0, number_of_rows.saturating_sub(2)))?;
+        self.terminal
+            .queue_add_command(Clear(ClearType::CurrentLine))?;
+        self.terminal.queue_add_command(SetBackgroundColor(Color::Grey))?;
+        self.terminal.queue_add_command(SetForegroundColor(Color::Black))?;
+        self.terminal.queue_add_command(Print(status))?;
+        self.terminal.queue_add_command(ResetColor)?;
 
         Ok(())
     }

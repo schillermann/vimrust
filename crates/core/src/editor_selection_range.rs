@@ -89,14 +89,8 @@ impl SelectionRange {
             end_row = last_row;
         }
 
-        let start_line = match file.line_at(start_row) {
-            Some(line) => line.clone(),
-            None => return,
-        };
-        let end_line = match file.line_at(end_row) {
-            Some(line) => line.clone(),
-            None => return,
-        };
+        let start_line = file.line_at(start_row).to_string();
+        let end_line = file.line_at(end_row).to_string();
 
         let start_idx = line_view.column_to_char_index_render(&start_line, self.start.column);
         let end_idx = line_view.column_to_char_index_render(&end_line, self.end.column);
@@ -111,11 +105,10 @@ impl SelectionRange {
             updated.push_str(&replacement);
             updated.push_str(&suffix);
             let mut changed = false;
-            if let Some(line) = file.line_at_mut(start_row) {
-                if *line != updated {
-                    *line = updated;
-                    changed = true;
-                }
+            let line = file.line_at_mut(start_row);
+            if *line != updated {
+                *line = updated;
+                changed = true;
             }
             if changed {
                 file.touch();
@@ -133,10 +126,8 @@ impl SelectionRange {
         selected.push('\n');
         let mut mid_row = start_row.saturating_add(1);
         while mid_row < end_row {
-            if let Some(line) = file.line_at(mid_row) {
-                selected.push_str(line);
-                selected.push('\n');
-            }
+            selected.push_str(file.line_at(mid_row));
+            selected.push('\n');
             mid_row = mid_row.saturating_add(1);
         }
         selected.push_str(&end_line[..end_idx]);
@@ -150,17 +141,17 @@ impl SelectionRange {
         updated.push_str(&suffix);
 
         let mut changed = false;
-        if let Some(line) = file.line_at_mut(start_row) {
-            if *line != updated {
-                *line = updated;
-                changed = true;
-            }
+        let line = file.line_at_mut(start_row);
+        if *line != updated {
+            *line = updated;
+            changed = true;
         }
 
         let mut remove_count = end_row.saturating_sub(start_row);
         while remove_count > 0 {
-            let removed = file.line_remove(start_row.saturating_add(1));
-            if removed.is_some() {
+            let remove_at = start_row.saturating_add(1);
+            if remove_at < file.line_count() {
+                file.line_remove(remove_at);
                 changed = true;
             }
             remove_count = remove_count.saturating_sub(1);
@@ -184,9 +175,11 @@ pub(super) fn selection_end(
     position: CursorPosition,
 ) -> CursorPosition {
     let row = position.row;
-    let column = match file.line_at(row as usize) {
-        Some(line) => selection_end_for_line(line_view, line, position.column),
-        None => position.column,
+    let row_index = row as usize;
+    let column = if row_index < file.line_count() {
+        selection_end_for_line(line_view, file.line_at(row_index), position.column)
+    } else {
+        position.column
     };
     CursorPosition::new(column, row)
 }

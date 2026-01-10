@@ -1,5 +1,8 @@
-use crate::{command_history_store::CommandHistoryStore, prompt_input::PromptInput};
-use vimrust_protocol::FilePath;
+use crate::{
+    command_history_store::CommandHistoryStore,
+    prompt_input::{PromptInput, PromptInputDraft},
+};
+use vimrust_protocol::DocumentFile;
 
 pub struct CommandHistory {
     entries: Vec<String>,
@@ -37,7 +40,7 @@ impl CommandHistory {
         self.draft = CommandHistoryDraft::Empty;
     }
 
-    pub fn file(&self) -> FilePath {
+    pub fn file(&self) -> DocumentFile {
         self.store.file()
     }
 
@@ -47,7 +50,7 @@ impl CommandHistory {
         }
         match self.cursor {
             CommandHistoryCursor::Tail => {
-                let draft = prompt_input.text().to_string();
+                let draft = prompt_input.draft();
                 self.draft = CommandHistoryDraft::Stored { line: draft };
                 let index = self.entries.len().saturating_sub(1);
                 self.cursor = CommandHistoryCursor::At { index };
@@ -84,14 +87,14 @@ impl CommandHistory {
     fn apply_index(&self, prompt_input: &mut PromptInput, index: usize) {
         if index < self.entries.len() {
             let line = format!(":{}", self.entries[index]);
-            prompt_input.set_content(line);
+            prompt_input.overwrite(line);
         }
     }
 
     fn restore_draft(&mut self, prompt_input: &mut PromptInput) {
         match &self.draft {
             CommandHistoryDraft::Stored { line } => {
-                prompt_input.set_content(line.clone());
+                line.restore(prompt_input);
             }
             CommandHistoryDraft::Empty => {}
         }
@@ -106,5 +109,5 @@ enum CommandHistoryCursor {
 
 enum CommandHistoryDraft {
     Empty,
-    Stored { line: String },
+    Stored { line: PromptInputDraft },
 }

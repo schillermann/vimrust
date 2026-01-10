@@ -1,6 +1,6 @@
 use std::{fs, io::Write, path::PathBuf};
 
-use vimrust_protocol::FilePath;
+use vimrust_protocol::DocumentFile;
 
 pub struct CommandHistoryFile {
     directory: PathBuf,
@@ -42,8 +42,8 @@ impl CommandHistoryFile {
         let _ = writeln!(file, "{}", line);
     }
 
-    pub fn path(&self) -> FilePath {
-        FilePath::Provided {
+    pub fn path(&self) -> DocumentFile {
+        DocumentFile {
             path: self.path.to_string_lossy().to_string(),
         }
     }

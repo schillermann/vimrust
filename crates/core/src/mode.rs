@@ -1,6 +1,6 @@
 use std::fs;
 
-use vimrust_protocol::{FilePath, RequestEditorMode};
+use vimrust_protocol::{DocumentFile, RequestEditorMode};
 
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub(crate) enum EditorModeState {
@@ -38,7 +38,7 @@ impl EditorMode {
         matches!(self.current, EditorModeState::PromptCommand)
     }
 
-    pub fn transition(&mut self, requested: RequestEditorMode, path: &FilePath) {
+    pub fn transition(&mut self, requested: RequestEditorMode, path: &DocumentFile) {
         self.current = match requested {
             RequestEditorMode::Normal => EditorModeState::Normal,
             RequestEditorMode::Edit => FileEditGate::new(self.current, path).mode(),
@@ -51,28 +51,26 @@ impl EditorMode {
 
 struct FileEditGate<'a> {
     current: EditorModeState,
-    path: &'a FilePath,
+    path: &'a DocumentFile,
 }
 
 impl<'a> FileEditGate<'a> {
-    fn new(current: EditorModeState, path: &'a FilePath) -> Self {
+    fn new(current: EditorModeState, path: &'a DocumentFile) -> Self {
         Self { current, path }
     }
 
     fn mode(&self) -> EditorModeState {
-        match self.path {
-            FilePath::Missing => EditorModeState::Edit,
-            FilePath::Provided { path } => {
-                let readonly = match fs::metadata(path) {
-                    Ok(metadata) => metadata.permissions().readonly(),
-                    Err(_) => false,
-                };
-                if readonly {
-                    self.current
-                } else {
-                    EditorModeState::Edit
-                }
-            }
+        let readonly = match self.path.metadata_path() {
+            Ok(path) => match fs::metadata(path) {
+                Ok(metadata) => metadata.permissions().readonly(),
+                Err(_) => false,
+            },
+            Err(_) => false,
+        };
+        if readonly {
+            self.current
+        } else {
+            EditorModeState::Edit
         }
     }
 }

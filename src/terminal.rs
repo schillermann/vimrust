@@ -51,7 +51,7 @@ impl Terminal {
         self.size
     }
 
-    pub fn set_cursor_style(&mut self, mode: &EditorMode) -> io::Result<()> {
+    pub fn apply_cursor_style(&mut self, mode: &EditorMode) -> io::Result<()> {
         let style = match mode {
             EditorMode::Normal => SetCursorStyle::DefaultUserShape,
             EditorMode::Edit => SetCursorStyle::SteadyBar,

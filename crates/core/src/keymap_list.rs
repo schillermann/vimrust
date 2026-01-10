@@ -1,5 +1,6 @@
 use crate::prompt_entry::PromptEntry;
-use vimrust_protocol::PromptMode;
+use std::rc::Rc;
+use vimrust_protocol::{PromptListSelection, PromptMode};
 
 pub struct KeymapEntry {
     mode: PromptMode,
@@ -305,17 +306,15 @@ impl KeymapRegistry {
 }
 
 pub struct KeymapList {
-    registry: KeymapRegistry,
-    selected_index: Option<usize>,
-    scroll_offset: usize,
+    registry: Rc<KeymapRegistry>,
+    selection: KeymapListSelection,
 }
 
 impl KeymapList {
     pub fn new() -> Self {
         Self {
-            registry: KeymapRegistry::new(),
-            selected_index: None,
-            scroll_offset: 0,
+            registry: Rc::new(KeymapRegistry::new()),
+            selection: KeymapListSelection::new(),
         }
     }
 
@@ -323,40 +322,39 @@ impl KeymapList {
         self.registry.matching(query)
     }
 
-    pub fn reset_selection(&mut self) {
-        self.selected_index = None;
-        self.scroll_offset = 0;
+    pub fn reset_selection(&self) -> Self {
+        Self {
+            registry: Rc::clone(&self.registry),
+            selection: self.selection.reset(),
+        }
     }
 
-    pub fn selection_clear(&mut self) {
-        self.selected_index = None;
+    pub fn selection_clear(&self) -> Self {
+        Self {
+            registry: Rc::clone(&self.registry),
+            selection: self.selection.cleared(),
+        }
     }
 
-    pub fn selection(&self) -> Option<usize> {
-        self.selected_index
+    pub fn selection(&self) -> PromptListSelection {
+        self.selection.selection()
     }
 
     pub fn scroll_position(&self) -> usize {
-        self.scroll_offset
+        self.selection.scroll_position()
     }
 
-    pub fn select_index(&mut self, new_index: usize) {
-        self.selected_index = Some(new_index);
-    }
-
-    pub fn adjust_scroll_for_visible_rows(&mut self, visible_rows: usize) {
-        if visible_rows == 0 {
-            self.scroll_offset = 0;
-            return;
+    pub fn select_index(&self, new_index: usize) -> Self {
+        Self {
+            registry: Rc::clone(&self.registry),
+            selection: self.selection.selected(new_index),
         }
-        if let Some(selected_index) = self.selected_index {
-            if selected_index < self.scroll_offset {
-                self.scroll_offset = selected_index;
-            } else if selected_index >= self.scroll_offset.saturating_add(visible_rows) {
-                self.scroll_offset = selected_index
-                    .saturating_sub(visible_rows)
-                    .saturating_add(1);
-            }
+    }
+
+    pub fn adjust_scroll_for_visible_rows(&self, visible_rows: usize) -> Self {
+        Self {
+            registry: Rc::clone(&self.registry),
+            selection: self.selection.adjusted(visible_rows),
         }
     }
 
@@ -389,6 +387,78 @@ impl KeymapList {
             .trim_start_matches(';')
             .trim();
         trimmed.to_lowercase()
+    }
+}
+
+#[derive(Clone)]
+struct KeymapListSelection {
+    selected_index: PromptListSelection,
+    scroll_offset: usize,
+}
+
+impl KeymapListSelection {
+    fn new() -> Self {
+        Self {
+            selected_index: PromptListSelection::empty(),
+            scroll_offset: 0,
+        }
+    }
+
+    fn reset(&self) -> Self {
+        Self {
+            selected_index: PromptListSelection::empty(),
+            scroll_offset: 0,
+        }
+    }
+
+    fn cleared(&self) -> Self {
+        Self {
+            selected_index: PromptListSelection::empty(),
+            scroll_offset: self.scroll_offset,
+        }
+    }
+
+    fn selected(&self, new_index: usize) -> Self {
+        Self {
+            selected_index: PromptListSelection::at(new_index),
+            scroll_offset: self.scroll_offset,
+        }
+    }
+
+    fn adjusted(&self, visible_rows: usize) -> Self {
+        if visible_rows == 0 {
+            return Self {
+                selected_index: self.selected_index.clone(),
+                scroll_offset: 0,
+            };
+        }
+        let selected_index = self.selected_index.index();
+        let empty_index = PromptListSelection::empty().index();
+        if selected_index != empty_index {
+            if selected_index < self.scroll_offset {
+                return Self {
+                    selected_index: self.selected_index.clone(),
+                    scroll_offset: selected_index,
+                };
+            }
+            if selected_index >= self.scroll_offset.saturating_add(visible_rows) {
+                return Self {
+                    selected_index: self.selected_index.clone(),
+                    scroll_offset: selected_index
+                        .saturating_sub(visible_rows)
+                        .saturating_add(1),
+                };
+            }
+        }
+        self.clone()
+    }
+
+    fn selection(&self) -> PromptListSelection {
+        self.selected_index.clone()
+    }
+
+    fn scroll_position(&self) -> usize {
+        self.scroll_offset
     }
 }
 

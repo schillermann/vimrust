@@ -1,12 +1,12 @@
 use crate::{frame_signal::FrameSignal, prompt_ui_state::CommandUiView};
-use vimrust_protocol::PromptInputSelection;
+use vimrust_protocol::{PromptInputSelection, PromptListSelection};
 
 pub struct CommandUiSnapshot {
     command_text: String,
     cursor_column: u16,
     line_selection: PromptInputSelection,
     line_focus: bool,
-    selection: Option<usize>,
+    selection: PromptListSelection,
     scroll_offset: usize,
 }
 
@@ -16,7 +16,7 @@ impl CommandUiSnapshot {
         cursor_column: u16,
         line_selection: PromptInputSelection,
         line_focus: bool,
-        selection: Option<usize>,
+        selection: PromptListSelection,
         scroll_offset: usize,
     ) -> Self {
         Self {

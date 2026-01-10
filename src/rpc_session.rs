@@ -5,12 +5,12 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use crate::{
     mode::EditorMode,
     protocol_guard::ProtocolGate,
-    rpc_client::{ClientEvent, ClientPoll, RpcClient},
+    rpc_client::{ClientEvent, ClientEventHandler, RpcClient},
     ui::Ui,
 };
 use vimrust_protocol::{
-    CommandUiAccess, DeleteKind, Frame, MoveDirection, PromptUiAction, RequestEditorMode,
-    RpcRequest, RpcResponse, StatusMessage,
+    CommandLine, CommandUiAccess, DeleteKind, Frame, MoveDirection, PromptUiAction,
+    RequestEditorMode, RpcRequest, RpcResponse, StatusMessage,
 };
 
 // `'a` is the lifetime of the borrowed terminal inside Ui.
@@ -20,7 +20,7 @@ pub struct RpcSession<'a> {
     ui: Ui<'a>,
     protocol_gate: ProtocolGate,
     keymap: ModeKeymap,
-    latest_frame: Option<Frame>,
+    latest_frame: LatestFrame,
     status_override: StatusMessage,
 }
 
@@ -36,7 +36,7 @@ impl<'a> RpcSession<'a> {
             ui,
             protocol_gate,
             keymap,
-            latest_frame: None,
+            latest_frame: LatestFrame::new(),
             status_override: StatusMessage::Empty,
         }
     }
@@ -64,92 +64,36 @@ impl<'a> RpcSession<'a> {
     }
 
     fn receive(&mut self) -> io::Result<()> {
-        loop {
-            let poll = self.client.poll_event()?;
-            match poll {
-                ClientPoll::Event(event) => self.accept_event(event)?,
-                ClientPoll::Empty => break,
-            }
-        }
-        Ok(())
-    }
-
-    fn accept_event(&mut self, event: ClientEvent) -> io::Result<()> {
-        match event {
-            ClientEvent::Response(resp) => self.accept_event_response(resp),
-            ClientEvent::Exited => {
-                self.ui.status_update(StatusMessage::Text {
-                    text: String::from("core exited"),
-                });
-                self.ui.quit_request();
-                Ok(())
-            }
-        }
-    }
-
-    fn accept_event_response(&mut self, response: RpcResponse) -> io::Result<()> {
-        match response {
-            RpcResponse::Frame(frame) => self.accept_frame(frame),
-            RpcResponse::Ack(ack) => self.accept_ack(ack),
-            RpcResponse::Error { message } => self.accept_error(message),
-        }
-    }
-
-    fn accept_frame(&mut self, frame: Frame) -> io::Result<()> {
-        self.latest_frame = Some(frame);
-        self.status_override = StatusMessage::Empty;
-        if let Some(frame) = &self.latest_frame {
-            self.protocol_gate.observe(frame.protocol());
-            self.protocol_gate.report();
-            self.protocol_gate.result()?;
-        }
-        self.ui.mark_dirty();
-        Ok(())
-    }
-
-    fn accept_ack(&mut self, ack: vimrust_protocol::Ack) -> io::Result<()> {
-        self.status_override = self.protocol_gate.status().or(ack.message());
-        self.ui.status_update(self.status_override.clone());
-        Ok(())
-    }
-
-    fn accept_error(&mut self, message: String) -> io::Result<()> {
-        self.status_override = self
-            .protocol_gate
-            .status()
-            .or(StatusMessage::Text { text: message });
-        self.ui.status_update(self.status_override.clone());
-        Ok(())
+        let RpcSession {
+            client,
+            ui,
+            protocol_gate,
+            latest_frame,
+            status_override,
+            ..
+        } = self;
+        let mut sink = RpcSessionEventSink::new(ui, protocol_gate, latest_frame, status_override);
+        client.accept(&mut sink)
     }
 
     fn render(&mut self) -> io::Result<()> {
-        if let Some(frame) = &self.latest_frame {
-            let mode = UiFrameEditorMode::new(frame.mode()).editor_mode();
-            let mut frame_to_render = frame.clone();
-            self.ui.mode_apply(mode);
-            // Prefer explicit status message if set by ack/error.
-            let status = self
-                .protocol_gate
-                .status()
-                .or(self.status_override.clone())
-                .or(frame.status());
-            frame_to_render.status_update(status);
-            self.ui.render_from_frame(&frame_to_render)?;
-        }
-        Ok(())
+        self.latest_frame.render(
+            &mut self.ui,
+            &self.protocol_gate,
+            &self.status_override,
+        )
     }
 
     fn listen(&mut self) -> io::Result<()> {
         if event::poll(Duration::from_millis(50))? {
             match event::read()? {
                 Event::Key(key_event) => {
-                    if let Some(ref mut frame) = self.latest_frame {
-                        let mode = UiFrameEditorMode::new(frame.mode()).editor_mode();
-                        let focus = PromptFocus::new(frame);
-                        let action = self.keymap.action_for(mode, key_event, focus);
-                        self.ui.status_clear();
-                        action.apply(&mut self.client)?;
-                    }
+                    self.latest_frame.handle_key_event(
+                        key_event,
+                        &self.keymap,
+                        &mut self.client,
+                        &mut self.ui,
+                    )?;
                 }
                 Event::Resize(_, _) => {
                     self.ui.terminal_update_size()?;
@@ -160,6 +104,141 @@ impl<'a> RpcSession<'a> {
             }
         }
         Ok(())
+    }
+}
+
+struct RpcSessionEventSink<'a, 'b> {
+    ui: &'a mut Ui<'b>,
+    protocol_gate: &'a mut ProtocolGate,
+    latest_frame: &'a mut LatestFrame,
+    status_override: &'a mut StatusMessage,
+}
+
+impl<'a, 'b> RpcSessionEventSink<'a, 'b> {
+    fn new(
+        ui: &'a mut Ui<'b>,
+        protocol_gate: &'a mut ProtocolGate,
+        latest_frame: &'a mut LatestFrame,
+        status_override: &'a mut StatusMessage,
+    ) -> Self {
+        Self {
+            ui,
+            protocol_gate,
+            latest_frame,
+            status_override,
+        }
+    }
+
+    fn accept_response(&mut self, response: RpcResponse) -> io::Result<()> {
+        match response {
+            RpcResponse::Frame(frame) => self.accept_frame(frame),
+            RpcResponse::Ack(ack) => self.accept_ack(ack),
+            RpcResponse::Error { message } => self.accept_error(message),
+        }
+    }
+
+    fn accept_frame(&mut self, frame: Frame) -> io::Result<()> {
+        self.latest_frame.update(frame);
+        *self.status_override = StatusMessage::Empty;
+        self.latest_frame.observe(self.protocol_gate)?;
+        self.ui.mark_dirty();
+        Ok(())
+    }
+
+    fn accept_ack(&mut self, ack: vimrust_protocol::Ack) -> io::Result<()> {
+        *self.status_override = self.protocol_gate.status().or(ack.message());
+        self.ui.status_update(self.status_override.clone());
+        Ok(())
+    }
+
+    fn accept_error(&mut self, message: String) -> io::Result<()> {
+        *self.status_override = self
+            .protocol_gate
+            .status()
+            .or(StatusMessage::Text { text: message });
+        self.ui.status_update(self.status_override.clone());
+        Ok(())
+    }
+}
+
+impl<'a, 'b> ClientEventHandler for RpcSessionEventSink<'a, 'b> {
+    fn accept(&mut self, event: ClientEvent) -> io::Result<()> {
+        match event {
+            ClientEvent::Response(resp) => self.accept_response(resp),
+            ClientEvent::Exited => {
+                self.ui.status_update(StatusMessage::Text {
+                    text: String::from("core exited"),
+                });
+                self.ui.quit_request();
+                Ok(())
+            }
+        }
+    }
+}
+
+struct LatestFrame {
+    frame: Frame,
+    ready: bool,
+}
+
+impl LatestFrame {
+    fn new() -> Self {
+        Self {
+            frame: Frame::empty(),
+            ready: false,
+        }
+    }
+
+    fn update(&mut self, frame: Frame) {
+        self.frame = frame;
+        self.ready = true;
+    }
+
+    fn observe(&self, protocol_gate: &mut ProtocolGate) -> io::Result<()> {
+        if self.ready {
+            protocol_gate.observe(self.frame.protocol());
+            protocol_gate.report();
+            protocol_gate.result()?;
+        }
+        Ok(())
+    }
+
+    fn render(
+        &self,
+        ui: &mut Ui<'_>,
+        protocol_gate: &ProtocolGate,
+        status_override: &StatusMessage,
+    ) -> io::Result<()> {
+        if !self.ready {
+            return Ok(());
+        }
+        let mode = UiFrameEditorMode::new(self.frame.mode()).editor_mode();
+        let mut frame_to_render = self.frame.clone();
+        ui.mode_apply(mode);
+        // Prefer explicit status message if set by ack/error.
+        let status = protocol_gate
+            .status()
+            .or(status_override.clone())
+            .or(frame_to_render.status());
+        frame_to_render.status_update(status);
+        ui.render_from_frame(&frame_to_render)
+    }
+
+    fn handle_key_event(
+        &mut self,
+        key_event: KeyEvent,
+        keymap: &ModeKeymap,
+        client: &mut RpcClient,
+        ui: &mut Ui<'_>,
+    ) -> io::Result<()> {
+        if !self.ready {
+            return Ok(());
+        }
+        let mode = UiFrameEditorMode::new(self.frame.mode()).editor_mode();
+        let focus = PromptFocus::new(&self.frame);
+        let action = keymap.action_for(mode, key_event, focus);
+        ui.status_clear();
+        action.apply(client)
     }
 }
 
@@ -351,7 +430,9 @@ impl PromptPromptInput {
                 PromptFocus::List => ClientAction::Send(RpcRequest::CommandUi {
                     action: PromptUiAction::SelectFromList,
                 }),
-                PromptFocus::Input => ClientAction::Send(RpcRequest::CommandExecute { line: None }),
+                PromptFocus::Input => ClientAction::Send(RpcRequest::CommandExecute {
+                    line: CommandLine::from_ui(),
+                }),
             },
             KeyCode::Backspace => ClientAction::Send(RpcRequest::CommandUi {
                 action: PromptUiAction::Backspace,

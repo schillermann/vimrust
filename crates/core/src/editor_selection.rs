@@ -160,7 +160,9 @@ impl<'a> CursorUpdate<'a> {
     pub(super) fn place(&mut self, position: CursorPosition, file: &File, line_view: &LineView) {
         *self.column = position.column;
         *self.row = position.row;
-        if let Some(line) = file.line_at(*self.row as usize) {
+        let row_index = *self.row as usize;
+        if row_index < file.line_count() {
+            let line = file.line_at(row_index);
             *self.column = line_view.snap_cursor_to_render_character(line, *self.column);
         }
     }

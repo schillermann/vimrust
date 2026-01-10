@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{FilePath, PromptUiFrame, ProtocolVersion, StatusMessage};
+use crate::{DocumentFile, PromptUiFrame, ProtocolVersion, StatusMessage};
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -20,9 +20,10 @@ pub struct Frame {
     status: StatusMessage,
     #[serde(default)]
     status_position: StatusPosition,
-    file_path: FilePath,
+    file_path: DocumentFile,
     size: Viewport,
-    command_ui: Option<PromptUiFrame>,
+    #[serde(default)]
+    command_ui: CommandUiSlot,
     #[serde(default)]
     selection: FrameSelection,
     #[serde(default)]
@@ -36,9 +37,9 @@ impl Frame {
         rows: Vec<String>,
         status: StatusMessage,
         status_position: StatusPosition,
-        file_path: FilePath,
+        file_path: DocumentFile,
         size: (u16, u16),
-        command_ui: Option<PromptUiFrame>,
+        command_ui: CommandUiSlot,
         selection: FrameSelection,
         protocol_version: ProtocolVersion,
     ) -> Self {
@@ -53,6 +54,21 @@ impl Frame {
             command_ui,
             selection,
             protocol_version,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            mode: FrameEditorMode::Normal,
+            cursor: Cursor::new(0, 0),
+            rows: FrameRows::new(Vec::new()),
+            status: StatusMessage::Empty,
+            status_position: StatusPosition::default(),
+            file_path: DocumentFile { path: String::new() },
+            size: Viewport::new(0, 0),
+            command_ui: CommandUiSlot::missing(),
+            selection: FrameSelection::none(),
+            protocol_version: ProtocolVersion::current(),
         }
     }
 
@@ -80,7 +96,7 @@ impl Frame {
         self.status_position.clone()
     }
 
-    pub fn path(&self) -> FilePath {
+    pub fn path(&self) -> DocumentFile {
         self.file_path.clone()
     }
 
@@ -89,10 +105,7 @@ impl Frame {
     }
 
     pub fn command_ui(&self) -> CommandUiAccess {
-        match self.command_ui.as_ref() {
-            Some(frame) => CommandUiAccess::Available(frame.clone()),
-            None => CommandUiAccess::Missing,
-        }
+        self.command_ui.access()
     }
 
     pub fn protocol(&self) -> ProtocolVersion {
@@ -195,6 +208,68 @@ impl Viewport {
 pub enum CommandUiAccess {
     Available(PromptUiFrame),
     Missing,
+}
+
+#[derive(Clone)]
+pub struct CommandUiSlot {
+    frame: PromptUiFrame,
+    visible: bool,
+}
+
+impl CommandUiSlot {
+    pub fn available(frame: PromptUiFrame) -> Self {
+        Self {
+            frame,
+            visible: true,
+        }
+    }
+
+    pub fn missing() -> Self {
+        Self {
+            frame: PromptUiFrame::empty(),
+            visible: false,
+        }
+    }
+
+    fn access(&self) -> CommandUiAccess {
+        if self.visible {
+            CommandUiAccess::Available(self.frame.clone())
+        } else {
+            CommandUiAccess::Missing
+        }
+    }
+}
+
+impl Default for CommandUiSlot {
+    fn default() -> Self {
+        Self::missing()
+    }
+}
+
+impl Serialize for CommandUiSlot {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if self.visible {
+            self.frame.serialize(serializer)
+        } else {
+            serializer.serialize_none()
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CommandUiSlot {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let slot = Option::<PromptUiFrame>::deserialize(deserializer)?;
+        Ok(match slot {
+            Some(frame) => CommandUiSlot::available(frame),
+            None => CommandUiSlot::missing(),
+        })
+    }
 }
 
 pub trait FrameRowSink {

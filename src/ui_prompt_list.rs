@@ -124,11 +124,9 @@ impl<'a> PromptListView<'a> {
             if let Some(entry) =
                 matches.get(self.cmd_ui.scroll_position().saturating_add(row as usize))
             {
-                let is_selected = if let Some(selected_index) = self.cmd_ui.selected_item() {
-                    selected_index == self.cmd_ui.scroll_position().saturating_add(row as usize)
-                } else {
-                    false
-                };
+                let selection = self.cmd_ui.selection();
+                let is_selected =
+                    selection.selected_row(self.cmd_ui.scroll_position(), row as usize);
 
                 if is_keymap {
                     let mode_label = match entry.mode() {
@@ -181,7 +179,7 @@ impl<'a> PromptListView<'a> {
                         if key_col_width > 0 {
                             let key_highlight = PromptListHighlight::new(
                                 &key_matches,
-                                Some(Color::White),
+                                PromptListForeground::color(Color::White),
                                 Color::Yellow,
                                 true,
                             );
@@ -191,7 +189,7 @@ impl<'a> PromptListView<'a> {
                             self.terminal.queue_add_command(Print(" "))?;
                             let mode_highlight = PromptListHighlight::new(
                                 &mode_matches,
-                                Some(Color::White),
+                                PromptListForeground::color(Color::White),
                                 Color::Yellow,
                                 true,
                             );
@@ -201,7 +199,7 @@ impl<'a> PromptListView<'a> {
                             self.terminal.queue_add_command(Print(" "))?;
                             let desc_highlight = PromptListHighlight::new(
                                 &desc_matches,
-                                Some(Color::White),
+                                PromptListForeground::color(Color::White),
                                 Color::Yellow,
                                 true,
                             );
@@ -212,20 +210,32 @@ impl<'a> PromptListView<'a> {
                     } else {
                         self.terminal.queue_add_command(Print(" "))?;
                         if key_col_width > 0 {
-                            let key_highlight =
-                                PromptListHighlight::new(&key_matches, None, Color::Yellow, false);
+                            let key_highlight = PromptListHighlight::new(
+                                &key_matches,
+                                PromptListForeground::none(),
+                                Color::Yellow,
+                                false,
+                            );
                             key_highlight.paint(self.terminal, &key_display)?;
                         }
                         if mode_col_width > 0 {
                             self.terminal.queue_add_command(Print(" "))?;
-                            let mode_highlight =
-                                PromptListHighlight::new(&mode_matches, None, Color::Yellow, false);
+                            let mode_highlight = PromptListHighlight::new(
+                                &mode_matches,
+                                PromptListForeground::none(),
+                                Color::Yellow,
+                                false,
+                            );
                             mode_highlight.paint(self.terminal, &mode_display)?;
                         }
                         if !desc_display.is_empty() {
                             self.terminal.queue_add_command(Print(" "))?;
-                            let desc_highlight =
-                                PromptListHighlight::new(&desc_matches, None, Color::Yellow, false);
+                            let desc_highlight = PromptListHighlight::new(
+                                &desc_matches,
+                                PromptListForeground::none(),
+                                Color::Yellow,
+                                false,
+                            );
                             desc_highlight.paint(self.terminal, &desc_display)?;
                         }
                         self.terminal.queue_add_command(ResetColor)?;
@@ -270,7 +280,7 @@ impl<'a> PromptListView<'a> {
                             .queue_add_command(SetForegroundColor(Color::White))?;
                         let name_highlight = PromptListHighlight::new(
                             &name_matches,
-                            Some(Color::White),
+                            PromptListForeground::color(Color::White),
                             Color::Yellow,
                             true,
                         );
@@ -279,7 +289,7 @@ impl<'a> PromptListView<'a> {
                             self.terminal.queue_add_command(Print(" "))?;
                             let desc_highlight = PromptListHighlight::new(
                                 &desc_matches,
-                                Some(Color::White),
+                                PromptListForeground::color(Color::White),
                                 Color::Yellow,
                                 true,
                             );
@@ -289,13 +299,21 @@ impl<'a> PromptListView<'a> {
                         self.terminal.queue_add_command(Print(" "))?;
                     } else {
                         self.terminal.queue_add_command(Print(" "))?;
-                        let name_highlight =
-                            PromptListHighlight::new(&name_matches, None, Color::Yellow, false);
+                        let name_highlight = PromptListHighlight::new(
+                            &name_matches,
+                            PromptListForeground::none(),
+                            Color::Yellow,
+                            false,
+                        );
                         name_highlight.paint(self.terminal, &name_display)?;
                         if !desc_display.is_empty() {
                             self.terminal.queue_add_command(Print(" "))?;
-                            let desc_highlight =
-                                PromptListHighlight::new(&desc_matches, None, Color::Yellow, false);
+                            let desc_highlight = PromptListHighlight::new(
+                                &desc_matches,
+                                PromptListForeground::none(),
+                                Color::Yellow,
+                                false,
+                            );
                             desc_highlight.paint(self.terminal, &desc_display)?;
                         }
                         self.terminal.queue_add_command(ResetColor)?;
@@ -469,7 +487,7 @@ impl CommandQuery {
 
 struct PromptListHighlight<'a> {
     match_indices: &'a [usize],
-    default_fg: Option<Color>,
+    default_fg: PromptListForeground,
     highlight_fg: Color,
     keep_background: bool,
 }
@@ -477,7 +495,7 @@ struct PromptListHighlight<'a> {
 impl<'a> PromptListHighlight<'a> {
     fn new(
         match_indices: &'a [usize],
-        default_fg: Option<Color>,
+        default_fg: PromptListForeground,
         highlight_fg: Color,
         keep_background: bool,
     ) -> Self {
@@ -497,20 +515,14 @@ impl<'a> PromptListHighlight<'a> {
             self.match_indices[0]
         };
 
-        if let Some(color) = self.default_fg {
-            terminal.queue_add_command(SetForegroundColor(color))?;
-        }
+        self.default_fg.apply(terminal)?;
 
         let mut idx = 0usize;
         for ch in text.chars() {
             if idx == next_match {
                 terminal.queue_add_command(SetForegroundColor(self.highlight_fg))?;
                 terminal.queue_add_command(Print(ch))?;
-                if let Some(color) = self.default_fg {
-                    terminal.queue_add_command(SetForegroundColor(color))?;
-                } else if !self.keep_background {
-                    terminal.queue_add_command(ResetColor)?;
-                }
+                self.default_fg.restore(terminal, self.keep_background)?;
                 match_pos = match_pos.saturating_add(1);
                 if match_pos < self.match_indices.len() {
                     next_match = self.match_indices[match_pos];
@@ -523,6 +535,46 @@ impl<'a> PromptListHighlight<'a> {
             idx = idx.saturating_add(1);
         }
 
+        Ok(())
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PromptListForeground {
+    color: Color,
+    enabled: bool,
+}
+
+impl PromptListForeground {
+    fn none() -> Self {
+        Self {
+            color: Color::Reset,
+            enabled: false,
+        }
+    }
+
+    fn color(color: Color) -> Self {
+        Self {
+            color,
+            enabled: true,
+        }
+    }
+
+    fn apply(&self, terminal: &mut Terminal) -> io::Result<()> {
+        if self.enabled {
+            terminal.queue_add_command(SetForegroundColor(self.color))?;
+        }
+        Ok(())
+    }
+
+    fn restore(&self, terminal: &mut Terminal, keep_background: bool) -> io::Result<()> {
+        if self.enabled {
+            terminal.queue_add_command(SetForegroundColor(self.color))?;
+            return Ok(());
+        }
+        if !keep_background {
+            terminal.queue_add_command(ResetColor)?;
+        }
         Ok(())
     }
 }

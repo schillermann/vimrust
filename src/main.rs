@@ -1,6 +1,7 @@
 use std::{env, io};
 
 mod buffer;
+mod file;
 mod help_line;
 mod mode;
 mod protocol_guard;

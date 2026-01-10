@@ -266,7 +266,7 @@ impl PathCompletion {
     fn apply(self, prompt_input: &mut PromptInput, prefix: String) {
         match self {
             PathCompletion::Replace { value } => {
-                prompt_input.set_content(format!("{}{}", prefix, value));
+                prompt_input.overwrite(format!("{}{}", prefix, value));
             }
             PathCompletion::NoChange => {}
         }

@@ -20,9 +20,8 @@ pub enum ClientEvent {
     Exited,
 }
 
-pub enum ClientPoll {
-    Event(ClientEvent),
-    Empty,
+pub trait ClientEventHandler {
+    fn accept(&mut self, event: ClientEvent) -> io::Result<()>;
 }
 
 struct ExitState {
@@ -34,23 +33,17 @@ impl ExitState {
         Self { sent: false }
     }
 
-    fn on_eof(&mut self) -> ClientPoll {
+    fn emit(&mut self, handler: &mut dyn ClientEventHandler) -> io::Result<()> {
         if self.sent {
-            ClientPoll::Empty
-        } else {
-            self.sent = true;
-            ClientPoll::Event(ClientEvent::Exited)
+            return Ok(());
         }
+        self.sent = true;
+        handler.accept(ClientEvent::Exited)
     }
 }
 
 struct LineBuffer {
     bytes: Vec<u8>,
-}
-
-enum LineRead {
-    Line(String),
-    Empty,
 }
 
 impl LineBuffer {
@@ -62,32 +55,39 @@ impl LineBuffer {
         self.bytes.extend_from_slice(data);
     }
 
-    fn next_line(&mut self) -> io::Result<LineRead> {
-        let mut idx = 0;
-        while idx < self.bytes.len() {
-            if self.bytes[idx] == b'\n' {
-                let mut line_bytes: Vec<u8> = self.bytes.drain(..=idx).collect();
-                if let Some(last) = line_bytes.last() {
-                    if *last == b'\n' {
-                        line_bytes.pop();
-                    }
+    fn emit(&mut self, handler: &mut dyn LineHandler) -> io::Result<()> {
+        loop {
+            let mut newline_index = self.bytes.len();
+            let mut idx = 0;
+            while idx < self.bytes.len() {
+                if self.bytes[idx] == b'\n' {
+                    newline_index = idx;
+                    break;
                 }
-                if let Some(last) = line_bytes.last() {
-                    if *last == b'\r' {
-                        line_bytes.pop();
-                    }
-                }
-                let line = match String::from_utf8(line_bytes) {
-                    Ok(line) => line,
-                    Err(err) => {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, err));
-                    }
-                };
-                return Ok(LineRead::Line(line));
+                idx = idx.saturating_add(1);
             }
-            idx += 1;
+            if newline_index == self.bytes.len() {
+                return Ok(());
+            }
+            let mut line_bytes: Vec<u8> = self.bytes.drain(..=newline_index).collect();
+            if let Some(last) = line_bytes.last() {
+                if *last == b'\n' {
+                    line_bytes.pop();
+                }
+            }
+            if let Some(last) = line_bytes.last() {
+                if *last == b'\r' {
+                    line_bytes.pop();
+                }
+            }
+            let line = match String::from_utf8(line_bytes) {
+                Ok(line) => line,
+                Err(err) => {
+                    return Err(io::Error::new(io::ErrorKind::InvalidData, err));
+                }
+            };
+            handler.accept(line)?;
         }
-        Ok(LineRead::Empty)
     }
 }
 
@@ -102,8 +102,10 @@ impl NonBlockingStdout {
         Ok(wrapper)
     }
 
-    fn read_chunk(&mut self, buf: &mut [u8]) -> io::Result<usize> {
-        self.stdout.read(buf)
+    fn read_chunk(&mut self, buf: &mut [u8], chunk: &mut ReadChunk) -> io::Result<()> {
+        let count = self.stdout.read(buf)?;
+        chunk.record(count);
+        Ok(())
     }
 
     fn configure_non_blocking(&self) -> io::Result<()> {
@@ -143,49 +145,86 @@ impl RpcClient {
         let _ = self.child.kill();
     }
 
-    pub fn poll_event(&mut self) -> io::Result<ClientPoll> {
-        let pending = self.next_event()?;
-        match pending {
-            ClientPoll::Event(_) => return Ok(pending),
-            ClientPoll::Empty => {}
-        }
+    pub fn accept(&mut self, handler: &mut dyn ClientEventHandler) -> io::Result<()> {
+        loop {
+            let parser = ResponseLineParser;
+            let mut line_handler = ClientLineHandler::new(&parser, handler);
+            self.line_buffer.emit(&mut line_handler)?;
 
-        let mut buffer = [0u8; 4096];
-        match self.stdout.read_chunk(&mut buffer) {
-            Ok(0) => Ok(self.exit_state.on_eof()),
-            Ok(count) => {
-                self.line_buffer.append(&buffer[..count]);
-                self.next_event()
-            }
-            Err(err) => {
-                if err.kind() == io::ErrorKind::WouldBlock {
-                    Ok(ClientPoll::Empty)
-                } else {
-                    Err(err)
+            let mut buffer = [0u8; 4096];
+            let mut chunk = ReadChunk::new();
+            match self.stdout.read_chunk(&mut buffer, &mut chunk) {
+                Ok(()) => {
+                    let count = chunk.count();
+                    if count == 0 {
+                        self.exit_state.emit(handler)?;
+                        return Ok(());
+                    }
+                    self.line_buffer.append(&buffer[..count]);
+                }
+                Err(err) => {
+                    if err.kind() == io::ErrorKind::WouldBlock {
+                        return Ok(());
+                    }
+                    return Err(err);
                 }
             }
         }
     }
+}
 
-    fn next_event(&mut self) -> io::Result<ClientPoll> {
-        match self.line_buffer.next_line()? {
-            LineRead::Line(line) => self.parse_line(line),
-            LineRead::Empty => Ok(ClientPoll::Empty),
-        }
+trait LineHandler {
+    fn accept(&mut self, line: String) -> io::Result<()>;
+}
+
+struct ClientLineHandler<'a> {
+    parser: &'a ResponseLineParser,
+    handler: &'a mut dyn ClientEventHandler,
+}
+
+impl<'a> ClientLineHandler<'a> {
+    fn new(parser: &'a ResponseLineParser, handler: &'a mut dyn ClientEventHandler) -> Self {
+        Self { parser, handler }
     }
+}
 
-    fn parse_line(&mut self, line: String) -> io::Result<ClientPoll> {
+impl<'a> LineHandler for ClientLineHandler<'a> {
+    fn accept(&mut self, line: String) -> io::Result<()> {
+        self.parser.accept(line, self.handler)
+    }
+}
+
+struct ResponseLineParser;
+
+impl ResponseLineParser {
+    fn accept(&self, line: String, handler: &mut dyn ClientEventHandler) -> io::Result<()> {
         if line.trim().is_empty() {
-            return Ok(ClientPoll::Empty);
+            return Ok(());
         }
         match serde_json::from_str::<RpcResponse>(&line) {
-            Ok(resp) => Ok(ClientPoll::Event(ClientEvent::Response(resp))),
-            Err(err) => Ok(ClientPoll::Event(ClientEvent::Response(
-                RpcResponse::Error {
-                    message: format!("invalid response: {}", err),
-                },
-            ))),
+            Ok(resp) => handler.accept(ClientEvent::Response(resp)),
+            Err(err) => handler.accept(ClientEvent::Response(RpcResponse::Error {
+                message: format!("invalid response: {}", err),
+            })),
         }
+    }
+}
+
+struct ReadChunk {
+    count: usize,
+}
+
+impl ReadChunk {
+    fn new() -> Self {
+        Self { count: 0 }
+    }
+
+    fn record(&mut self, count: usize) {
+        self.count = count;
+    }
+
+    fn count(&self) -> usize {
+        self.count
     }
 }
 

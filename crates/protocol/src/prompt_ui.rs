@@ -1,5 +1,35 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Serialize, Deserialize, Clone, PartialEq)]
+pub struct PromptListSelection {
+    index: usize,
+}
+
+impl PromptListSelection {
+    pub fn empty() -> Self {
+        Self { index: usize::MAX }
+    }
+
+    pub fn at(index: usize) -> Self {
+        Self { index }
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn clamped(&self, max: usize) -> Self {
+        if max == 0 || self.index == usize::MAX {
+            return Self::empty();
+        }
+        Self::at(self.index.min(max.saturating_sub(1)))
+    }
+
+    pub fn selected_row(&self, scroll_offset: usize, row_index: usize) -> bool {
+        self.index != usize::MAX && self.index == scroll_offset.saturating_add(row_index)
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PromptUiFrame {
     line: String,
@@ -7,7 +37,7 @@ pub struct PromptUiFrame {
     line_selection: PromptInputSelection,
     line_focus: bool,
     list_items: Vec<PromptListItemFrame>,
-    selected_index: Option<usize>,
+    selected_index: PromptListSelection,
     scroll_offset: usize,
 }
 
@@ -18,7 +48,7 @@ impl PromptUiFrame {
         cursor_x: u16,
         line_selection: PromptInputSelection,
         list_items: Vec<PromptListItemFrame>,
-        selected_index: Option<usize>,
+        selected_index: PromptListSelection,
         scroll_offset: usize,
     ) -> Self {
         Self {
@@ -29,6 +59,18 @@ impl PromptUiFrame {
             list_items,
             selected_index,
             scroll_offset,
+        }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            line: String::new(),
+            line_focus: false,
+            cursor_x: 0,
+            line_selection: PromptInputSelection::None,
+            list_items: Vec::new(),
+            selected_index: PromptListSelection::empty(),
+            scroll_offset: 0,
         }
     }
 
@@ -52,8 +94,8 @@ impl PromptUiFrame {
         &self.list_items
     }
 
-    pub fn selected_item(&self) -> Option<usize> {
-        self.selected_index
+    pub fn selection(&self) -> PromptListSelection {
+        self.selected_index.clone()
     }
 
     pub fn scroll_position(&self) -> usize {

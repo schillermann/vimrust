@@ -6,6 +6,36 @@ pub struct PromptInput {
     selection: PromptInputSelection,
 }
 
+pub struct PromptInputSnapshot<'a> {
+    content: &'a str,
+    cursor_x: u16,
+    selection: PromptInputSelection,
+}
+
+impl<'a> PromptInputSnapshot<'a> {
+    pub fn content(&self) -> &'a str {
+        self.content
+    }
+
+    pub fn cursor_column(&self) -> u16 {
+        self.cursor_x
+    }
+
+    pub fn selection(&self) -> PromptInputSelection {
+        self.selection.clone()
+    }
+}
+
+pub struct PromptInputDraft {
+    line: String,
+}
+
+impl PromptInputDraft {
+    pub fn restore(&self, prompt_input: &mut PromptInput) {
+        prompt_input.overwrite(self.line.clone());
+    }
+}
+
 impl PromptInput {
     pub fn new() -> Self {
         Self {
@@ -28,28 +58,34 @@ impl PromptInput {
         self.selection.clear();
     }
 
-    pub fn set_content(&mut self, new_content: String) {
+    pub fn overwrite(&mut self, new_content: String) {
         self.content = new_content;
         self.cursor_x = self.content.len() as u16;
         self.selection.clear();
     }
 
-    pub fn set_content_with_selection(&mut self, new_content: String, selection: PromptInputSelection) {
+    pub fn overwrite_with_selection(
+        &mut self,
+        new_content: String,
+        selection: PromptInputSelection,
+    ) {
         self.content = new_content;
         self.selection = selection;
         self.cursor_x = self.selection_start().min(self.content.len() as u16);
     }
 
-    pub fn text(&self) -> &str {
-        &self.content
+    pub fn snapshot(&self) -> PromptInputSnapshot<'_> {
+        PromptInputSnapshot {
+            content: &self.content,
+            cursor_x: self.cursor_x,
+            selection: self.selection.clone(),
+        }
     }
 
-    pub fn cursor_column(&self) -> u16 {
-        self.cursor_x
-    }
-
-    pub fn selection(&self) -> PromptInputSelection {
-        self.selection.clone()
+    pub fn draft(&self) -> PromptInputDraft {
+        PromptInputDraft {
+            line: self.content.clone(),
+        }
     }
 
     pub fn backspace(&mut self) {

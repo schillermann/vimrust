@@ -31,15 +31,15 @@ crates/protocol/src
 ├─ frame.rs
 │  ├─ uses: prompt_ui.rs (CommandUiFrame)
 │  ├─ uses: status.rs (StatusMessage)
-│  ├─ uses: path.rs (FilePath)
+│  ├─ uses: document_file.rs (DocumentFile)
 │  └─ uses: version.rs (ProtocolVersion)
 ├─ rpc.rs
 │  ├─ uses: prompt_ui.rs (CommandUiAction)
 │  ├─ uses: frame.rs (Frame)
 │  ├─ uses: status.rs (StatusMessage)
-│  └─ uses: path.rs (FilePath)
+│  └─ uses: document_file.rs (DocumentFile)
 ├─ prompt_ui.rs (CommandUiFrame, CommandUiAction, PromptInputSelection, PromptMode)
 ├─ status.rs (StatusMessage)
-├─ path.rs (FilePath)
+├─ document_file.rs (DocumentFile)
 └─ version.rs (ProtocolVersion)
 ```

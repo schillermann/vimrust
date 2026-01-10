@@ -3,6 +3,7 @@ use std::io;
 use crossterm::cursor::{Hide, Show};
 
 use crate::{
+    file::UiFileSource,
     help_line::HelpLine,
     mode::EditorMode,
     status_line::StatusLine,
@@ -15,22 +16,22 @@ use vimrust_protocol::{CommandUiAccess, Frame, RpcRequest, StatusMessage, Viewpo
 /// Responsible for orchestrating the per-frame UI rendering.
 pub struct Ui<'a> {
     terminal: &'a mut Terminal,
-    status_line: StatusLine,
     help_line: HelpLine,
     updated: bool,
     quit: bool,
     mode: EditorMode,
+    file_status: StatusMessage,
 }
 
 impl<'a> Ui<'a> {
     pub fn new(terminal: &'a mut Terminal) -> Self {
         Self {
             terminal,
-            status_line: StatusLine::new(),
             help_line: HelpLine::new(),
             updated: false,
             quit: false,
             mode: EditorMode::Normal,
+            file_status: StatusMessage::Empty,
         }
     }
 
@@ -44,12 +45,12 @@ impl<'a> Ui<'a> {
     }
 
     pub fn status_update(&mut self, message: StatusMessage) {
-        self.status_line.file_status_update(message);
+        self.file_status_apply(message);
         self.updated = true;
     }
 
     pub fn status_clear(&mut self) {
-        self.status_line.file_status_clear();
+        self.file_status.clear();
         self.updated = true;
     }
 
@@ -73,7 +74,7 @@ impl<'a> Ui<'a> {
     pub fn mode_apply(&mut self, mode: EditorMode) {
         self.mode = mode;
         self.updated = true;
-        let _ = self.terminal.set_cursor_style(&self.mode);
+        let _ = self.terminal.apply_cursor_style(&self.mode);
     }
 
     pub fn terminal_update_size(&mut self) -> io::Result<()> {
@@ -91,6 +92,12 @@ impl<'a> Ui<'a> {
         let mut render = FrameRender::new(self, frame);
         frame.viewport().apply_to(&mut render);
         render.finish()
+    }
+
+    fn file_status_apply(&mut self, status: StatusMessage) {
+        if self.file_status != status {
+            self.file_status = status;
+        }
     }
 }
 
@@ -147,15 +154,15 @@ impl<'a, 'b> FrameRender<'a, 'b> {
             }
 
             if number_of_rows > 2 {
-                self.ui.status_line.file_status_update(self.frame.status());
-                self.ui.status_line.draw(
+                self.ui.file_status_apply(self.frame.status());
+                let status_line = StatusLine::new(
                     self.ui.terminal,
-                    &self.ui.mode,
-                    &self.frame.path(),
+                    self.frame.path().file(),
+                    self.ui.mode,
                     self.frame.position(),
-                    number_of_columns,
-                    number_of_rows,
-                )?;
+                    self.ui.file_status.clone(),
+                );
+                status_line.draw(number_of_columns, number_of_rows)?;
             }
 
             if number_of_rows > 1 {

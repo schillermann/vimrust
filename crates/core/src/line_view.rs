@@ -173,13 +173,13 @@ impl LineView {
         clamped_x
     }
 
-    pub(crate) fn tab_segment_start(&self, line: &str, cursor_x: u16) -> Option<u16> {
+    pub(crate) fn tab_segment_start(&self, line: &str, cursor_x: u16) -> TabSegmentStart {
         for (start, end, ch) in self.segments_render(line) {
             if cursor_x >= start && cursor_x < end && ch == '\t' {
-                return Some(start);
+                return TabSegmentStart::at(start);
             }
         }
-        None
+        TabSegmentStart::empty()
     }
 
     pub(crate) fn column_to_char_index_render(&self, line: &str, cursor_x: u16) -> usize {
@@ -218,6 +218,28 @@ impl LineView {
 #[derive(Clone, Copy)]
 struct TabStop {
     size: u16,
+}
+
+pub(crate) struct TabSegmentStart {
+    column: u16,
+}
+
+impl TabSegmentStart {
+    fn empty() -> Self {
+        Self {
+            column: u16::MAX,
+        }
+    }
+
+    fn at(column: u16) -> Self {
+        Self { column }
+    }
+
+    pub(crate) fn apply(&self, cursor: &mut u16) {
+        if self.column != u16::MAX {
+            *cursor = self.column;
+        }
+    }
 }
 
 impl TabStop {

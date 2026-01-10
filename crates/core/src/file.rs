@@ -1,16 +1,17 @@
 use std::{fs, io};
 
-use vimrust_protocol::{FilePath, StatusMessage};
+use vimrust_protocol::{DocumentFile, StatusMessage};
 
+#[derive(Clone)]
 pub struct File {
-    path: FilePath,
+    path: DocumentFile,
     file_lines: Vec<String>,
     changed: bool,
     change_token: FileChangeToken,
 }
 
 impl File {
-    pub fn new(file_path: FilePath) -> Self {
+    pub fn new(file_path: DocumentFile) -> Self {
         Self {
             path: file_path,
             file_lines: Vec::new(),
@@ -19,20 +20,12 @@ impl File {
         }
     }
 
-    pub fn path(&self) -> FilePath {
+    pub fn path(&self) -> DocumentFile {
         self.path.clone()
     }
 
     pub fn open(&mut self) -> io::Result<()> {
-        let path = match &self.path {
-            FilePath::Provided { path } => path.clone(),
-            FilePath::Missing => {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "no file path set",
-                ));
-            }
-        };
+        let path = self.path.open_path()?;
         let contents = fs::read_to_string(&path)?;
         let mut lines = Vec::new();
         for line in contents.lines() {
@@ -50,7 +43,9 @@ impl File {
     }
 
     pub fn create(&mut self) {
-        self.path = FilePath::Missing;
+        self.path = DocumentFile {
+            path: String::new(),
+        };
         self.file_lines.clear();
         self.file_lines.push(String::new());
         self.changed = false;
@@ -58,51 +53,45 @@ impl File {
     }
 
     pub fn read(&mut self) -> io::Result<()> {
-        match self.path {
-            FilePath::Provided { .. } => self.open(),
-            FilePath::Missing => {
-                self.create();
-                Ok(())
-            }
+        if self.path.path.is_empty() {
+            self.create();
+            Ok(())
+        } else {
+            self.open()
         }
     }
 
-    pub fn save(&mut self) -> io::Result<String> {
-        let path = match &self.path {
-            FilePath::Provided { path } => path.clone(),
-            FilePath::Missing => String::from("untitled.txt"),
-        };
+    pub fn save(&mut self) -> io::Result<()> {
+        let path = self.path.save_path();
         let contents = self.file_lines.join("\n");
         fs::write(&path, contents)?;
-        if matches!(self.path, FilePath::Missing) {
-            self.path = FilePath::Provided { path };
+        if self.path.path.is_empty() {
+            self.path = DocumentFile { path };
         }
         self.changed = false;
         self.change_token = FileChangeToken::new();
-        Ok(String::from("saved"))
+        Ok(())
     }
 
     pub fn message_lock(&self) -> StatusMessage {
-        match &self.path {
-            FilePath::Missing => StatusMessage::Empty,
-            FilePath::Provided { path } => {
-                let readonly = match fs::metadata(path) {
-                    Ok(metadata) => metadata.permissions().readonly(),
-                    Err(_) => false,
-                };
-                if readonly {
-                    StatusMessage::Text {
-                        text: String::from("locked"),
-                    }
-                } else {
-                    StatusMessage::Empty
-                }
+        let readonly = match self.path.metadata_path() {
+            Ok(path) => match fs::metadata(path) {
+                Ok(metadata) => metadata.permissions().readonly(),
+                Err(_) => false,
+            },
+            Err(_) => false,
+        };
+        if readonly {
+            StatusMessage::Text {
+                text: String::from("locked"),
             }
+        } else {
+            StatusMessage::Empty
         }
     }
 
-    pub fn line_at(&self, index: usize) -> Option<&String> {
-        self.file_lines.get(index)
+    pub fn line_at(&self, index: usize) -> &str {
+        self.file_lines[index].as_str()
     }
 
     pub fn line_count(&self) -> usize {
@@ -113,8 +102,8 @@ impl File {
         self.file_lines.len().min(u16::MAX as usize) as u16
     }
 
-    pub fn line_at_mut(&mut self, index: usize) -> Option<&mut String> {
-        self.file_lines.get_mut(index)
+    pub fn line_at_mut(&mut self, index: usize) -> &mut String {
+        self.file_lines.get_mut(index).expect("line index in range")
     }
 
     pub fn line_ensure(&mut self, index: usize) {
@@ -124,11 +113,9 @@ impl File {
         }
     }
 
-    pub fn line_remove(&mut self, index: usize) -> Option<String> {
+    pub fn line_remove(&mut self, index: usize) {
         if index < self.file_lines.len() {
-            Some(self.file_lines.remove(index))
-        } else {
-            None
+            self.file_lines.remove(index);
         }
     }
 
