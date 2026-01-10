@@ -42,6 +42,14 @@ This repository is optimized for Codex-style agent work. Follow the rules below 
 - Avoid reflection for core domain behavior.
 - Use polymorphism and composition instead.
 
+### 5a) Avoid enums
+- Do not encode behavior switches as enums.
+- Model alternatives as polymorphic objects instead.
+
+### 5b) Avoid type methods
+- No boolean checkers: a method like `isMarkdown()` is a getter in disguise.
+- It exposes what the object is instead of letting the object perform an action.
+
 ### 6) Minimize procedural orchestration
 - Avoid methods that coordinate data via loops and `if/else`.
 - Do not expose lifecycle loops, polling, routing, or batching logic.
@@ -176,6 +184,7 @@ that interpret input via message passing rather than branching and forwarding.
 ### 11) Prefer composition over inheritance
 - Favor small composable objects.
 - Inheritance is acceptable only when substitutability is preserved and no shared mutable state is introduced.
+- Prefer decorators over implementation inheritance; subtyping can enable polymorphism but avoid inheriting behavior that creates tight coupling.
 
 ---
 
