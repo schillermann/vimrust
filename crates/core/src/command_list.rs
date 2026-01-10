@@ -68,16 +68,6 @@ impl CommandRegistry {
                     mode: PromptMode::Command,
                 },
                 CommandEntry {
-                    name: "link_labels markdown",
-                    description: "Render markdown links with full syntax",
-                    mode: PromptMode::Command,
-                },
-                CommandEntry {
-                    name: "link_labels text",
-                    description: "Render markdown link labels only",
-                    mode: PromptMode::Command,
-                },
-                CommandEntry {
                     name: "case kebab",
                     description: "Convert selection to kebab-case",
                     mode: PromptMode::Visual,

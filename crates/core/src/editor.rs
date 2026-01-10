@@ -11,11 +11,7 @@ use vimrust_protocol::StatusMessage;
 mod editor_selection;
 #[path = "line_view.rs"]
 mod line_view;
-#[path = "line_presentation.rs"]
-mod line_presentation;
-
 use self::editor_selection::{CursorUpdate, EditorSelection};
-use self::line_presentation::LinePresentation;
 use self::line_view::LineView;
 use crate::command_scope::CommandScope;
 
@@ -72,13 +68,6 @@ pub struct Editor {
     version: EditorVersion,
     selection: EditorSelection,
     line_view: LineView,
-    line_presentation: LinePresentation,
-}
-
-#[derive(Clone, Copy)]
-pub enum LinkLabelMode {
-    Markdown,
-    Text,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -152,7 +141,6 @@ impl Editor {
             version: EditorVersion::current(),
             selection: EditorSelection::new(),
             line_view: LineView::new(4),
-            line_presentation: LinePresentation::new(LinkLabelMode::Markdown),
         }
     }
 
@@ -181,10 +169,6 @@ impl Editor {
 
     pub fn file_path(&self) -> DocumentFile {
         self.file.path()
-    }
-
-    pub fn file_clone(&self) -> File {
-        self.file.clone()
     }
 
     pub fn message_lock(&self) -> StatusMessage {
@@ -226,10 +210,6 @@ impl Editor {
 
     pub fn command_scope(&self) -> CommandScope {
         self.selection.scope()
-    }
-
-    pub fn link_labels_apply(&mut self, mode: LinkLabelMode) {
-        self.line_presentation.link_label_apply(mode);
     }
 
     pub fn selection_frame(
@@ -349,7 +329,7 @@ impl Editor {
                 rows.push(line);
             } else {
                 let file_line = view.file_ref().line_at(file_line_number);
-                let displayable_line = self.line_presentation.line(&self.line_view, file_line);
+                let displayable_line = self.line_view.displayable_line(file_line);
                 let visible_slice: String = displayable_line
                     .chars()
                     .skip(view.column_offset() as usize)

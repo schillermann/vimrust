@@ -1,8 +1,6 @@
 use std::io::{self, BufRead, Write};
-use std::path::Path;
-
 use crate::{
-    EditorMode, EditorModeState, FrameSignal, editor::Editor, editor::LinkLabelMode, file::File,
+    EditorMode, EditorModeState, FrameSignal, editor::Editor, file::File,
     prompt_ui_state::PromptUiState,
 };
 use vimrust_protocol::{
@@ -355,20 +353,12 @@ enum CaseStyleChoice {
     Unknown,
 }
 
-enum LinkLabelChoice {
-    Missing,
-    Markdown,
-    Text,
-    Unknown,
-}
-
 enum CommandRequest {
     Save,
     SaveAndQuit,
     Quit,
     Open { path: CommandPath },
     History,
-    LinkLabels { mode: LinkLabelMode },
     Case { style: CaseStyle },
     Skip,
 }
@@ -493,20 +483,6 @@ impl CommandText {
                 CommandRequest::Open { path }
             }
             "history" => CommandRequest::History,
-            "link_labels" => {
-                let argument = LinkLabelArgument {
-                    raw: parts.rest.clone(),
-                };
-                match argument.mode() {
-                    LinkLabelChoice::Markdown => CommandRequest::LinkLabels {
-                        mode: LinkLabelMode::Markdown,
-                    },
-                    LinkLabelChoice::Text => CommandRequest::LinkLabels {
-                        mode: LinkLabelMode::Text,
-                    },
-                    LinkLabelChoice::Missing | LinkLabelChoice::Unknown => CommandRequest::Skip,
-                }
-            }
             "case" => {
                 let argument = CaseArgument {
                     raw: parts.rest.clone(),
@@ -590,143 +566,6 @@ impl CaseArgument {
             "flat" => CaseStyleChoice::Flat,
             _ => CaseStyleChoice::Unknown,
         }
-    }
-}
-
-struct LinkLabelArgument {
-    raw: String,
-}
-
-impl LinkLabelArgument {
-    fn mode(&self) -> LinkLabelChoice {
-        let raw = self.raw.trim();
-        if raw.is_empty() {
-            return LinkLabelChoice::Missing;
-        }
-        let mut split_at = raw.len();
-        for (idx, ch) in raw.char_indices() {
-            if ch.is_whitespace() {
-                split_at = idx;
-                break;
-            }
-        }
-        let (token, _) = raw.split_at(split_at);
-        match token.to_lowercase().as_str() {
-            "markdown" => LinkLabelChoice::Markdown,
-            "text" => LinkLabelChoice::Text,
-            _ => LinkLabelChoice::Unknown,
-        }
-    }
-}
-
-trait LinkLabeling {
-    fn apply(&self, editor: &mut Editor, editor_mode: &mut EditorMode, command_ui: &mut PromptUiState);
-    fn outcome(&self) -> RequestOutcome;
-}
-
-struct LinkLabelRequest {
-    file: File,
-    mode: LinkLabelMode,
-}
-
-impl LinkLabelRequest {
-    fn labeling(self) -> Box<dyn LinkLabeling> {
-        let path = self.file.path();
-        path.labeling(self.file, self.mode)
-    }
-}
-
-trait LinkLabelSource {
-    fn labeling(&self, file: File, mode: LinkLabelMode) -> Box<dyn LinkLabeling>;
-}
-
-impl LinkLabelSource for DocumentFile {
-    fn labeling(&self, file: File, mode: LinkLabelMode) -> Box<dyn LinkLabeling> {
-        if self.path.is_empty() {
-            Box::new(NoFile { _file: file })
-        } else {
-            let base = Box::new(TextFile {
-                _file: file.clone(),
-            }) as Box<dyn LinkLabeling>;
-            MarkdownEligible {
-                path: self.path.clone(),
-            }
-            .decorate(base, file, mode)
-        }
-    }
-}
-
-struct MarkdownEligible {
-    path: String,
-}
-
-impl MarkdownEligible {
-    fn decorate(
-        self,
-        inner: Box<dyn LinkLabeling>,
-        file: File,
-        mode: LinkLabelMode,
-    ) -> Box<dyn LinkLabeling> {
-        let ext = Path::new(self.path.as_str()).extension();
-        if let Some(ext) = ext {
-            if let Some(text) = ext.to_str() {
-                let lower = text.to_ascii_lowercase();
-                if lower == "md" || lower == "markdown" {
-                    return Box::new(MarkdownFile {
-                        inner,
-                        _file: file,
-                        mode,
-                    });
-                }
-            }
-        }
-        inner
-    }
-}
-
-struct MarkdownFile {
-    inner: Box<dyn LinkLabeling>,
-    _file: File,
-    mode: LinkLabelMode,
-}
-
-impl LinkLabeling for MarkdownFile {
-    fn apply(&self, editor: &mut Editor, editor_mode: &mut EditorMode, command_ui: &mut PromptUiState) {
-        self.inner.apply(editor, editor_mode, command_ui);
-        editor.link_labels_apply(self.mode);
-        if editor_mode.prompt_command() {
-            command_ui.clear();
-        }
-        let path = editor.file_path();
-        editor_mode.transition(RequestEditorMode::Normal, &path);
-    }
-
-    fn outcome(&self) -> RequestOutcome {
-        RequestOutcome::Frame
-    }
-}
-
-struct TextFile {
-    _file: File,
-}
-
-impl LinkLabeling for TextFile {
-    fn apply(&self, _editor: &mut Editor, _editor_mode: &mut EditorMode, _command_ui: &mut PromptUiState) {}
-
-    fn outcome(&self) -> RequestOutcome {
-        RequestOutcome::Skip
-    }
-}
-
-struct NoFile {
-    _file: File,
-}
-
-impl LinkLabeling for NoFile {
-    fn apply(&self, _editor: &mut Editor, _editor_mode: &mut EditorMode, _command_ui: &mut PromptUiState) {}
-
-    fn outcome(&self) -> RequestOutcome {
-        RequestOutcome::Skip
     }
 }
 
@@ -892,15 +731,6 @@ impl CommandExecuteAction {
                         RequestOutcome::FrameAndAck(ack)
                     }
                 }
-            }
-            CommandRequest::LinkLabels { mode } => {
-                let labeling = LinkLabelRequest {
-                    file: editor.file_clone(),
-                    mode,
-                }
-                .labeling();
-                labeling.apply(editor, editor_mode, command_ui);
-                labeling.outcome()
             }
             CommandRequest::Case { style } => {
                 match style {
@@ -1830,88 +1660,6 @@ mod tests {
         let _ = fs::remove_file(&path);
     }
 
-    #[test]
-    fn command_execute_link_labels_text_for_markdown() {
-        let mut editor_mode = EditorMode::new();
-        let mut editor = Editor::new(File::new(DocumentFile {
-            path: String::from("notes.md"),
-        }));
-        editor.file_lines_replace(vec![String::from("[label](target)")]);
-        let mut status = StatusMessage::Empty;
-        let mut size = (20, 5);
-        let mut command_ui = PromptUiState::new();
-        let mut harness = RequestHarness::new(
-            &mut editor,
-            &mut editor_mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-
-        harness.accept(RpcRequest::ModeSet {
-            mode: RequestEditorMode::PromptCommand,
-        });
-        harness.accept(RpcRequest::CommandExecute {
-            line: vimrust_protocol::CommandLine::provided(":link_labels text".to_string()),
-        });
-        let outcome = harness.decision();
-        assert!(matches!(outcome, RequestOutcome::Frame));
-        assert!(matches!(editor_mode.mode(), EditorModeState::Normal));
-
-        let frame = build_frame(
-            &editor,
-            &editor_mode,
-            &status,
-            size,
-            CommandUiSlot::missing(),
-        );
-        let mut rows = RowsProbe::new();
-        frame.paint_rows(size.1.saturating_sub(3), &mut rows);
-        rows.expect_row(0, "label");
-    }
-
-    #[test]
-    fn command_execute_link_labels_text_skips_non_markdown() {
-        let mut editor_mode = EditorMode::new();
-        let mut editor = Editor::new(File::new(DocumentFile {
-            path: String::from("notes.txt"),
-        }));
-        editor.file_lines_replace(vec![String::from("[label](target)")]);
-        let mut status = StatusMessage::Empty;
-        let mut size = (20, 5);
-        let mut command_ui = PromptUiState::new();
-        let mut harness = RequestHarness::new(
-            &mut editor,
-            &mut editor_mode,
-            &mut status,
-            &mut size,
-            &mut command_ui,
-        );
-
-        harness.accept(RpcRequest::ModeSet {
-            mode: RequestEditorMode::PromptCommand,
-        });
-        harness.accept(RpcRequest::CommandExecute {
-            line: vimrust_protocol::CommandLine::provided(":link_labels text".to_string()),
-        });
-        let outcome = harness.decision();
-        assert!(matches!(outcome, RequestOutcome::Skip));
-        assert!(matches!(
-            editor_mode.mode(),
-            EditorModeState::PromptCommand
-        ));
-
-        let frame = build_frame(
-            &editor,
-            &editor_mode,
-            &status,
-            size,
-            CommandUiSlot::missing(),
-        );
-        let mut rows = RowsProbe::new();
-        frame.paint_rows(size.1.saturating_sub(3), &mut rows);
-        rows.expect_row(0, "[label](target)");
-    }
 
     #[test]
     fn command_execute_selects_list_entry_and_runs_command() {
