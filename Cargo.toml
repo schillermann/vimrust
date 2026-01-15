@@ -2,6 +2,8 @@
 name = "vimrust"
 version = "0.1.0"
 edition = "2024"
+default-run = "vimrust"
 
 [dependencies]
 rustpages = { git = "https://github.com/schillermann/rustpages" }
+ctrlc = "3.4.5"
