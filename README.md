@@ -6,6 +6,16 @@ Terminal-based editor with separate core and UI processes.
 
 ### Run
 
+#### Launcher
+
+Run both core and UI together:
+
+```sh
+cargo run
+```
+
+#### Run Core/UI Separately
+
 The UI and Core must be started for the editor to function.
 
 Start the core:
@@ -19,6 +29,8 @@ Start the UI (in another terminal):
 ```sh
 cargo run --bin ui
 ```
+
+### Debug
 
 Call the core directly (no UI):
 
