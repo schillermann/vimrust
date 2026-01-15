@@ -3,5 +3,13 @@
 version = 4
 
 [[package]]
+name = "rustpages"
+version = "0.1.0"
+source = "git+https://github.com/schillermann/rustpages#c0f9aff451cfe44f9ba8d53ebad147016aa978b9"
+
+[[package]]
 name = "vimrust"
 version = "0.1.0"
+dependencies = [
+ "rustpages",
+]
